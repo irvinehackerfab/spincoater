@@ -1,7 +1,7 @@
 # ARDUINO UNO 3 ONLY
 #include <LiquidCrystal.h>
-#include <Servo.h>
-#include <TaskScheduler.h>
+#include <Servo.h> # for mechanical servo
+#include <TaskScheduler.h> 
 
 // Defining LED Display pins 
 #define PIN_RS 11 
