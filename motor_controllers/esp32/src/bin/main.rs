@@ -45,7 +45,8 @@ async fn main(_spawner: Spawner) {
     let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
     // connect operator0 to timer0
     mcpwm.operator0.set_timer(&mcpwm.timer0);
-    // connect operator0 to pin
+    // connect operator0 to pin IO23:
+    // https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3
     let mut pwm_pin = mcpwm
         .operator0
         .with_pin_a(peripherals.GPIO23, PwmPinConfig::UP_ACTIVE_HIGH);
