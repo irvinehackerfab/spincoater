@@ -11,7 +11,7 @@ void setup() {
   Serial.begin(115200);
 
   // Setup timer with given frequency, resolution and attach it to a led pin with auto-selected channel
-  ledcAttach(PWM_PIN, FREQUENCY, LEDC_TIMER_12_BIT);
+  ledcAttach(PWM_PIN, FREQUENCY, LEDC_TIMER_16_BIT);
   // Set duty cycle
   ledcWrite(PWM_PIN, STOP_DUTY);
   Serial.print("Current duty: ");
