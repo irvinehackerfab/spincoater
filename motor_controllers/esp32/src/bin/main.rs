@@ -41,7 +41,8 @@ async fn main(_spawner: Spawner) {
     let peripherals = esp_hal::init(config);
 
     // initialize PWM
-    let clock_cfg = PeripheralClockConfig::with_frequency(Rate::from_hz(50)).unwrap();
+    let clock_cfg = PeripheralClockConfig::with_frequency(Rate::from_hz(50))
+        .expect("Failed to create PeripheralClockConfig");
     let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
     // connect operator0 to timer0
     mcpwm.operator0.set_timer(&mcpwm.timer0);
@@ -54,7 +55,7 @@ async fn main(_spawner: Spawner) {
     // This allows us to input duty cycle as a percentage.
     let timer_clock_cfg = clock_cfg
         .timer_clock_with_frequency(99, PwmWorkingMode::Increase, Rate::from_hz(50))
-        .unwrap();
+        .expect("Failed to create TimerClockConfig");
     mcpwm.timer0.start(timer_clock_cfg);
     // pin will be high 5% of the time
     pwm_pin.set_timestamp(5);
