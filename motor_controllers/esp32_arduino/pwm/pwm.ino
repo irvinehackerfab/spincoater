@@ -8,7 +8,7 @@ void setup() {
 	ESP32PWM::allocateTimer(0);
 	Serial.begin(115200);
 	pwm.attachPin(pin, freq, 16);
-  pwm.writeScaled(stop_duty);
+    pwm.writeScaled(stop_duty);
 }
 
 void loop() {
