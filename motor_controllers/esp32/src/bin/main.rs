@@ -22,6 +22,12 @@ extern crate alloc;
 
 // const CONNECTIONS_MAX: usize = 1;
 // const L2CAP_CHANNELS_MAX: usize = 1;
+const FREQUENCY: Rate = Rate::from_hz(50);
+// We can configure this to whatever we like.
+// Setting it to 99 allows us to set duty cycle in percentages.
+const MAX_DUTY: u16 = 99;
+// 5% of max duty
+const STOP_DUTY: u16 = 5;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -41,7 +47,7 @@ async fn main(_spawner: Spawner) {
     let peripherals = esp_hal::init(config);
 
     // initialize PWM
-    let clock_cfg = PeripheralClockConfig::with_frequency(Rate::from_hz(50))
+    let clock_cfg = PeripheralClockConfig::with_frequency(FREQUENCY)
         .expect("Failed to create PeripheralClockConfig");
     let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
     // connect operator0 to timer0
@@ -51,14 +57,12 @@ async fn main(_spawner: Spawner) {
     let mut pwm_pin = mcpwm
         .operator0
         .with_pin_a(peripherals.GPIO23, PwmPinConfig::UP_ACTIVE_HIGH);
-    // start timer with timestamp values in the range of 0..=99 and the same frequency.
-    // This allows us to input duty cycle as a percentage.
+    // start timer with timestamp values in the range that we want.
     let timer_clock_cfg = clock_cfg
-        .timer_clock_with_frequency(99, PwmWorkingMode::Increase, Rate::from_hz(50))
+        .timer_clock_with_frequency(MAX_DUTY, PwmWorkingMode::Increase, FREQUENCY)
         .expect("Failed to create TimerClockConfig");
     mcpwm.timer0.start(timer_clock_cfg);
-    // pin will be high 5% of the time
-    pwm_pin.set_timestamp(5);
+    pwm_pin.set_timestamp(STOP_DUTY);
 
     // esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
     // COEX needs more RAM - so we've added some more
