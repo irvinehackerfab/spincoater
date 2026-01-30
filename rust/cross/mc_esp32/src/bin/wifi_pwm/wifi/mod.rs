@@ -10,8 +10,8 @@ use esp_radio::{
     wifi::{AuthMethod, WifiController, WifiDevice, WifiEvent},
 };
 use heapless::Vec;
-use mc_esp32::messages::Message;
-use postcard::{Error, from_bytes_cobs};
+use messages::Message;
+use postcard::{Error, from_bytes};
 use static_cell::StaticCell;
 use zeroize::Zeroize;
 
@@ -128,7 +128,7 @@ async fn recv_message<'a>(
             Ok(0) => break Err(ReadError::SocketClosed),
             Ok(len) => {
                 // Read up to the end of the written segment.
-                match from_bytes_cobs::<Message>(&mut buffer[..(position + len)]) {
+                match from_bytes::<Message>(&buffer[..(position + len)]) {
                     Ok(message) => {
                         break Ok(message);
                     }

@@ -12,17 +12,25 @@ pub enum Message {
 #[cfg(test)]
 mod test {
     use super::*;
-    use postcard::{Error, from_bytes_cobs, to_vec_cobs};
+    use postcard::{Error, from_bytes, to_vec};
 
-    /// A message must be obtainable from multiple deserialization attempts.
+    /// The correct message must be obtainable from multiple deserialization attempts on the same buffer.
     #[test]
     fn test_re_deserialize() {
-        let msg = Message::SetDutyCycle(5);
-        let mut send = to_vec_cobs::<Message, 64>(&msg).unwrap();
-        assert!(send.len() > 1);
-        let x = from_bytes_cobs::<Message>(&mut send[..1]);
-        assert!(matches!(x, Err(Error::DeserializeUnexpectedEnd)));
-        let x = from_bytes_cobs::<Message>(&mut send);
-        assert!(matches!(x, Ok(Message::SetDutyCycle(5))));
+        for duty in 0..u8::MAX {
+            let msg = Message::SetDutyCycle(duty);
+            let send = to_vec::<Message, 64>(&msg).unwrap();
+            for (i, _) in send
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != 0 && *i < send.len())
+            {
+                let send_clone = send.clone();
+                let error = from_bytes::<Message>(&send_clone[..i]);
+                assert!(matches!(error, Err(Error::DeserializeUnexpectedEnd)));
+                let output = from_bytes::<Message>(&send_clone);
+                assert!(matches!(output, Ok(Message::SetDutyCycle(out_duty)) if out_duty == duty));
+            }
+        }
     }
 }
