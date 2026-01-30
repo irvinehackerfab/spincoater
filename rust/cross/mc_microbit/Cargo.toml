@@ -1,7 +1,11 @@
+[workspace]
+
 [package]
-name = "microbit"
+name = "mc_microbit"
+authors = ["Anthony Pagone"]
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 embedded-hal = "1.0.0"
@@ -43,11 +47,6 @@ embassy-nrf = { git = "https://github.com/embassy-rs/embassy.git", rev = "f35aa4
 embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", rev = "f35aa4005a63e8d478b2b95aaa2bfb316b72dece" }
 embassy-time = { git = "https://github.com/embassy-rs/embassy.git", rev = "f35aa4005a63e8d478b2b95aaa2bfb316b72dece" }
 embassy-time-driver = { git = "https://github.com/embassy-rs/embassy.git", rev = "f35aa4005a63e8d478b2b95aaa2bfb316b72dece" }
-
-[[bin]]
-name = "microbit"
-test = false
-bench = false
 
 [profile.release]
 debug = 2
