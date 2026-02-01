@@ -1,5 +1,37 @@
-pub(crate) enum ReadError {
+use embassy_net::tcp::TcpSocket;
+use esp_println::println;
+
+pub enum ReadError {
     SocketClosed,
-    ConnectionReset,
-    DeserializeError(postcard::Error),
+    TCPError(embassy_net::tcp::Error),
+    PostcardError(postcard::Error),
+}
+
+impl ReadError {
+    /// Prints errors out.
+    ///
+    /// If a serialization or deserialization message is received, the connection is aborted as well.
+    pub async fn handle<'a>(self, socket: &mut TcpSocket<'a>) {
+        match self {
+            ReadError::SocketClosed => println!("Socket closed by peer."),
+            ReadError::TCPError(error) => println!("TCP error: {error}."),
+            ReadError::PostcardError(error) => {
+                println!("Postcard error: {error}. Closing connection.");
+                socket.abort();
+                let _ = socket.flush().await;
+            }
+        }
+    }
+}
+
+impl From<postcard::Error> for ReadError {
+    fn from(value: postcard::Error) -> Self {
+        ReadError::PostcardError(value)
+    }
+}
+
+impl From<embassy_net::tcp::Error> for ReadError {
+    fn from(value: embassy_net::tcp::Error) -> Self {
+        ReadError::TCPError(value)
+    }
 }

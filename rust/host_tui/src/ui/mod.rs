@@ -48,7 +48,7 @@ impl App {
             .border_type(BorderType::Rounded)
             .title_bottom(instructions);
 
-        let items = ["Set Duty Cycle", "Set Duty Cycle 2"];
+        let items = ["Set Duty Cycle to 5%", "Set Duty Cycle to 10%"];
         let list = List::new(items)
             .block(cmd_block)
             .highlight_symbol("-> ")
@@ -59,14 +59,18 @@ impl App {
 
     fn render_info(&mut self, area: Rect, buf: &mut Buffer) {
         let info_block = Block::bordered()
-            .title(" Wireless Info ")
+            .title(" Messages to/from MCU ")
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded);
 
         let items = self.messages.iter().map(|msg| {
             ListItem::new(Text::from(format!(
-                "{} -- {}",
+                "{} -- {}: {}",
                 msg.timestamp.format("%m-%d-%Y %H:%M:%S:%f"),
+                match msg.from_mcu {
+                    true => "From MCU",
+                    false => "To MCU",
+                },
                 msg.message
             )))
         });

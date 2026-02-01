@@ -10,10 +10,11 @@ chrono = { workspace = true }
 color-eyre = { workspace = true }
 crossterm = { workspace = true, features = ["event-stream"] }
 futures = { workspace = true }
-postcard.workspace = true
+postcard = { workspace = true }
 ratatui = { workspace = true }
 sc_messages = { path = "../sc_messages" }
 tokio = { workspace = true }
+zeroize = { workspace = true }
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]

@@ -12,7 +12,7 @@ mod wifi;
 use embassy_executor::Spawner;
 use embassy_net::tcp::TcpSocket;
 use embassy_net::{Ipv4Cidr, StackResources, StaticConfigV4};
-use embassy_time::{Duration, Timer};
+use embassy_time::Duration;
 use esp_backtrace as _;
 use esp_hal::clock::CpuClock;
 use esp_hal::mcpwm::operator::PwmPinConfig;
@@ -24,10 +24,12 @@ use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 use esp_radio::wifi::{CountryInfo, OperatingClass};
 use heapless::Vec;
+use sc_messages::Message;
 
 use crate::wifi::{
-    AUTH_METHOD, BUFFER_SIZE, GATEWAY_IP, MAX_CONNECTIONS, PASSWORD, RADIO, READ_BUFFER, RX_BUFFER,
-    SSID, STACK_RESOURCES, TX_BUFFER, controller_task, handle_connection, net_task,
+    AUTH_METHOD, BUFFER_SIZE, GATEWAY_IP, IP_LISTEN_ENDPOINT, MAX_CONNECTIONS, PASSWORD, RADIO,
+    READ_BUFFER, RX_BUFFER, SSID, STACK_RESOURCES, TX_BUFFER, controller_task, net_task,
+    recv_message, send_message,
 };
 
 extern crate alloc;
@@ -101,6 +103,10 @@ async fn main(spawner: Spawner) -> ! {
         .set_config(&wifi_config)
         .expect("Failed to set Wifi config");
 
+    // Spawn tasks
+    spawner.must_spawn(controller_task(wifi_controller));
+    spawner.must_spawn(net_task(runner));
+
     // Initialize TCP socket
     let rx_buffer = RX_BUFFER.init_with(|| Vec::from_array([0u8; BUFFER_SIZE]));
     let tx_buffer = TX_BUFFER.init_with(|| Vec::from_array([0u8; BUFFER_SIZE]));
@@ -126,12 +132,28 @@ async fn main(spawner: Spawner) -> ! {
     mcpwm.timer0.start(timer_clock_cfg);
     pwm_pin.set_timestamp(STOP_DUTY);
 
-    // Spawn tasks
-    spawner.must_spawn(controller_task(wifi_controller));
-    spawner.must_spawn(net_task(runner));
-    spawner.must_spawn(handle_connection(socket, buffer, pwm_pin));
-
+    // Read messages, act on them, and send them back in a loop.
+    // This loop is here instead of in a separate embassy task because it allocates too much data onto the stack.
     loop {
-        Timer::after_secs(1).await;
+        println!("Waiting for connection...");
+        if let Err(err) = socket.accept(IP_LISTEN_ENDPOINT).await {
+            println!("Accept error: {:?}", err);
+            continue;
+        }
+        match recv_message(&mut socket, buffer).await {
+            Ok(message) => {
+                match message {
+                    Message::DutyCycle(duty) => {
+                        println!("Got Message::SetDutyCycle({duty})");
+                        pwm_pin.set_timestamp(duty as u16);
+                    }
+                }
+                // Send the message back
+                if let Err(err) = send_message(message, &mut socket, buffer).await {
+                    err.handle(&mut socket).await;
+                }
+            }
+            Err(err) => err.handle(&mut socket).await,
+        }
     }
 }

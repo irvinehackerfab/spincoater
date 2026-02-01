@@ -5,13 +5,14 @@ use postcard::{Error, from_bytes};
 use ratatui::crossterm::event::Event as CrosstermEvent;
 use sc_messages::Message;
 use tokio::{
-    io::AsyncReadExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{
         TcpStream,
         tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
     sync::mpsc::{self, UnboundedSender},
 };
+use zeroize::Zeroize;
 
 use crate::app::MessageInfo;
 
@@ -35,6 +36,7 @@ pub struct EventHandler {
     /// Event receiver channel.
     from_tasks: mpsc::UnboundedReceiver<TuiEvent>,
     to_mcu: OwnedWriteHalf,
+    send_buffer: [u8; BUFFER_SIZE],
 }
 
 impl EventHandler {
@@ -47,7 +49,11 @@ impl EventHandler {
         tokio::spawn(await_crossterm_events(to_handler));
         // Spawn stream message handler.
         tokio::spawn(await_stream_messages(from_mcu, to_handler_2));
-        Self { from_tasks, to_mcu }
+        Self {
+            from_tasks,
+            to_mcu,
+            send_buffer: [0u8; BUFFER_SIZE],
+        }
     }
 
     /// Receives an event from the sender.
@@ -64,6 +70,14 @@ impl EventHandler {
             .recv()
             .await
             .ok_or_eyre("Failed to receive event")
+    }
+
+    /// Sends a message to the MCU, and returns the message along with the time at which it finished sending.
+    pub async fn send(&mut self, message: Message) -> color_eyre::Result<MessageInfo> {
+        let written_chunk = postcard::to_slice(&message, &mut self.send_buffer)?;
+        self.to_mcu.write_all(written_chunk).await?;
+        written_chunk.zeroize();
+        Ok(MessageInfo::to_mcu(message))
     }
 }
 
@@ -102,7 +116,10 @@ async fn await_stream_messages(mut from_mcu: OwnedReadHalf, to_handler: Unbounde
                 match from_bytes::<Message>(&written_chunk) {
                     Ok(message) => {
                         // Send message
-                        if to_handler.send(TuiEvent::Wireless(message.into())).is_err() {
+                        if to_handler
+                            .send(TuiEvent::Wireless(MessageInfo::from_mcu(message)))
+                            .is_err()
+                        {
                             // If the channel is closed, this task is done.
                             return;
                         }
@@ -142,5 +159,13 @@ mod test {
         buf.put(&b"def"[..]);
         let written_chunk = buf.split();
         assert_eq!(written_chunk, b"abcdef"[..]);
+    }
+
+    #[test]
+    fn test_to_slice() {
+        let mut buf = [0u8; 32];
+
+        let used = postcard::to_slice(&true, &mut buf).unwrap();
+        assert_eq!(used, &[0x01]);
     }
 }
