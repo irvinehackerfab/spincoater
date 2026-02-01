@@ -1,8 +1,8 @@
 mod error;
 
 use core::net::Ipv4Addr;
-use embassy_net::{IpListenEndpoint, Runner, Stack, StackResources, tcp::TcpSocket};
-use embassy_time::{Duration, Timer};
+use embassy_net::{IpListenEndpoint, Runner, StackResources, tcp::TcpSocket};
+use embassy_time::Timer;
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use esp_println::println;
 use esp_radio::{
@@ -10,14 +10,20 @@ use esp_radio::{
     wifi::{AuthMethod, WifiController, WifiDevice, WifiEvent},
 };
 use heapless::Vec;
-use messages::Message;
 use postcard::{Error, from_bytes};
+use sc_messages::Message;
 use static_cell::StaticCell;
 use zeroize::Zeroize;
 
 use crate::wifi::error::ReadError;
 
 pub(crate) const GATEWAY_IP: Ipv4Addr = Ipv4Addr::new(192, 168, 2, 1);
+pub(crate) const PORT: u16 = 8080;
+pub(crate) const IP_LISTEN_ENDPOINT: IpListenEndpoint = IpListenEndpoint {
+    addr: None,
+    port: PORT,
+};
+
 // Do not hardcode sensitive information like this.
 // Instead, pass in the variables as environment variables when you compile, like this:
 // SSID=_ PASSWORD=_ cargo run --release
@@ -34,14 +40,14 @@ pub(crate) static STACK_RESOURCES: StaticCell<StackResources<1>> = StaticCell::n
 // The config can be made static to avoid String reallocation upon wifi restart.
 // pub(crate) static WIFI_CONFIG: StaticCell<ModeConfig> = StaticCell::new();
 
-const BUFFER_SIZE: usize = 64;
-static RX_BUFFER: StaticCell<Vec<u8, BUFFER_SIZE>> = StaticCell::new();
-static TX_BUFFER: StaticCell<Vec<u8, BUFFER_SIZE>> = StaticCell::new();
-static READ_BUFFER: StaticCell<Vec<u8, BUFFER_SIZE>> = StaticCell::new();
+pub(crate) const BUFFER_SIZE: usize = 64;
+pub(crate) static RX_BUFFER: StaticCell<Vec<u8, BUFFER_SIZE>> = StaticCell::new();
+pub(crate) static TX_BUFFER: StaticCell<Vec<u8, BUFFER_SIZE>> = StaticCell::new();
+pub(crate) static READ_BUFFER: StaticCell<Vec<u8, BUFFER_SIZE>> = StaticCell::new();
 
-// This task restarts the wifi 5 seconds after it stops.
+/// This task restarts the wifi 5 seconds after it stops.
 #[embassy_executor::task]
-pub(crate) async fn connection(
+pub(crate) async fn controller_task(
     mut wifi_controller: WifiController<'static>,
     // wifi_config: &'static ModeConfig,
 ) {
@@ -76,32 +82,22 @@ pub(crate) async fn connection(
 
 #[embassy_executor::task]
 pub(crate) async fn handle_connection(
-    stack: Stack<'static>,
+    mut socket: TcpSocket<'static>,
+    buffer: &'static mut Vec<u8, BUFFER_SIZE>,
     mut pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
 ) {
-    let rx_buffer = RX_BUFFER.init_with(|| Vec::from_array([0u8; BUFFER_SIZE]));
-    let tx_buffer = TX_BUFFER.init_with(|| Vec::from_array([0u8; BUFFER_SIZE]));
-    let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer);
-    socket.set_timeout(Some(Duration::from_secs(10)));
-
-    let buffer: &mut Vec<u8, _> = READ_BUFFER.init_with(|| Vec::from_array([0u8; BUFFER_SIZE]));
     loop {
         println!("Waiting for connection...");
-        if let Err(err) = socket
-            .accept(IpListenEndpoint {
-                addr: None,
-                port: 8080,
-            })
-            .await
-        {
+        if let Err(err) = socket.accept(IP_LISTEN_ENDPOINT).await {
             println!("Accept error: {:?}", err);
             continue;
         }
         match recv_message(&mut socket, buffer).await {
             Ok(msg) => match msg {
-                Message::SetDutyCycle(duty) => {
+                Message::DutyCycle(duty) => {
                     println!("Got Message::SetDutyCycle({duty})");
                     pwm_pin.set_timestamp(duty as u16);
+                    todo!("Send duty back");
                 }
             },
             Err(err) => match err {
@@ -137,7 +133,7 @@ async fn recv_message<'a>(
                     Err(err) => break Err(ReadError::DeserializeError(err)),
                 }
             }
-            Err(_) => return Err(ReadError::ConnectionReset),
+            Err(_) => break Err(ReadError::ConnectionReset),
         }
     };
     buffer.zeroize();

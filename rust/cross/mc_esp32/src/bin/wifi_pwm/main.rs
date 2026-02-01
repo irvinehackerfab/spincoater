@@ -10,8 +10,9 @@
 mod wifi;
 
 use embassy_executor::Spawner;
+use embassy_net::tcp::TcpSocket;
 use embassy_net::{Ipv4Cidr, StackResources, StaticConfigV4};
-use embassy_time::Timer;
+use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
 use esp_hal::clock::CpuClock;
 use esp_hal::mcpwm::operator::PwmPinConfig;
@@ -22,19 +23,20 @@ use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 use esp_radio::wifi::{CountryInfo, OperatingClass};
+use heapless::Vec;
 
 use crate::wifi::{
-    AUTH_METHOD, GATEWAY_IP, MAX_CONNECTIONS, PASSWORD, RADIO, SSID, STACK_RESOURCES, connection,
-    handle_connection, net_task,
+    AUTH_METHOD, BUFFER_SIZE, GATEWAY_IP, MAX_CONNECTIONS, PASSWORD, RADIO, READ_BUFFER, RX_BUFFER,
+    SSID, STACK_RESOURCES, TX_BUFFER, controller_task, handle_connection, net_task,
 };
 
 extern crate alloc;
 
 const FREQUENCY: Rate = Rate::from_hz(50);
-// We can configure this to whatever we like.
-// Setting it to 99 allows us to set duty cycle in percentages.
+/// We can configure this to whatever we like.
+/// Setting it to 99 allows us to set duty cycle in percentages.
 const MAX_DUTY: u16 = 99;
-// 5% of max duty
+/// 5% of max duty
 const STOP_DUTY: u16 = 5;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
@@ -43,20 +45,19 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 #[allow(
     clippy::large_stack_frames,
-    reason = "it's not unusual to allocate larger buffers etc. in main"
+    reason = "main is the only place you should be allowed to allocate large buffers."
 )]
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
-    // generator version: 1.2.0
-
     esp_println::logger::init_logger_from_env();
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
-    // COEX needs more RAM - so we've added some more
-    esp_alloc::heap_allocator!(size: 64 * 1024);
+    // If you ever decide to use COEX (wifi and bluetooth at the same time)
+    // then uncomment this line.
+    // esp_alloc::heap_allocator!(size: 64 * 1024);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
@@ -75,6 +76,7 @@ async fn main(spawner: Spawner) -> ! {
     let net_config = embassy_net::Config::ipv4_static(StaticConfigV4 {
         address: Ipv4Cidr::new(GATEWAY_IP, 24),
         gateway: Some(GATEWAY_IP),
+        // I would make the StaticConfigV4 a const, but embassy_net is limited to heapless v0.8.0 so I can't initialize this in a const context.
         dns_servers: Default::default(),
     });
     let rng = Rng::new();
@@ -99,6 +101,13 @@ async fn main(spawner: Spawner) -> ! {
         .set_config(&wifi_config)
         .expect("Failed to set Wifi config");
 
+    // Initialize TCP socket
+    let rx_buffer = RX_BUFFER.init_with(|| Vec::from_array([0u8; BUFFER_SIZE]));
+    let tx_buffer = TX_BUFFER.init_with(|| Vec::from_array([0u8; BUFFER_SIZE]));
+    let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer);
+    socket.set_timeout(Some(Duration::from_secs(10)));
+    let buffer: &mut Vec<u8, _> = READ_BUFFER.init_with(|| Vec::from_array([0u8; BUFFER_SIZE]));
+
     // initialize PWM
     let clock_cfg = PeripheralClockConfig::with_frequency(FREQUENCY)
         .expect("Failed to create PeripheralClockConfig");
@@ -118,9 +127,9 @@ async fn main(spawner: Spawner) -> ! {
     pwm_pin.set_timestamp(STOP_DUTY);
 
     // Spawn tasks
-    spawner.must_spawn(connection(wifi_controller));
+    spawner.must_spawn(controller_task(wifi_controller));
     spawner.must_spawn(net_task(runner));
-    spawner.must_spawn(handle_connection(stack, pwm_pin));
+    spawner.must_spawn(handle_connection(socket, buffer, pwm_pin));
 
     loop {
         Timer::after_secs(1).await;

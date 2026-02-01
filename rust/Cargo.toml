@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["host_tui", "messages"]
+members = ["host_tui", "sc_messages"]
 exclude = ["cross/*"]
 
 [workspace.package]
@@ -10,3 +10,10 @@ license = "MIT"
 [workspace.dependencies]
 serde = { version = "1.0.228", default-features = false }
 postcard = { version = "1.1.3", default-features = false }
+ratatui = "0.30.0"
+color-eyre = "0.6.5"
+crossterm = "0.29.0"
+futures = "0.3.31"
+tokio = { version = "1.49.0", features = ["full"] }
+bytes = "1.11.0"
+chrono = "0.4.43"

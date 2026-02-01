@@ -1,12 +1,25 @@
-#![cfg_attr(not(test), no_std)]
+#![no_std]
+#[cfg(feature = "std")]
+extern crate std;
 
+use core::fmt::{Display, Formatter, Result};
 use serde::{Deserialize, Serialize};
 
 /// Messages between the host PC and the microcontroller.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Message {
-    /// Set a duty cycle between 0 and 99.
-    SetDutyCycle(u8),
+    /// From PC to MCU: Set a duty cycle between 0 and 99.
+    ///
+    /// From MCU to PC: The current duty cycle between 0 and 99.
+    DutyCycle(u8),
+}
+
+impl Display for Message {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            Message::DutyCycle(duty) => write!(f, "Set duty cycle to: {}", duty),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -18,7 +31,7 @@ mod test {
     #[test]
     fn test_re_deserialize() {
         for duty in 0..u8::MAX {
-            let msg = Message::SetDutyCycle(duty);
+            let msg = Message::DutyCycle(duty);
             let send = to_vec::<Message, 64>(&msg).unwrap();
             for (i, _) in send
                 .iter()
@@ -29,7 +42,7 @@ mod test {
                 let error = from_bytes::<Message>(&send_clone[..i]);
                 assert!(matches!(error, Err(Error::DeserializeUnexpectedEnd)));
                 let output = from_bytes::<Message>(&send_clone);
-                assert!(matches!(output, Ok(Message::SetDutyCycle(out_duty)) if out_duty == duty));
+                assert!(matches!(output, Ok(Message::DutyCycle(out_duty)) if out_duty == duty));
             }
         }
     }
