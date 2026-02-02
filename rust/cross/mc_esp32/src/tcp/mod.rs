@@ -15,39 +15,34 @@ use sc_messages::Message;
 use static_cell::StaticCell;
 use zeroize::Zeroize;
 
-use crate::wifi::error::ReadError;
+use crate::tcp::error::ReadError;
 
-pub(crate) const GATEWAY_IP: Ipv4Addr = Ipv4Addr::new(192, 168, 2, 1);
-pub(crate) const PORT: u16 = 8080;
-pub(crate) const IP_LISTEN_ENDPOINT: IpListenEndpoint = IpListenEndpoint {
+pub const GATEWAY_IP: Ipv4Addr = Ipv4Addr::new(192, 168, 2, 1);
+pub const PORT: u16 = 8080;
+pub const IP_LISTEN_ENDPOINT: IpListenEndpoint = IpListenEndpoint {
     addr: None,
     port: PORT,
 };
 
-// Do not hardcode sensitive information like this.
-// Instead, pass in the variables as environment variables when you compile, like this:
-// SSID=_ PASSWORD=_ cargo run --release
-pub(crate) const SSID: &str = env!("SSID");
-pub(crate) const PASSWORD: &str = env!("PASSWORD");
-pub(crate) const AUTH_METHOD: AuthMethod = AuthMethod::Wpa3Personal;
-pub(crate) const MAX_CONNECTIONS: u16 = 1;
+pub const AUTH_METHOD: AuthMethod = AuthMethod::Wpa3Personal;
+pub const MAX_CONNECTIONS: u16 = 1;
 
 // Static resources
 /// The radio must be made static so Rust doesn't think it can ever be dropped.
-pub(crate) static RADIO: StaticCell<Controller> = StaticCell::new();
+pub static RADIO: StaticCell<Controller> = StaticCell::new();
 /// We only use 1 socket right now
-pub(crate) static STACK_RESOURCES: StaticCell<StackResources<1>> = StaticCell::new();
+pub static STACK_RESOURCES: StaticCell<StackResources<1>> = StaticCell::new();
 // The config can be made static to avoid String reallocation upon wifi restart.
 // pub(crate) static WIFI_CONFIG: StaticCell<ModeConfig> = StaticCell::new();
 
-pub(crate) const BUFFER_SIZE: usize = 64;
-pub(crate) static RX_BUFFER: StaticCell<Vec<u8, BUFFER_SIZE>> = StaticCell::new();
-pub(crate) static TX_BUFFER: StaticCell<Vec<u8, BUFFER_SIZE>> = StaticCell::new();
-pub(crate) static READ_BUFFER: StaticCell<Vec<u8, BUFFER_SIZE>> = StaticCell::new();
+pub const BUFFER_SIZE: usize = 64;
+pub static RX_BUFFER: StaticCell<Vec<u8, BUFFER_SIZE>> = StaticCell::new();
+pub static TX_BUFFER: StaticCell<Vec<u8, BUFFER_SIZE>> = StaticCell::new();
+pub static READ_BUFFER: StaticCell<Vec<u8, BUFFER_SIZE>> = StaticCell::new();
 
 /// This task restarts the wifi 5 seconds after it stops.
 #[embassy_executor::task]
-pub(crate) async fn controller_task(mut wifi_controller: WifiController<'static>) {
+pub async fn controller_task(mut wifi_controller: WifiController<'static>) {
     println!("starting connection loop");
     loop {
         match wifi_controller.start_async().await {
@@ -65,7 +60,7 @@ pub(crate) async fn controller_task(mut wifi_controller: WifiController<'static>
     }
 }
 
-pub(crate) async fn recv_message<'a>(
+pub async fn recv_message<'a>(
     socket: &mut TcpSocket<'a>,
     buffer: &mut Vec<u8, BUFFER_SIZE>,
 ) -> Result<Message, ReadError> {
@@ -97,7 +92,7 @@ pub(crate) async fn recv_message<'a>(
     result
 }
 
-pub(crate) async fn send_message<'a>(
+pub async fn send_message<'a>(
     message: Message,
     socket: &mut TcpSocket<'a>,
     buffer: &mut Vec<u8, BUFFER_SIZE>,
@@ -115,6 +110,6 @@ pub(crate) async fn send_message<'a>(
 }
 
 #[embassy_executor::task]
-pub(crate) async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
+pub async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
     runner.run().await;
 }

@@ -7,8 +7,6 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-mod wifi;
-
 use embassy_executor::Spawner;
 use embassy_net::tcp::TcpSocket;
 use embassy_net::{Ipv4Cidr, StackResources, StaticConfigV4};
@@ -26,13 +24,19 @@ use esp_radio::wifi::{CountryInfo, OperatingClass};
 use heapless::Vec;
 use sc_messages::Message;
 
-use crate::wifi::{
+use mc_esp32::tcp::{
     AUTH_METHOD, BUFFER_SIZE, GATEWAY_IP, IP_LISTEN_ENDPOINT, MAX_CONNECTIONS, PASSWORD, RADIO,
     READ_BUFFER, RX_BUFFER, SSID, STACK_RESOURCES, TX_BUFFER, controller_task, net_task,
     recv_message, send_message,
 };
 
 extern crate alloc;
+
+// Do not hardcode sensitive information like this.
+// Instead, pass in the variables as environment variables when you compile, like this:
+// SSID=_ PASSWORD=_ cargo run --release
+const SSID: &str = env!("SSID");
+const PASSWORD: &str = env!("PASSWORD");
 
 const FREQUENCY: Rate = Rate::from_hz(50);
 /// We can configure this to whatever we like.
