@@ -120,7 +120,7 @@ async fn await_stream_messages(
             Ok(_) => {
                 let mut written_chunk = buffer.split();
                 // We must search for 0 before deserializing because from_bytes_cobs mutates the slice regardless of success.
-                if let Some(idx) = written_chunk.iter().position(|byte| *byte == 0u8) {
+                while let Some(idx) = written_chunk.iter().position(|byte| *byte == 0u8) {
                     let mut msg_chunk = written_chunk.split_to(idx);
                     match from_bytes_cobs::<Message>(&mut msg_chunk) {
                         Ok(message) => {
