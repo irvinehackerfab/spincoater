@@ -17,6 +17,7 @@ impl ReadError {
                 println!("Postcard error: {error}. Closing connection.");
             }
         }
+        // This may not be necessary in every case, but I still need to test this.
         socket.abort();
         let _ = socket.flush().await;
     }
