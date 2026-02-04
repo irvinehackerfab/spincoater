@@ -35,6 +35,10 @@ const DEV_ADDRESS: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 8080);
 #[tokio::main]
 #[cfg(debug_assertions)]
 async fn main() -> color_eyre::Result<()> {
+    // Only imported when debug_assertions are enabled
+    use crate::event::BUFFER_SIZE;
+    use tokio::io::AsyncWriteExt;
+
     color_eyre::install()?;
 
     // Open fake MCU socket
@@ -44,16 +48,25 @@ async fn main() -> color_eyre::Result<()> {
         let listener = socket.listen(1).unwrap();
         'connection: loop {
             let mut stream = listener.accept().await.unwrap().0;
+            let mut buffer = [1u8; BUFFER_SIZE];
+            let mut pos = 0;
             loop {
-                let mut buffer = [0u8; 64];
-                match stream.read(&mut buffer).await {
+                match stream.read(&mut buffer[pos..]).await {
                     Ok(0) => continue 'connection,
-                    Ok(_) => {}
+                    Ok(len) => {
+                        pos += len;
+                        if buffer.contains(&0u8) {
+                            stream.write_all(&buffer[..pos]).await.unwrap();
+                            buffer[..pos].iter_mut().for_each(|byte| *byte = 1u8);
+                            pos = 0;
+                        }
+                    }
                     Err(_) => continue 'connection,
                 }
             }
         }
     });
+
     // Open fake connection
     let stream = TcpStream::connect(DEV_ADDRESS).await?;
     let terminal = ratatui::init();

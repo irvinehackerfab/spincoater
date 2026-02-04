@@ -1,6 +1,6 @@
 use crate::event::{EventHandler, TuiEvent};
 use chrono::{DateTime, Local};
-use color_eyre::eyre::OptionExt;
+use color_eyre::{Result, eyre::OptionExt};
 use crossterm::event::Event;
 use ratatui::{
     DefaultTerminal,
@@ -35,10 +35,10 @@ impl App {
     }
 
     /// Run the application's main loop.
-    pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
+    pub async fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         while self.running {
             terminal.draw(|frame| frame.render_widget(&mut self, frame.area()))?;
-            match self.events.next().await? {
+            match self.events.next().await?? {
                 TuiEvent::Crossterm(event) => match event {
                     Event::Key(key_event)
                         if key_event.kind == crossterm::event::KeyEventKind::Press =>
@@ -55,7 +55,7 @@ impl App {
     }
 
     /// Handles the key events and updates the state of [`App`].
-    async fn handle_key_events(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
+    async fn handle_key_events(&mut self, key_event: KeyEvent) -> Result<()> {
         match key_event.code {
             KeyCode::Esc | KeyCode::Char('q') => self.running = false,
             KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {

@@ -24,15 +24,22 @@ impl Display for Message {
 
 #[cfg(test)]
 mod test {
+    use std::println;
+
     use super::*;
-    use postcard::{Error, from_bytes, to_vec};
+    use postcard::{Error, from_bytes, from_bytes_cobs, to_vec, to_vec_cobs};
+
+    // Keep this up to date with ../cross/mc_esp32/src/bin/wifi_pwm/wifi/mod.rs BUFFER_SIZE
+    const BUFFER_SIZE: usize = 64;
 
     /// The correct message must be obtainable from multiple deserialization attempts on the same buffer.
+    ///
+    /// This test guarantees that we can use the [read](https://docs.embassy.dev/embassy-net/git/default/tcp/struct.TcpSocket.html#method.read) method.
     #[test]
     fn test_re_deserialize() {
         for duty in 0..u8::MAX {
             let msg = Message::DutyCycle(duty);
-            let send = to_vec::<Message, 64>(&msg).unwrap();
+            let send = to_vec::<Message, BUFFER_SIZE>(&msg).unwrap();
             for (i, _) in send
                 .iter()
                 .enumerate()
@@ -44,6 +51,21 @@ mod test {
                 let output = from_bytes::<Message>(&send_clone);
                 assert!(matches!(output, Ok(Message::DutyCycle(out_duty)) if out_duty == duty));
             }
+        }
+    }
+
+    /// Ensures that a COBS encoded message fits in the buffer size used by all spin coater programs.
+    ///
+    /// This test guarantees that we can use the [read_with](https://docs.embassy.dev/embassy-net/git/default/tcp/struct.TcpSocket.html#method.read_with)
+    /// and [write_with](https://docs.embassy.dev/embassy-net/git/default/tcp/struct.TcpSocket.html#method.write_with) methods.
+    #[test]
+    fn test_fits_in_buffer() {
+        for duty in 0..u8::MAX {
+            let msg = Message::DutyCycle(duty);
+            let mut send = to_vec_cobs::<Message, BUFFER_SIZE>(&msg).unwrap();
+            println!("Cobs message is {} bytes long.", send.len());
+            let output = from_bytes_cobs::<Message>(&mut send);
+            assert!(matches!(output, Ok(Message::DutyCycle(out_duty)) if out_duty == duty));
         }
     }
 }

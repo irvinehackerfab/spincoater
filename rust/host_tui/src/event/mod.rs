@@ -1,7 +1,7 @@
 use bytes::{BufMut, BytesMut};
-use color_eyre::eyre::OptionExt;
+use color_eyre::{Result, eyre::OptionExt};
 use futures::{FutureExt, StreamExt};
-use postcard::{Error, from_bytes};
+use postcard::from_bytes_cobs;
 use ratatui::crossterm::event::Event as CrosstermEvent;
 use sc_messages::Message;
 use tokio::{
@@ -12,12 +12,11 @@ use tokio::{
     },
     sync::mpsc::{self, UnboundedSender},
 };
-use zeroize::Zeroize;
 
 use crate::app::MessageInfo;
 
 // Keep this up to date with ../cross/mc_esp32/src/bin/wifi_pwm/wifi/mod.rs BUFFER_SIZE
-const BUFFER_SIZE: usize = 64;
+pub const BUFFER_SIZE: usize = 64;
 
 /// Representation of all possible events.
 #[derive(Clone, Debug)]
@@ -34,7 +33,7 @@ pub enum TuiEvent {
 #[derive(Debug)]
 pub struct EventHandler {
     /// Event receiver channel.
-    from_tasks: mpsc::UnboundedReceiver<TuiEvent>,
+    from_tasks: mpsc::UnboundedReceiver<Result<TuiEvent>>,
     to_mcu: OwnedWriteHalf,
     send_buffer: [u8; BUFFER_SIZE],
 }
@@ -65,7 +64,7 @@ impl EventHandler {
     /// This function returns an error if the sender channel is disconnected. This can happen if an
     /// error occurs in the event thread. In practice, this should not happen unless there is a
     /// problem with the underlying terminal.
-    pub async fn next(&mut self) -> color_eyre::Result<TuiEvent> {
+    pub async fn next(&mut self) -> Result<Result<TuiEvent>> {
         self.from_tasks
             .recv()
             .await
@@ -73,22 +72,21 @@ impl EventHandler {
     }
 
     /// Sends a message to the MCU, and returns the message along with the time at which it finished sending.
-    pub async fn send(&mut self, message: Message) -> color_eyre::Result<MessageInfo> {
-        let written_chunk = postcard::to_slice(&message, &mut self.send_buffer)?;
+    pub async fn send(&mut self, message: Message) -> Result<MessageInfo> {
+        let written_chunk = postcard::to_slice_cobs(&message, &mut self.send_buffer)?;
         self.to_mcu.write_all(written_chunk).await?;
-        written_chunk.zeroize();
         Ok(MessageInfo::to_mcu(message))
     }
 }
 
-async fn await_crossterm_events(to_handler: UnboundedSender<TuiEvent>) {
+async fn await_crossterm_events(to_handler: UnboundedSender<Result<TuiEvent>>) {
     let mut reader = crossterm::event::EventStream::new();
     loop {
         match reader.next().fuse().await {
             Some(result) => match result {
                 Ok(event) => {
                     // If the channel is closed, this task is done.
-                    if to_handler.send(TuiEvent::Crossterm(event)).is_err() {
+                    if to_handler.send(Ok(TuiEvent::Crossterm(event))).is_err() {
                         return;
                     }
                 }
@@ -104,40 +102,51 @@ async fn await_crossterm_events(to_handler: UnboundedSender<TuiEvent>) {
     }
 }
 
-async fn await_stream_messages(mut from_mcu: OwnedReadHalf, to_handler: UnboundedSender<TuiEvent>) {
+/// Reads bytes into a buffer until a complete message is received and sends the message to the handler (and repeats forever).
+///
+/// The message must be [COBS encoded](https://docs.rs/postcard/latest/postcard/ser_flavors/struct.Cobs.html)
+/// and must fit in [BUFFER_SIZE] bytes.
+async fn await_stream_messages(
+    mut from_mcu: OwnedReadHalf,
+    to_handler: UnboundedSender<Result<TuiEvent>>,
+) {
     let mut buffer = BytesMut::with_capacity(BUFFER_SIZE);
     loop {
-        debug_assert!(buffer.has_remaining_mut());
+        // BUFFER_SIZE is too small if we're filling up the buffer.
+        assert!(buffer.has_remaining_mut());
         match from_mcu.read_buf(&mut buffer).await {
             // End of file
             Ok(0) => return,
             Ok(_) => {
                 let mut written_chunk = buffer.split();
-                match from_bytes::<Message>(&written_chunk) {
-                    Ok(message) => {
-                        // Send message
-                        if to_handler
-                            .send(TuiEvent::Wireless(MessageInfo::from_mcu(message)))
-                            .is_err()
-                        {
-                            // If the channel is closed, this task is done.
+                // O(n) search is worth it because it eliminates the need for copying the buffer.
+                if written_chunk.contains(&0u8) {
+                    match from_bytes_cobs::<Message>(&mut written_chunk) {
+                        Ok(message) => {
+                            // Send message
+                            if to_handler
+                                .send(Ok(TuiEvent::Wireless(MessageInfo::from_mcu(message))))
+                                .is_err()
+                            {
+                                // If the channel is closed, this task is done.
+                                return;
+                            }
+                            // Clear the written data so the buffer can be reused.
+                            written_chunk.clear();
+                        }
+                        Err(error) => {
+                            // If deserialization fails, the task is done.
+                            let _ = to_handler.send(Err(error.into()));
                             return;
                         }
-                        // Clear the written data so the buffer can be reused.
-                        written_chunk.clear();
-                    }
-                    // We don't need to update buffer position because BytesMut handles it for us.
-                    Err(Error::DeserializeUnexpectedEnd) => {}
-                    Err(error) => {
-                        eprintln!("Deserialization error: {error}");
-                        panic!("See previous message");
                     }
                 }
                 buffer.unsplit(written_chunk);
             }
             Err(error) => {
-                eprintln!("Wireless message error: {error}");
-                panic!("See previous message");
+                // If reading fails, the task is done.
+                let _ = to_handler.send(Err(error.into()));
+                return;
             }
         }
     }

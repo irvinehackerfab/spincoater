@@ -21,12 +21,11 @@ use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 use esp_println::println;
 use esp_radio::wifi::{CountryInfo, OperatingClass};
-use heapless::Vec;
 use sc_messages::Message;
 
 use mc_esp32::tcp::{
-    AUTH_METHOD, BUFFER_SIZE, GATEWAY_IP, IP_LISTEN_ENDPOINT, MAX_CONNECTIONS, RADIO, READ_BUFFER,
-    RX_BUFFER, STACK_RESOURCES, TX_BUFFER, controller_task, net_task, recv_message, send_message,
+    AUTH_METHOD, BUFFER_SIZE, GATEWAY_IP, IP_LISTEN_ENDPOINT, MAX_CONNECTIONS, RADIO, RX_BUFFER,
+    STACK_RESOURCES, TX_BUFFER, controller_task, net_task, recv_message, send_message,
 };
 
 extern crate alloc;
@@ -112,11 +111,10 @@ async fn main(spawner: Spawner) -> ! {
     spawner.must_spawn(net_task(runner));
 
     // Initialize TCP socket
-    let rx_buffer = RX_BUFFER.init_with(|| Vec::from_array([0u8; BUFFER_SIZE]));
-    let tx_buffer = TX_BUFFER.init_with(|| Vec::from_array([0u8; BUFFER_SIZE]));
+    let rx_buffer = RX_BUFFER.init_with(|| [0u8; BUFFER_SIZE]);
+    let tx_buffer = TX_BUFFER.init_with(|| [0u8; BUFFER_SIZE]);
     let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer);
     socket.set_timeout(Some(Duration::from_secs(10)));
-    let buffer: &mut Vec<u8, _> = READ_BUFFER.init_with(|| Vec::from_array([0u8; BUFFER_SIZE]));
 
     // initialize PWM
     let clock_cfg = PeripheralClockConfig::with_prescaler(u8::MAX);
@@ -144,7 +142,7 @@ async fn main(spawner: Spawner) -> ! {
             continue;
         }
         loop {
-            match recv_message(&mut socket, buffer).await {
+            match recv_message(&mut socket).await {
                 Ok(message) => {
                     match message {
                         Message::DutyCycle(duty) => {
@@ -153,7 +151,7 @@ async fn main(spawner: Spawner) -> ! {
                         }
                     }
                     // Send the message back
-                    if let Err(err) = send_message(message, &mut socket, buffer).await {
+                    if let Err(err) = send_message(message, &mut socket).await {
                         break err.handle(&mut socket).await;
                     }
                 }
