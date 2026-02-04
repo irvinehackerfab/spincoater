@@ -66,19 +66,18 @@ pub async fn recv_message<'a>(socket: &mut TcpSocket<'a>) -> Result<Message, Rea
         assert!(socket.recv_queue() < BUFFER_SIZE);
         if let Some(message) = socket
             .read_with(|written_chunk| {
-                // O(n) search is worth it because it eliminates the need for copying the buffer.
-                match written_chunk.contains(&0u8) {
-                    true => {
+                // We must search for 0 before deserializing because from_bytes_cobs mutates the slice regardless of success.
+                match written_chunk.iter().position(|byte| *byte == 0u8) {
+                    Some(idx) => {
                         // Attempt to deserialize.
                         let deserialization_result =
-                            postcard::from_bytes_cobs::<Message>(written_chunk);
+                            postcard::from_bytes_cobs::<Message>(&mut written_chunk[..idx + 1]);
                         // Wraps the message in an Option if there is a message.
                         let resulting_option = deserialization_result.map(Option::from);
                         // Tell the socket to clear the bytes we used and return our result.
-                        (written_chunk.len(), resulting_option)
+                        (idx + 1, resulting_option)
                     }
-                    // Do nothing and try again next time.
-                    false => (0, Ok(None)),
+                    None => (0, Ok(None)),
                 }
             })
             .await??

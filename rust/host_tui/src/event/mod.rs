@@ -119,9 +119,10 @@ async fn await_stream_messages(
             Ok(0) => return,
             Ok(_) => {
                 let mut written_chunk = buffer.split();
-                // O(n) search is worth it because it eliminates the need for copying the buffer.
-                if written_chunk.contains(&0u8) {
-                    match from_bytes_cobs::<Message>(&mut written_chunk) {
+                // We must search for 0 before deserializing because from_bytes_cobs mutates the slice regardless of success.
+                if let Some(idx) = written_chunk.iter().position(|byte| *byte == 0u8) {
+                    let mut msg_chunk = written_chunk.split_to(idx);
+                    match from_bytes_cobs::<Message>(&mut msg_chunk) {
                         Ok(message) => {
                             // Send message
                             if to_handler
@@ -131,8 +132,6 @@ async fn await_stream_messages(
                                 // If the channel is closed, this task is done.
                                 return;
                             }
-                            // Clear the written data so the buffer can be reused.
-                            written_chunk.clear();
                         }
                         Err(error) => {
                             // If deserialization fails, the task is done.
@@ -140,6 +139,9 @@ async fn await_stream_messages(
                             return;
                         }
                     }
+                    // Clear the written data so the buffer can be reused.
+                    msg_chunk.clear();
+                    written_chunk.unsplit(msg_chunk);
                 }
                 buffer.unsplit(written_chunk);
             }
