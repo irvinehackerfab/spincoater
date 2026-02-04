@@ -13,7 +13,6 @@ use heapless::Vec;
 use postcard::{self, Error};
 use sc_messages::Message;
 use static_cell::StaticCell;
-use zeroize::Zeroize;
 
 use crate::tcp::error::ReadError;
 
@@ -24,7 +23,7 @@ pub const IP_LISTEN_ENDPOINT: IpListenEndpoint = IpListenEndpoint {
     port: PORT,
 };
 
-pub const AUTH_METHOD: AuthMethod = AuthMethod::Wpa3Personal;
+pub const AUTH_METHOD: AuthMethod = AuthMethod::Wpa2Personal;
 pub const MAX_CONNECTIONS: u16 = 1;
 
 // Static resources
@@ -66,30 +65,29 @@ pub async fn recv_message<'a>(
 ) -> Result<Message, ReadError> {
     // Position in the buffer for the next read to start from.
     let mut position = 0;
-    let result = loop {
+
+    loop {
         if position >= buffer.len() {
             panic!(
                 "Not enough space in the buffer to receive the message. Please increase BUFFER_SIZE."
             )
         }
         match socket.read(&mut buffer[position..]).await {
-            Ok(0) => break Err(ReadError::SocketClosed),
+            Ok(0) => return Err(ReadError::SocketClosed),
             Ok(len) => {
                 // Read up to the end of the written segment.
                 match postcard::from_bytes::<Message>(&buffer[..(position + len)]) {
                     Ok(message) => {
-                        break Ok(message);
+                        return Ok(message);
                     }
                     // Case: There is more to read, so update position and keep reading.
                     Err(Error::DeserializeUnexpectedEnd) => position += len,
-                    Err(err) => break Err(err.into()),
+                    Err(err) => return Err(err.into()),
                 }
             }
-            Err(err) => break Err(err.into()),
+            Err(err) => return Err(err.into()),
         }
-    };
-    buffer.zeroize();
-    result
+    }
 }
 
 pub async fn send_message<'a>(
@@ -105,7 +103,6 @@ pub async fn send_message<'a>(
         }
     })?;
     socket.write_all(written_chunk).await?;
-    buffer.zeroize();
     Ok(())
 }
 

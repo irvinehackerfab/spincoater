@@ -25,9 +25,8 @@ use heapless::Vec;
 use sc_messages::Message;
 
 use mc_esp32::tcp::{
-    AUTH_METHOD, BUFFER_SIZE, GATEWAY_IP, IP_LISTEN_ENDPOINT, MAX_CONNECTIONS, PASSWORD, RADIO,
-    READ_BUFFER, RX_BUFFER, SSID, STACK_RESOURCES, TX_BUFFER, controller_task, net_task,
-    recv_message, send_message,
+    AUTH_METHOD, BUFFER_SIZE, GATEWAY_IP, IP_LISTEN_ENDPOINT, MAX_CONNECTIONS, RADIO, READ_BUFFER,
+    RX_BUFFER, STACK_RESOURCES, TX_BUFFER, controller_task, net_task, recv_message, send_message,
 };
 
 extern crate alloc;
@@ -35,6 +34,7 @@ extern crate alloc;
 // Do not hardcode sensitive information like this.
 // Instead, pass in the variables as environment variables when you compile, like this:
 // SSID=_ PASSWORD=_ cargo run --release
+// Note: Password must be 8-64 characters.
 const SSID: &str = env!("SSID");
 const PASSWORD: &str = env!("PASSWORD");
 
@@ -119,8 +119,7 @@ async fn main(spawner: Spawner) -> ! {
     let buffer: &mut Vec<u8, _> = READ_BUFFER.init_with(|| Vec::from_array([0u8; BUFFER_SIZE]));
 
     // initialize PWM
-    let clock_cfg = PeripheralClockConfig::with_frequency(FREQUENCY)
-        .expect("Failed to create PeripheralClockConfig");
+    let clock_cfg = PeripheralClockConfig::with_prescaler(u8::MAX);
     let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
     // connect operator0 to timer0
     mcpwm.operator0.set_timer(&mcpwm.timer0);
@@ -144,20 +143,22 @@ async fn main(spawner: Spawner) -> ! {
             println!("Accept error: {:?}", err);
             continue;
         }
-        match recv_message(&mut socket, buffer).await {
-            Ok(message) => {
-                match message {
-                    Message::DutyCycle(duty) => {
-                        println!("Got Message::SetDutyCycle({duty})");
-                        pwm_pin.set_timestamp(duty as u16);
+        loop {
+            match recv_message(&mut socket, buffer).await {
+                Ok(message) => {
+                    match message {
+                        Message::DutyCycle(duty) => {
+                            println!("Got Message::SetDutyCycle({duty})");
+                            pwm_pin.set_timestamp(duty as u16);
+                        }
+                    }
+                    // Send the message back
+                    if let Err(err) = send_message(message, &mut socket, buffer).await {
+                        break err.handle(&mut socket).await;
                     }
                 }
-                // Send the message back
-                if let Err(err) = send_message(message, &mut socket, buffer).await {
-                    err.handle(&mut socket).await;
-                }
+                Err(err) => break err.handle(&mut socket).await,
             }
-            Err(err) => err.handle(&mut socket).await,
         }
     }
 }

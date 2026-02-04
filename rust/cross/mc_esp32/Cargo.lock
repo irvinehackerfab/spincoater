@@ -1273,7 +1273,6 @@ dependencies = [
  "smoltcp",
  "static_cell",
  "trouble-host",
- "zeroize",
 ]
 
 [[package]]

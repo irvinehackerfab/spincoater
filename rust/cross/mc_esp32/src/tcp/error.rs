@@ -8,19 +8,17 @@ pub enum ReadError {
 }
 
 impl ReadError {
-    /// Prints errors out.
-    ///
-    /// If a serialization or deserialization message is received, the connection is aborted as well.
+    /// Prints errors out and aborts the TCP connection.
     pub async fn handle<'a>(self, socket: &mut TcpSocket<'a>) {
         match self {
             ReadError::SocketClosed => println!("Socket closed by peer."),
             ReadError::TCPError(error) => println!("TCP error: {error}."),
             ReadError::PostcardError(error) => {
                 println!("Postcard error: {error}. Closing connection.");
-                socket.abort();
-                let _ = socket.flush().await;
             }
         }
+        socket.abort();
+        let _ = socket.flush().await;
     }
 }
 
