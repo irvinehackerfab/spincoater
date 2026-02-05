@@ -65,6 +65,8 @@ fn linker_be_nice() {
 
     println!(
         "cargo:rustc-link-arg=-Wl,--error-handling-script={}",
-        std::env::current_exe().unwrap().display()
+        std::env::current_exe()
+            .expect("Failed to get the current exe path")
+            .display()
     );
 }

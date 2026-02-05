@@ -71,7 +71,7 @@ async fn left_button(mut button: Button, pwm: &'static PWMMutex) {
         // Stop
         {
             let mut pwm = pwm.lock().await;
-            let pwm = pwm.as_mut().unwrap();
+            let pwm = pwm.as_mut().expect("PWM should be initialized");
             pwm.set_duty(0, STOP_DUTY);
         }
         println!("Duty: {}", STOP_DUTY);
@@ -85,7 +85,7 @@ async fn right_button(mut button: Button, pwm: &'static PWMMutex) {
         // Set PWM to an increasing value
         {
             let mut pwm = pwm.lock().await;
-            let pwm = pwm.as_mut().unwrap();
+            let pwm = pwm.as_mut().expect("PWM should be initialized");
             // Subtract b/c we're controlling duty cycle low
             let new_duty = pwm.duty(0) - 100;
             pwm.set_duty(0, new_duty);

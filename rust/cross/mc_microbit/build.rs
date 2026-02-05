@@ -16,11 +16,11 @@ use std::path::PathBuf;
 fn main() {
     // Put `memory.x` in our output directory and ensure it's
     // on the linker search path.
-    let out = &PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    let out = &PathBuf::from(env::var_os("OUT_DIR").expect("Failed to get out directory"));
     File::create(out.join("memory.x"))
-        .unwrap()
+        .expect("Failed to create file")
         .write_all(include_bytes!("memory.x"))
-        .unwrap();
+        .expect("Failed to write to file");
     println!("cargo:rustc-link-search={}", out.display());
 
     // By default, Cargo will re-run a build script whenever

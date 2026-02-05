@@ -35,6 +35,9 @@ impl App {
     }
 
     /// Run the application's main loop.
+    ///
+    /// # Errors
+    /// Returns an error if drawing to the terminal, receiving events or handling keystrokes fails.
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         while self.running {
             terminal.draw(|frame| frame.render_widget(&mut self, frame.area()))?;
@@ -43,7 +46,7 @@ impl App {
                     Event::Key(key_event)
                         if key_event.kind == crossterm::event::KeyEventKind::Press =>
                     {
-                        self.handle_key_events(key_event).await?
+                        self.handle_key_events(key_event).await?;
                     }
                     // We're only concerned with key presses right now.
                     _ => {}
@@ -59,7 +62,7 @@ impl App {
         match key_event.code {
             KeyCode::Esc | KeyCode::Char('q') => self.running = false,
             KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
-                self.running = false
+                self.running = false;
             }
             KeyCode::Up => self.commands_state.scroll_up_by(1),
             KeyCode::Down => self.commands_state.scroll_down_by(1),
@@ -94,6 +97,7 @@ pub struct MessageInfo {
 
 impl MessageInfo {
     /// Adds information to a message that was received from the MCU.
+    #[must_use]
     pub fn from_mcu(message: Message) -> Self {
         Self {
             message,
@@ -103,6 +107,7 @@ impl MessageInfo {
     }
 
     /// Adds information to a message right after it was sent to the MCU.
+    #[must_use]
     pub fn to_mcu(message: Message) -> Self {
         Self {
             message,

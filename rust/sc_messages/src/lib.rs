@@ -17,7 +17,7 @@ pub enum Message {
 impl Display for Message {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            Message::DutyCycle(duty) => write!(f, "Set duty cycle to: {}", duty),
+            Message::DutyCycle(duty) => write!(f, "Set duty cycle to: {duty}"),
         }
     }
 }
@@ -39,7 +39,7 @@ mod test {
     fn test_re_deserialize() {
         for duty in 0..u8::MAX {
             let msg = Message::DutyCycle(duty);
-            let send = to_vec::<Message, BUFFER_SIZE>(&msg).unwrap();
+            let send = to_vec::<Message, BUFFER_SIZE>(&msg).expect("Failed to serialize");
             for (i, _) in send
                 .iter()
                 .enumerate()
@@ -62,7 +62,7 @@ mod test {
     fn test_fits_in_buffer() {
         for duty in 0..u8::MAX {
             let msg = Message::DutyCycle(duty);
-            let mut send = to_vec_cobs::<Message, BUFFER_SIZE>(&msg).unwrap();
+            let mut send = to_vec_cobs::<Message, BUFFER_SIZE>(&msg).expect("Failed to serialize");
             println!("Cobs message is {} bytes long.", send.len());
             let output = from_bytes_cobs::<Message>(&mut send);
             assert!(matches!(output, Ok(Message::DutyCycle(out_duty)) if out_duty == duty));

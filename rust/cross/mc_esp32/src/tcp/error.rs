@@ -9,7 +9,7 @@ pub enum ReadError {
 
 impl ReadError {
     /// Prints errors out and aborts the TCP connection.
-    pub async fn handle<'a>(self, socket: &mut TcpSocket<'a>) {
+    pub async fn handle(self, socket: &mut TcpSocket<'_>) {
         match self {
             ReadError::SocketClosed => println!("Socket closed by peer."),
             ReadError::TCPError(error) => println!("TCP error: {error}."),

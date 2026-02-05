@@ -48,6 +48,11 @@ embassy-sync = { git = "https://github.com/embassy-rs/embassy.git", rev = "f35aa
 embassy-time = { git = "https://github.com/embassy-rs/embassy.git", rev = "f35aa4005a63e8d478b2b95aaa2bfb316b72dece" }
 embassy-time-driver = { git = "https://github.com/embassy-rs/embassy.git", rev = "f35aa4005a63e8d478b2b95aaa2bfb316b72dece" }
 
+[[bin]]
+name = "mc_microbit"
+test = false
+bench = false
+
 [profile.release]
 debug = 2
 lto = true
@@ -57,3 +62,10 @@ opt-level = 'z'
 debug = 2
 lto = true
 opt-level = "z"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"

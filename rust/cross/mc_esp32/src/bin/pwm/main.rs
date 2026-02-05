@@ -36,7 +36,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
     reason = "main is the only place you should be allowed to allocate large buffers."
 )]
 #[esp_rtos::main]
-async fn main(_spawner: Spawner) -> ! {
+async fn main(spawner: Spawner) -> ! {
     esp_println::logger::init_logger_from_env();
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());

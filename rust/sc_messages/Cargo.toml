@@ -13,3 +13,6 @@ sc_messages = { path = ".", features = ["std"] }
 
 [features]
 std = []
+
+[lints]
+workspace = true

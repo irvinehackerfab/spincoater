@@ -43,25 +43,33 @@ async fn main() -> color_eyre::Result<()> {
 
     // Open fake MCU socket
     tokio::spawn(async {
-        let socket = TcpSocket::new_v4().unwrap();
-        socket.bind(DEV_ADDRESS.into()).unwrap();
-        let listener = socket.listen(1).unwrap();
+        let socket = TcpSocket::new_v4().expect("Failed to create socket");
+        socket
+            .bind(DEV_ADDRESS.into())
+            .expect("Failed to bind socket");
+        let listener = socket.listen(1).expect("Failed to listen");
         'connection: loop {
-            let mut stream = listener.accept().await.unwrap().0;
+            let mut stream = listener
+                .accept()
+                .await
+                .expect("Failed to accept connection")
+                .0;
             let mut buffer = [1u8; BUFFER_SIZE];
             let mut pos = 0;
             loop {
                 match stream.read(&mut buffer[pos..]).await {
-                    Ok(0) => continue 'connection,
+                    Ok(0) | Err(_) => continue 'connection,
                     Ok(len) => {
                         pos += len;
                         if buffer.contains(&0u8) {
-                            stream.write_all(&buffer[..pos]).await.unwrap();
+                            stream
+                                .write_all(&buffer[..pos])
+                                .await
+                                .expect("Failed to write to stream");
                             buffer[..pos].iter_mut().for_each(|byte| *byte = 1u8);
                             pos = 0;
                         }
                     }
-                    Err(_) => continue 'connection,
                 }
             }
         }

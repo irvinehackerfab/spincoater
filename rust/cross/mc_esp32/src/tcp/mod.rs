@@ -59,8 +59,14 @@ pub async fn controller_task(mut wifi_controller: WifiController<'static>) {
 /// Reads the transmit buffer repeatedly until a complete message is found or an error occurs.
 ///
 /// The message must be [COBS encoded](https://docs.rs/postcard/latest/postcard/ser_flavors/struct.Cobs.html)
-/// and must fit in [BUFFER_SIZE] bytes.
-pub async fn recv_message<'a>(socket: &mut TcpSocket<'a>) -> Result<Message, ReadError> {
+/// and must fit in [`BUFFER_SIZE`] bytes.
+///
+/// # Errors
+/// Returns an error if deserialization or reading fails.
+///
+/// # Panics
+/// Panics if the socket's receive buffer has [`BUFFER_SIZE`] or more bytes queued.
+pub async fn recv_message(socket: &mut TcpSocket<'_>) -> Result<Message, ReadError> {
     loop {
         // BUFFER_SIZE is too small if we're filling up the buffer.
         assert!(socket.recv_queue() < BUFFER_SIZE);
@@ -92,11 +98,11 @@ pub async fn recv_message<'a>(socket: &mut TcpSocket<'a>) -> Result<Message, Rea
 /// Uses the transmit buffer repeatedly until a complete message can be sent or an error occurs.
 ///
 /// The message is [COBS encoded](https://docs.rs/postcard/latest/postcard/ser_flavors/struct.Cobs.html).
-/// The message must fit in [BUFFER_SIZE] bytes or else this method will never return.
-pub async fn send_message<'a>(
-    message: Message,
-    socket: &mut TcpSocket<'a>,
-) -> Result<(), ReadError> {
+/// The message must fit in [`BUFFER_SIZE`] bytes or else this method will never return.
+///
+/// # Errors
+/// Returns an error if serialization or writing fails.
+pub async fn send_message(message: Message, socket: &mut TcpSocket<'_>) -> Result<(), ReadError> {
     loop {
         if socket
             .write_with(

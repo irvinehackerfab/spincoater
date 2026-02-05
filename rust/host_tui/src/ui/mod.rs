@@ -67,10 +67,7 @@ impl App {
             ListItem::new(Text::from(format!(
                 "{} -- {}: {}",
                 msg.timestamp.format("%m-%d-%Y %H:%M:%S:%f"),
-                match msg.from_mcu {
-                    true => "From MCU",
-                    false => "To MCU",
-                },
+                if msg.from_mcu { "From MCU" } else { "To MCU" },
                 msg.message
             )))
         });

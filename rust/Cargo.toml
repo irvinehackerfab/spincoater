@@ -17,3 +17,10 @@ futures = "0.3.31"
 tokio = { version = "1.49.0", features = ["full"] }
 bytes = "1.11.0"
 chrono = "0.4.43"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"

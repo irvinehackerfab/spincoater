@@ -72,6 +72,9 @@ impl EventHandler {
     }
 
     /// Sends a message to the MCU, and returns the message along with the time at which it finished sending.
+    ///
+    /// # Errors
+    /// Returns an error if deserialization fails, or writing to the TCP socket fails.
     pub async fn send(&mut self, message: Message) -> Result<MessageInfo> {
         let written_chunk = postcard::to_slice_cobs(&message, &mut self.send_buffer)?;
         self.to_mcu.write_all(written_chunk).await?;
@@ -105,7 +108,7 @@ async fn await_crossterm_events(to_handler: UnboundedSender<Result<TuiEvent>>) {
 /// Reads bytes into a buffer until a complete message is received and sends the message to the handler (and repeats forever).
 ///
 /// The message must be [COBS encoded](https://docs.rs/postcard/latest/postcard/ser_flavors/struct.Cobs.html)
-/// and must fit in [BUFFER_SIZE] bytes.
+/// and must fit in [`BUFFER_SIZE`] bytes.
 async fn await_stream_messages(
     mut from_mcu: OwnedReadHalf,
     to_handler: UnboundedSender<Result<TuiEvent>>,
@@ -176,7 +179,7 @@ mod test {
     fn test_to_slice() {
         let mut buf = [0u8; 32];
 
-        let used = postcard::to_slice(&true, &mut buf).unwrap();
+        let used = postcard::to_slice(&true, &mut buf).expect("Failed to serialize");
         assert_eq!(used, &[0x01]);
     }
 }
