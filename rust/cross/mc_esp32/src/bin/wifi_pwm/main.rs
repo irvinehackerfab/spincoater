@@ -81,11 +81,11 @@ async fn main(spawner: Spawner) -> ! {
     let net_config = embassy_net::Config::ipv4_static(StaticConfigV4 {
         address: Ipv4Cidr::new(GATEWAY_IP, 24),
         gateway: Some(GATEWAY_IP),
-        // I would make the StaticConfigV4 a const, but embassy_net is limited to heapless v0.8.0 so I can't initialize this in a const context.
+        // TODO: I would make the StaticConfigV4 a const, but embassy_net is limited to heapless v0.8.0 so I can't initialize this in a const context.
         dns_servers: Default::default(),
     });
     let rng = Rng::new();
-    let seed = (rng.random() as u64) << 32 | rng.random() as u64;
+    let seed = u64::from(rng.random()) << 32 | u64::from(rng.random());
     // Init network stack
     let (stack, runner) = embassy_net::new(
         interfaces.ap,
@@ -147,7 +147,7 @@ async fn main(spawner: Spawner) -> ! {
                     match message {
                         Message::DutyCycle(duty) => {
                             println!("Got Message::SetDutyCycle({duty})");
-                            pwm_pin.set_timestamp(duty as u16);
+                            pwm_pin.set_timestamp(u16::from(duty));
                         }
                     }
                     // Send the message back
