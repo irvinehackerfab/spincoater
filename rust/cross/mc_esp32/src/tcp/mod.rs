@@ -66,16 +66,18 @@ pub async fn recv_message<'a>(socket: &mut TcpSocket<'a>) -> Result<Message, Rea
         assert!(socket.recv_queue() < BUFFER_SIZE);
         if let Some(message) = socket
             .read_with(|written_chunk| {
-                // We must search for 0 before deserializing because from_bytes_cobs mutates the slice regardless of success.
+                // Only deserialize if at least one complete message is in the buffer.
                 match written_chunk.iter().position(|byte| *byte == 0u8) {
                     Some(idx) => {
-                        // Attempt to deserialize.
+                        // Get the actual number of bytes to read.
+                        let end = idx + 1;
+                        // Attempt to deserialize once.
                         let deserialization_result =
-                            postcard::from_bytes_cobs::<Message>(&mut written_chunk[..idx + 1]);
+                            postcard::from_bytes_cobs::<Message>(&mut written_chunk[..end]);
                         // Wraps the message in an Option if there is a message.
                         let resulting_option = deserialization_result.map(Option::from);
                         // Tell the socket to clear the bytes we used and return our result.
-                        (idx + 1, resulting_option)
+                        (end, resulting_option)
                     }
                     None => (0, Ok(None)),
                 }
@@ -90,14 +92,12 @@ pub async fn recv_message<'a>(socket: &mut TcpSocket<'a>) -> Result<Message, Rea
 /// Uses the transmit buffer repeatedly until a complete message can be sent or an error occurs.
 ///
 /// The message is [COBS encoded](https://docs.rs/postcard/latest/postcard/ser_flavors/struct.Cobs.html).
-/// The message must fit in [BUFFER_SIZE] bytes.
+/// The message must fit in [BUFFER_SIZE] bytes or else this method will never return.
 pub async fn send_message<'a>(
     message: Message,
     socket: &mut TcpSocket<'a>,
 ) -> Result<(), ReadError> {
     loop {
-        // BUFFER_SIZE is too small if we're filling up the buffer.
-        assert!(socket.send_queue() < BUFFER_SIZE);
         if socket
             .write_with(
                 |empty_chunk| match postcard::to_slice_cobs(&message, empty_chunk) {
