@@ -1,9 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddrV4};
 
-use tokio::{
-    io::AsyncReadExt,
-    net::{TcpSocket, TcpStream},
-};
+use cfg_if::cfg_if;
+use tokio::net::TcpStream;
 
 use crate::app::App;
 
@@ -11,14 +9,11 @@ pub mod app;
 pub mod event;
 pub mod ui;
 
-// Keep this up to date with ../cross/mc_esp32/src/bin/wifi_pwm/wifi/mod.rs
-#[cfg(not(debug_assertions))]
-pub(crate) const MCU_ADDRESS: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(192, 168, 2, 1), 8080);
-
 #[tokio::main]
 #[cfg(not(debug_assertions))]
 async fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
+
     println!(
         "Attemping to connect to the MCU. If the TUI does not appear, please make sure you are on the MCU's wifi/bluetooth."
     );
@@ -29,25 +24,18 @@ async fn main() -> color_eyre::Result<()> {
     result
 }
 
-#[cfg(debug_assertions)]
-const DEV_ADDRESS: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 8080);
-
 #[tokio::main]
 #[cfg(debug_assertions)]
 async fn main() -> color_eyre::Result<()> {
-    // Only imported when debug_assertions are enabled
-    use crate::event::BUFFER_SIZE;
-    use tokio::io::AsyncWriteExt;
-
     color_eyre::install()?;
 
+    let socket = TcpSocket::new_v4().expect("Failed to create socket");
+    socket
+        .bind(DEV_ADDRESS.into())
+        .expect("Failed to bind socket");
+    let listener = socket.listen(0).expect("Failed to listen");
     // Open fake MCU socket
-    tokio::spawn(async {
-        let socket = TcpSocket::new_v4().expect("Failed to create socket");
-        socket
-            .bind(DEV_ADDRESS.into())
-            .expect("Failed to bind socket");
-        let listener = socket.listen(1).expect("Failed to listen");
+    tokio::spawn(async move {
         'connection: loop {
             let mut stream = listener
                 .accept()
@@ -81,4 +69,19 @@ async fn main() -> color_eyre::Result<()> {
     let result = App::new(stream).run(terminal).await;
     ratatui::restore();
     result
+}
+
+cfg_if! {
+    if #[cfg(debug_assertions)] {
+        use crate::event::BUFFER_SIZE;
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpSocket,
+        };
+
+        const DEV_ADDRESS: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 8080);
+    } else {
+        // Keep this up to date with ../cross/mc_esp32/src/bin/wifi_pwm/wifi/mod.rs
+        pub(crate) const MCU_ADDRESS: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(192, 168, 2, 1), 8080);
+    }
 }

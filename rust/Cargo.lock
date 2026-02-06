@@ -674,6 +674,7 @@ name = "host_tui"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "cfg-if",
  "chrono",
  "color-eyre",
  "crossterm",
