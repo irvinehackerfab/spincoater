@@ -5,6 +5,7 @@ use ratatui::{
     text::{Line, Text},
     widgets::{Block, BorderType, List, ListItem, ListState, StatefulWidget, Widget},
 };
+use ringbuffer::RingBuffer;
 
 use crate::app::App;
 
@@ -59,18 +60,14 @@ impl App {
 
     fn render_info(&mut self, area: Rect, buf: &mut Buffer) {
         let info_block = Block::bordered()
-            .title(" Messages to/from MCU ")
+            .title(self.log_file_path.as_str())
             .title_alignment(Alignment::Center)
             .border_type(BorderType::Rounded);
 
-        let items = self.messages.iter().map(|msg| {
-            ListItem::new(Text::from(format!(
-                "{} -- {}: {}",
-                msg.timestamp.format("%m-%d-%Y %H:%M:%S:%f"),
-                if msg.from_mcu { "From MCU" } else { "To MCU" },
-                msg.message
-            )))
-        });
+        let items = self
+            .messages
+            .iter()
+            .map(|msg| ListItem::new(Text::from(msg.to_string())));
 
         let list = List::new(items).block(info_block);
         let mut state = ListState::default();

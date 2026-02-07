@@ -1,3 +1,4 @@
+use crate::app::MessageInfo;
 use bytes::{BufMut, BytesMut};
 use color_eyre::{Result, eyre::OptionExt};
 use futures::{FutureExt, StreamExt};
@@ -12,8 +13,6 @@ use tokio::{
     },
     sync::mpsc::{self, UnboundedSender},
 };
-
-use crate::app::MessageInfo;
 
 // Keep this up to date with ../cross/mc_esp32/src/bin/wifi_pwm/wifi/mod.rs BUFFER_SIZE
 pub const BUFFER_SIZE: usize = 64;
@@ -75,10 +74,10 @@ impl EventHandler {
     ///
     /// # Errors
     /// Returns an error if deserialization fails, or writing to the TCP socket fails.
-    pub async fn send(&mut self, message: Message) -> Result<MessageInfo> {
+    pub async fn send(&mut self, message: Message) -> Result<()> {
         let written_chunk = postcard::to_slice_cobs(&message, &mut self.send_buffer)?;
         self.to_mcu.write_all(written_chunk).await?;
-        Ok(MessageInfo::to_mcu(message))
+        Ok(())
     }
 }
 
@@ -124,12 +123,13 @@ async fn await_stream_messages(
                 let mut written_chunk = buffer.split();
                 // We must search for 0 before deserializing because from_bytes_cobs mutates the slice regardless of success.
                 while let Some(idx) = written_chunk.iter().position(|byte| *byte == 0u8) {
-                    let mut msg_chunk = written_chunk.split_to(idx);
+                    let end = idx + 1;
+                    let mut msg_chunk = written_chunk.split_to(end);
                     match from_bytes_cobs::<Message>(&mut msg_chunk) {
                         Ok(message) => {
                             // Send message
                             if to_handler
-                                .send(Ok(TuiEvent::Wireless(MessageInfo::from_mcu(message))))
+                                .send(Ok(TuiEvent::Wireless(MessageInfo::from(message))))
                                 .is_err()
                             {
                                 // If the channel is closed, this task is done.

@@ -681,6 +681,7 @@ dependencies = [
  "futures",
  "postcard",
  "ratatui",
+ "ringbuffer",
  "sc_messages",
  "tokio",
 ]
@@ -1302,6 +1303,12 @@ name = "regex-syntax"
 version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
+
+[[package]]
+name = "ringbuffer"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57b0b88a509053cbfd535726dcaaceee631313cef981266119527a1d110f6d2b"
 
 [[package]]
 name = "rustc-demangle"
