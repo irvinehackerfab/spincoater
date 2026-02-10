@@ -1,0 +1,30 @@
+[package]
+name = "host_tui"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# For simplifying TCP socket send/recv
+bytes = { workspace = true }
+# For simplifying dev and release specific 'use' and 'const' statements
+cfg-if = { workspace = true }
+# To get the local date and time
+chrono = { workspace = true }
+# For pretty tui errors
+color-eyre = { workspace = true }
+# For tui
+crossterm = { workspace = true, features = ["event-stream"] }
+# For tokio
+futures = { workspace = true }
+postcard = { workspace = true }
+# For tui
+ratatui = { workspace = true }
+# For storing the most recent messages and discarding old ones
+ringbuffer = { workspace = true }
+sc_messages = { path = "../sc_messages" }
+# For async messages from MCU
+tokio = { workspace = true, features = ["full"] }
+
+[lints]
+workspace = true
