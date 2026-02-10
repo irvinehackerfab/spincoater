@@ -8,9 +8,9 @@
 
 #include <LiquidCrystal.h>
 #include <ESP32Servo.h>
-#include <TaskScheduler.h>
+#include <TaskScheduler.h> // not sure if we use this
 
-// === ESP32 pin mapping (change these to match your board/wiring) ===
+// === ESP32 pin mapping  ===
 // LCD (4-bit)
 #define PIN_RS 21
 #define PIN_RW 22  // If you tie RW to GND physically, set this to 0 and wire RW to GND
@@ -70,11 +70,12 @@ void updateValues();
 // Handles the interrupts of the IR Sensor. Calculate rotations over some period of time
 void IRAM_ATTR rpm_fun()
 {
-  unsigned long interruptTime = millis();
-  if (interruptTime - lastInterruptTime > 2) {  // Debounce pulses
+  unsigned long interruptTime = micros(); // for ISR safety
+  if (interruptTime - lastInterruptTime > 2000) {  // Debounce pulses
     rpmcount++;
+    lastInterruptTime = interruptTime;
   }
-  lastInterruptTime = interruptTime;
+
 }
 
 // Uses the IR Sensor Data to calculate RPM
@@ -238,11 +239,16 @@ void setup() {
   pinMode(PIN_TIME_DOWN, INPUT_PULLUP);
   pinMode(PIN_START, INPUT_PULLUP);
 
-  // IR sensor pin: configure as input (use pullup if your sensor outputs active-low pulses)
+  // IR sensor pin: configure as input 
   pinMode(PIN_IR, INPUT_PULLUP);
 
-  // Servo attach: the ESP32 Servo implementations accept the same call; adjust min/max if needed
-  servo.attach(PIN_MOTOR, 1000, 2000);
+  // Servo attach: the ESP32 Servo 
+  pinMode(PIN_MOTOR, OUTPUT);
+  digitalWrite(PIN_MOTOR, LOW);       // hold LOW during boot
+  delay(200);                          // short delay for stable boot
+  servo.attach(PIN_MOTOR, 1000, 2000); // then attach servo
+  servo.writeMicroseconds(1500); // for esc
+
 
   // Setup LCD
   lcd.begin(16, 2);
@@ -281,7 +287,7 @@ void test(){
 // System Loop
 void loop() {
   test(); // These two lines are for testing/graphing
-  while(1){}
+  //while(1){}
 
   startScreen();
   while(1){
