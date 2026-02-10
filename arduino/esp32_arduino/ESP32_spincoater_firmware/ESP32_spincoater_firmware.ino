@@ -8,7 +8,6 @@
 
 #include <LiquidCrystal.h>
 #include <ESP32Servo.h>
-#include <TaskScheduler.h> // not sure if we use this
 
 // === ESP32 pin mapping  ===
 // LCD (4-bit)
