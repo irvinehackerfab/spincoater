@@ -115,6 +115,7 @@ async fn main(spawner: Spawner) -> ! {
     let tx_buffer = TX_BUFFER.init_with(|| [0u8; BUFFER_SIZE]);
     let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer);
     socket.set_timeout(Some(Duration::from_secs(10)));
+    socket.set_keep_alive(Some(Duration::from_secs(5)));
 
     // initialize PWM
     let clock_cfg = PeripheralClockConfig::with_prescaler(u8::MAX);
@@ -141,6 +142,7 @@ async fn main(spawner: Spawner) -> ! {
             println!("Accept error: {:?}", err);
             continue;
         }
+        println!("Connected to address {:?}", socket.remote_endpoint());
         loop {
             match recv_message(&mut socket).await {
                 Ok(message) => {

@@ -17,6 +17,8 @@ use ringbuffer::{AllocRingBuffer, RingBuffer};
 use sc_messages::Message;
 use tokio::net::TcpStream;
 
+const MESSAGE_CAPACITY: usize = 100;
+
 /// Application.
 #[derive(Debug)]
 pub struct App {
@@ -36,19 +38,8 @@ impl App {
     /// Constructs a new instance of [`App`].
     ///
     /// # Errors
-    /// Returns an error if opening the dev TCP listener fails,
-    /// opening the stream fails,
-    /// opening the log file fails
-    #[cfg(debug_assertions)]
-    #[must_use]
-    #[allow(clippy::double_must_use)]
-    pub async fn new() -> Result<Self> {
-        use crate::DEV_ADDRESS;
-
-        Self::open_dev_connection()?;
-
-        let stream = TcpStream::connect(DEV_ADDRESS).await?;
-
+    /// Returns an error if opening the stream fails or opening the log file fails.
+    pub fn new(stream: TcpStream) -> Result<Self> {
         let (log_file_path, log_file) =
             Self::open_log_file("sc_logs", Local::now().date_naive().to_string())?;
 
@@ -58,75 +49,10 @@ impl App {
             running: true,
             events: EventHandler::new(stream),
             commands_state: ListState::default().with_selected(Some(0)),
-            messages: AllocRingBuffer::new(100),
+            messages: AllocRingBuffer::new(MESSAGE_CAPACITY),
             log_file,
             log_file_path,
         })
-    }
-
-    /// Constructs a new instance of [`App`].
-    ///
-    /// # Errors
-    /// Returns an error if opening the stream fails or opening the log file fails.
-    #[cfg(not(debug_assertions))]
-    #[must_use]
-    #[allow(clippy::double_must_use)]
-    pub async fn new() -> Result<Self> {
-        use crate::MCU_ADDRESS;
-
-        let stream = TcpStream::connect(MCU_ADDRESS).await?;
-
-        Ok(Self {
-            running: true,
-            events: EventHandler::new(stream),
-            commands_state: ListState::default().with_selected(Some(0)),
-            messages: AllocRingBuffer::new(MESSAGE_CAPACITY),
-            log_file: Self::open_log_file()?,
-        })
-    }
-
-    /// Binds a TCP socket to [`DEV_ADDRESS`] and spawns a task to accept and send back all messages.
-    #[cfg(debug_assertions)]
-    fn open_dev_connection() -> Result<()> {
-        use crate::DEV_ADDRESS;
-        use crate::event::BUFFER_SIZE;
-        use tokio::io::AsyncReadExt;
-        use tokio::io::AsyncWriteExt;
-        use tokio::net::TcpSocket;
-
-        let socket = TcpSocket::new_v4()?;
-        socket.bind(DEV_ADDRESS.into())?;
-        let listener = socket.listen(0)?;
-        // Open fake MCU socket
-        tokio::spawn(async move {
-            'connection: loop {
-                let mut stream = listener
-                    .accept()
-                    .await
-                    .expect("Failed to accept connection")
-                    .0;
-                let mut buffer = [1u8; BUFFER_SIZE];
-                let mut pos = 0;
-                loop {
-                    match stream.read(&mut buffer[pos..]).await {
-                        Ok(0) | Err(_) => continue 'connection,
-                        Ok(len) => {
-                            pos += len;
-                            if buffer.contains(&0u8) {
-                                stream
-                                    .write_all(&buffer[..pos])
-                                    .await
-                                    .expect("Failed to write to stream");
-                                buffer[..pos].iter_mut().for_each(|byte| *byte = 1u8);
-                                pos = 0;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        Ok(())
     }
 
     fn open_log_file(directory: &str, date: String) -> Result<(PathBuf, BufWriter<File>)> {

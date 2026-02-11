@@ -82,6 +82,20 @@ lto = 'fat'
 opt-level = 's'
 overflow-checks = false
 
+[lib]
+test = false
+bench = false
+
+[[bin]]
+name = "pwm"
+test = false
+bench = false
+
+[[bin]]
+name = "wifi_pwm"
+test = false
+bench = false
+
 [lints.rust]
 unsafe_code = "forbid"
 
