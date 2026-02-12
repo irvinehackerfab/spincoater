@@ -8,6 +8,7 @@
 
 #include <LiquidCrystal.h>
 #include <ESP32Servo.h>
+#include <atomic>
 
 // === ESP32 pin mapping  ===
 // LCD (4-bit)
@@ -29,8 +30,8 @@
 // Motor (servo) pin
 #define PIN_MOTOR 12
 
-// IR sensor (interrupt) - UNO attachInterrupt(0) used pin 2; mapped here to GPIO4
-#define PIN_IR 4
+// Hall effect sensor (interrupt)
+#define PIN_HE 4
 
 // Motor Spinning Constants
 constexpr int preSpinRPM = 600;
@@ -38,12 +39,10 @@ constexpr int rampTime = 1000;
 constexpr int rampSteps = 50;
 constexpr int maxRPM = 12000;
 
-// IR Sensor Variables
-volatile unsigned long rpmcount;
-unsigned int measuredRpm;
-unsigned long timeold;
+// HE Sensor Variables
+volatile unsigned long motorRevolutionsDoubled;
+unsigned long previousTimeMillis;
 unsigned long lastMillis = 0;
-volatile unsigned long lastInterruptTime = 0;
 constexpr double adj_mtr = 1.42857143;
 
 Servo servo; // Setup the Servo
@@ -60,41 +59,42 @@ void setSpin(int, int);
 spinState menuLoop();
 void preSpin();
 void Spin(int rpm, int duration);
-void rpm_fun();
+void halfRevolutionInterrupt();
 int readRpm();
 int mapRPM(int);
 void startScreen();
 void updateValues();
 
-// Handles the interrupts of the IR Sensor. Calculate rotations over some period of time
-void IRAM_ATTR rpm_fun()
+// Handles the interrupts of the HE sensor.
+// Every 2 counts is one motor revolution.
+void IRAM_ATTR halfRevolutionInterrupt()
 {
-  unsigned long interruptTime = micros(); // for ISR safety
-  if (interruptTime - lastInterruptTime > 2000) {  // Debounce pulses
-    rpmcount++;
-    lastInterruptTime = interruptTime;
-  }
-
+  // Incrementing is ok here because interrupts are disabled in readRpm().
+  motorRevolutionsDoubled++;
 }
 
-// Uses the IR Sensor Data to calculate RPM
+// Uses the HE Sensor Data to calculate RPM
+// This function is only reliable if the program has been running for less than 50 days.
+// For more info, see https://docs.arduino.cc/language-reference/en/functions/time/millis/
 int readRpm(){
-  lastMillis = millis();
+  // For why we need to disable interrupts, see https://www.gammon.com.au/interrupts
   noInterrupts();
-  unsigned long count = rpmcount;
-  rpmcount = 0;
-  unsigned long elapsedTime = millis() - timeold;
-  timeold = millis();
+  unsigned long motorRevolutionsDoubledClone = motorRevolutionsDoubled;
+  motorRevolutionsDoubled = 0;
   interrupts();
-  if (elapsedTime > 0) {
-    measuredRpm = (30UL * 1000UL * count) / elapsedTime;
+  unsigned long motorRevolutions = motorRevolutionsDoubledClone / 2;
+  unsigned long elapsedTimeMillis = millis() - previousTimeMillis;
+  previousTimeMillis = millis();
+  unsigned long measuredRpm;
+  if (elapsedTimeMillis > 0) {
+    // motor revolutions * (20 plate revolutions / 74 motor revolutions) * 1/(elapsedTimeMillis ms) * (6000 ms / 1 min)
+    // = motor revolutions * 60,000 / 37 / elapsedTimeMillis
+    // Final units: plate revolutions per minute
+    measuredRpm = motorRevolutions * 60000 / 37 / elapsedTimeMillis;
   } else {
     measuredRpm = 0;
   }
-  if(measuredRpm != 0){
-    return measuredRpm;
-  }
-  return 0;
+  return measuredRpm;
 }
 
 // Debounce any of the button presses
@@ -238,10 +238,10 @@ void setup() {
   pinMode(PIN_TIME_DOWN, INPUT_PULLUP);
   pinMode(PIN_START, INPUT_PULLUP);
 
-  // IR sensor pin: configure as input 
-  pinMode(PIN_IR, INPUT_PULLUP);
+  // Hall effect sensor pin
+  pinMode(PIN_HE, INPUT_PULLUP);
 
-  // Servo attach: the ESP32 Servo 
+  // Servo attach: the ESP32 Servo
   pinMode(PIN_MOTOR, OUTPUT);
   digitalWrite(PIN_MOTOR, LOW);       // hold LOW during boot
   delay(200);                          // short delay for stable boot
@@ -254,10 +254,9 @@ void setup() {
   lcd.clear();
 
   // Setup IR Sensor interrupt using the pin number
-  rpmcount = 0;
-  measuredRpm = 0;
-  timeold = millis();
-  attachInterrupt(digitalPinToInterrupt(PIN_IR), rpm_fun, FALLING);
+  motorRevolutionsDoubled = 0;
+  previousTimeMillis = millis();
+  attachInterrupt(digitalPinToInterrupt(PIN_HE), halfRevolutionInterrupt, RISING);
 
   Serial.println("ESP32 Spin Coater ready");
 }
@@ -296,4 +295,3 @@ void loop() {
     Spin((int)state.rpm, (int)state.duration);
   }
 }
-
