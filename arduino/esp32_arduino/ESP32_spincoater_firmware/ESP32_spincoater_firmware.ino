@@ -42,7 +42,6 @@ constexpr int maxRPM = 12000;
 // HE Sensor Variables
 volatile unsigned long motorRevolutionsDoubled;
 unsigned long previousTimeMillis;
-unsigned long lastMillis = 0;
 constexpr double adj_mtr = 1.42857143;
 
 Servo servo; // Setup the Servo
@@ -82,15 +81,14 @@ int readRpm(){
   unsigned long motorRevolutionsDoubledClone = motorRevolutionsDoubled;
   motorRevolutionsDoubled = 0;
   interrupts();
-  unsigned long motorRevolutions = motorRevolutionsDoubledClone / 2;
   unsigned long elapsedTimeMillis = millis() - previousTimeMillis;
   previousTimeMillis = millis();
   unsigned long measuredRpm;
   if (elapsedTimeMillis > 0) {
-    // motor revolutions * (20 plate revolutions / 74 motor revolutions) * 1/(elapsedTimeMillis ms) * (6000 ms / 1 min)
-    // = motor revolutions * 60,000 / 37 / elapsedTimeMillis
+    // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(elapsedTimeMillis ms) * (6000 ms / 1 min)
+    // = motor revolutions * 30,000 / (37 * elapsedTimeMillis)
     // Final units: plate revolutions per minute
-    measuredRpm = motorRevolutions * 60000 / 37 / elapsedTimeMillis;
+    measuredRpm = motorRevolutionsDoubledClone * 30000 / (37 * elapsedTimeMillis);
   } else {
     measuredRpm = 0;
   }
