@@ -34,8 +34,8 @@ use mc_esp32::{
     pwm::{FREQUENCY, MAX_DUTY, PERIPHERAL_CLOCK_PRESCALER, STOP_DUTY},
     wifi::{
         AUTH_METHOD, BUFFER_SIZE, GATEWAY_IP, IP_LISTEN_ENDPOINT, KEEP_ALIVE, MAX_CONNECTIONS,
-        MESSAGE_CHANNEL, MESSAGE_CHANNEL_BUFFER, RADIO, RX_BUFFER, STACK_RESOURCES, TIMEOUT,
-        TX_BUFFER, controller_task, net_task, recv_message, send_message,
+        RADIO, RECV_MSG_BUFFER, RECV_MSG_CHANNEL, RX_BUFFER, SEND_MSG_BUFFER, SEND_MSG_CHANNEL,
+        STACK_RESOURCES, TIMEOUT, TX_BUFFER, controller_task, net_task, recv_message, send_message,
     },
 };
 use sc_messages::Message;
@@ -123,8 +123,12 @@ async fn main(spawner: Spawner) -> ! {
     socket.set_keep_alive(Some(KEEP_ALIVE));
 
     // Initialize communication between cores
-    let msg_channel = MESSAGE_CHANNEL.init_with(|| Channel::new(MESSAGE_CHANNEL_BUFFER.take()));
-    let (mut to_msg_handler, mut from_wifi) = msg_channel.split();
+    let recv_msg_channel = RECV_MSG_CHANNEL.init_with(|| Channel::new(RECV_MSG_BUFFER.take()));
+    let (mut to_msg_handler, mut from_wifi_receiver) = recv_msg_channel.split();
+    let send_msg_channel = SEND_MSG_CHANNEL.init_with(|| Channel::new(SEND_MSG_BUFFER.take()));
+    let (mut to_transmitter, mut from_msg_handler) = send_msg_channel.split();
+
+    let (reader, writer) = socket.split();
 
     let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     esp_rtos::start_second_core(
@@ -155,8 +159,7 @@ async fn main(spawner: Spawner) -> ! {
         },
     );
 
-    // Read messages, act on them, and send them back in a loop.
-    // This loop is here instead of in a separate embassy task because it allocates too much data onto the stack.
+    // Receive messages in a loop.
     loop {
         println!("Wifi: Waiting for connection...");
         if let Err(err) = socket.accept(IP_LISTEN_ENDPOINT).await {

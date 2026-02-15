@@ -41,10 +41,15 @@ pub const BUFFER_SIZE: usize = 64;
 pub static RX_BUFFER: StaticCell<[u8; BUFFER_SIZE]> = StaticCell::new();
 pub static TX_BUFFER: StaticCell<[u8; BUFFER_SIZE]> = StaticCell::new();
 
-/// Used for passing messages from the wifi loop to the message handler.
-pub static MESSAGE_CHANNEL_BUFFER: ConstStaticCell<[Message; 1]> =
+/// Used for passing messages from the wifi receiver to the message handler.
+pub static RECV_MSG_BUFFER: ConstStaticCell<[Message; 1]> =
     ConstStaticCell::new([Message::DutyCycle(0)]);
-pub static MESSAGE_CHANNEL: StaticCell<Channel<'_, CriticalSectionRawMutex, Message>> =
+pub static RECV_MSG_CHANNEL: StaticCell<Channel<'_, CriticalSectionRawMutex, Message>> =
+    StaticCell::new();
+/// Used for passing messages from the message handler to the wifi transmitter.
+pub static SEND_MSG_BUFFER: ConstStaticCell<[Message; 1]> =
+    ConstStaticCell::new([Message::DutyCycle(0)]);
+pub static SEND_MSG_CHANNEL: StaticCell<Channel<'_, CriticalSectionRawMutex, Message>> =
     StaticCell::new();
 
 /// This task restarts the wifi 5 seconds after it stops.
@@ -137,3 +142,11 @@ pub async fn send_message(message: Message, socket: &mut TcpSocket<'_>) -> Resul
 pub async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
     runner.run().await;
 }
+
+/// Receives messages from the host device, and sends them to the message handler.
+#[embassy_executor::task]
+pub async fn receive_unhandled_messages() {}
+
+/// Receives messages that have been handled by the handler, and sends them to the host device.
+#[embassy_executor::task]
+pub async fn announce_handled_messages() {}
