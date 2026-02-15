@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub const MAX_DUTY: u16 = u16::MAX - 1_536;
 
 /// Messages between the host PC and the microcontroller.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Message {
     /// From PC to MCU: Set a duty cycle.
     ///

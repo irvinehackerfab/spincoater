@@ -2,6 +2,7 @@ pub mod error;
 
 use core::net::Ipv4Addr;
 use embassy_net::{IpListenEndpoint, Runner, StackResources, tcp::TcpSocket};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, zerocopy_channel::Channel};
 use embassy_time::{Duration, Timer};
 use esp_println::println;
 use esp_radio::{
@@ -10,9 +11,9 @@ use esp_radio::{
 };
 use postcard::{self, Error};
 use sc_messages::Message;
-use static_cell::StaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
-use crate::tcp::error::ReadError;
+use crate::wifi::error::ReadError;
 
 pub const GATEWAY_IP: Ipv4Addr = Ipv4Addr::new(192, 168, 2, 1);
 pub const PORT: u16 = 8080;
@@ -40,22 +41,28 @@ pub const BUFFER_SIZE: usize = 64;
 pub static RX_BUFFER: StaticCell<[u8; BUFFER_SIZE]> = StaticCell::new();
 pub static TX_BUFFER: StaticCell<[u8; BUFFER_SIZE]> = StaticCell::new();
 
+/// Used for passing messages from the wifi loop to the message handler.
+pub static MESSAGE_CHANNEL_BUFFER: ConstStaticCell<[Message; 1]> =
+    ConstStaticCell::new([Message::DutyCycle(0)]);
+pub static MESSAGE_CHANNEL: StaticCell<Channel<'_, CriticalSectionRawMutex, Message>> =
+    StaticCell::new();
+
 /// This task restarts the wifi 5 seconds after it stops.
 #[embassy_executor::task]
 pub async fn controller_task(mut wifi_controller: WifiController<'static>) {
-    println!("starting connection loop");
+    println!("Wifi: starting connection loop");
     loop {
         match wifi_controller.start_async().await {
             Ok(()) => {
-                println!("Access point started");
+                println!("Wifi: Access point started");
                 wifi_controller.wait_for_event(WifiEvent::ApStop).await;
-                println!("Access point stopped");
+                println!("Wifi: Access point stopped");
             }
             Err(err) => {
-                println!("Error when starting wifi: {}", err);
+                println!("Wifi: Error when starting controller: {}", err);
             }
         }
-        println!("Waiting 5 seconds before restarting...");
+        println!("Wifi: Waiting 5 seconds before restarting...");
         Timer::after_secs(5).await;
     }
 }

@@ -54,7 +54,7 @@ async fn main(spawner: Spawner) -> ! {
     // https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3
     let mut pwm_pin = mcpwm
         .operator0
-        .with_pin_a(peripherals.GPIO23, PwmPinConfig::UP_ACTIVE_HIGH);
+        .with_pin_a(peripherals.GPIO12, PwmPinConfig::UP_ACTIVE_HIGH);
     // start timer with timestamp values in the range that we want.
     let timer_clock_cfg = clock_cfg
         .timer_clock_with_frequency(MAX_DUTY, PwmWorkingMode::Increase, FREQUENCY)

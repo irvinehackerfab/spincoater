@@ -9,13 +9,13 @@ The `editor_configurations` folder contains default configurations for various e
 
 # Programs
 ## `pwm`
-This is a basic program that initializes PWM on pin [IO23](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3) and sets it to a constant duty cycle of 5% with a frequency of 50hz.
+This is a basic program that initializes PWM on pin [IO12](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) and sets it to a constant duty cycle of 5% with a frequency of 50hz.
 
 Run with `cargo run --release --bin pwm`
 
 ## `spincoater`
 This program does the following:
-- Initializes PWM on pin [IO23](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3)
+- Initializes PWM on pin [IO12](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
   - Outputs a constant duty cycle of 5% with a frequency of 50hz.
 - Enables a Wifi access point
   - Allows one device to connect at a time
