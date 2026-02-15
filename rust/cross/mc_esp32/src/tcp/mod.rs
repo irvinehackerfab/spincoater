@@ -2,7 +2,7 @@ pub mod error;
 
 use core::net::Ipv4Addr;
 use embassy_net::{IpListenEndpoint, Runner, StackResources, tcp::TcpSocket};
-use embassy_time::Timer;
+use embassy_time::{Duration, Timer};
 use esp_println::println;
 use esp_radio::{
     Controller,
@@ -21,6 +21,12 @@ pub const IP_LISTEN_ENDPOINT: IpListenEndpoint = IpListenEndpoint {
     port: PORT,
 };
 
+/// How long the MCU will wait before disconnecting the host device.
+pub const TIMEOUT: Duration = Duration::from_secs(10);
+/// How often the MCU will send keep-alive packets.
+/// This prevents the socket from closing due to inactivity.
+pub const KEEP_ALIVE: Duration = Duration::from_secs(5);
+
 pub const AUTH_METHOD: AuthMethod = AuthMethod::Wpa2Personal;
 pub const MAX_CONNECTIONS: u16 = 1;
 
@@ -29,8 +35,6 @@ pub const MAX_CONNECTIONS: u16 = 1;
 pub static RADIO: StaticCell<Controller> = StaticCell::new();
 /// We only use 1 socket right now
 pub static STACK_RESOURCES: StaticCell<StackResources<1>> = StaticCell::new();
-// The config can be made static to avoid String reallocation upon wifi restart.
-// pub(crate) static WIFI_CONFIG: StaticCell<ModeConfig> = StaticCell::new();
 
 pub const BUFFER_SIZE: usize = 64;
 pub static RX_BUFFER: StaticCell<[u8; BUFFER_SIZE]> = StaticCell::new();

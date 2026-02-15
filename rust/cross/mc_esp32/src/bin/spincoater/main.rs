@@ -8,41 +8,35 @@
 #![deny(clippy::large_stack_frames)]
 
 use embassy_executor::Spawner;
-use embassy_net::tcp::TcpSocket;
-use embassy_net::{Ipv4Cidr, StackResources, StaticConfigV4};
-use embassy_time::Duration;
+use embassy_net::{Ipv4Cidr, StackResources, StaticConfigV4, tcp::TcpSocket};
 use esp_backtrace as _;
-use esp_hal::clock::CpuClock;
-use esp_hal::mcpwm::operator::PwmPinConfig;
-use esp_hal::mcpwm::timer::PwmWorkingMode;
-use esp_hal::mcpwm::{McPwm, PeripheralClockConfig};
-use esp_hal::rng::Rng;
-use esp_hal::time::Rate;
-use esp_hal::timer::timg::TimerGroup;
+use esp_hal::{
+    clock::CpuClock,
+    mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
+    rng::Rng,
+    timer::timg::TimerGroup,
+};
 use esp_println::println;
 use esp_radio::wifi::{CountryInfo, OperatingClass};
+use mc_esp32::{
+    pwm::{FREQUENCY, MAX_DUTY, PERIPHERAL_CLOCK_PRESCALER, STOP_DUTY},
+    tcp::{
+        AUTH_METHOD, BUFFER_SIZE, GATEWAY_IP, IP_LISTEN_ENDPOINT, KEEP_ALIVE, MAX_CONNECTIONS,
+        RADIO, RX_BUFFER, STACK_RESOURCES, TIMEOUT, TX_BUFFER, controller_task, net_task,
+        recv_message, send_message,
+    },
+};
 use sc_messages::Message;
 
-use mc_esp32::tcp::{
-    AUTH_METHOD, BUFFER_SIZE, GATEWAY_IP, IP_LISTEN_ENDPOINT, MAX_CONNECTIONS, RADIO, RX_BUFFER,
-    STACK_RESOURCES, TX_BUFFER, controller_task, net_task, recv_message, send_message,
-};
-
+// Wifi requires heap allocation
 extern crate alloc;
 
 // Do not hardcode sensitive information like this.
 // Instead, pass in the variables as environment variables when you compile, like this:
 // SSID=_ PASSWORD=_ cargo run --release
-// Note: Password must be 8-64 characters.
 const SSID: &str = env!("SSID");
+/// Note: Password must be 8-64 characters.
 const PASSWORD: &str = env!("PASSWORD");
-
-const FREQUENCY: Rate = Rate::from_hz(50);
-/// We can configure this to whatever we like.
-/// Setting it to 99 allows us to set duty cycle in percentages.
-const MAX_DUTY: u16 = 99;
-/// 5% of max duty
-const STOP_DUTY: u16 = 5;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -81,7 +75,7 @@ async fn main(spawner: Spawner) -> ! {
     let net_config = embassy_net::Config::ipv4_static(StaticConfigV4 {
         address: Ipv4Cidr::new(GATEWAY_IP, 24),
         gateway: Some(GATEWAY_IP),
-        // TODO: I would make the StaticConfigV4 a const, but embassy_net is limited to heapless v0.8.0 so I can't initialize this in a const context.
+        // TODO: I would make the StaticConfigV4 a const, but embassy_net is limited to heapless v0.8.0 so I can't initialize this in a const context until they update.
         dns_servers: Default::default(),
     });
     let rng = Rng::new();
@@ -114,11 +108,11 @@ async fn main(spawner: Spawner) -> ! {
     let rx_buffer = RX_BUFFER.init_with(|| [0u8; BUFFER_SIZE]);
     let tx_buffer = TX_BUFFER.init_with(|| [0u8; BUFFER_SIZE]);
     let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer);
-    socket.set_timeout(Some(Duration::from_secs(10)));
-    socket.set_keep_alive(Some(Duration::from_secs(5)));
+    socket.set_timeout(Some(TIMEOUT));
+    socket.set_keep_alive(Some(KEEP_ALIVE));
 
     // initialize PWM
-    let clock_cfg = PeripheralClockConfig::with_prescaler(u8::MAX);
+    let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
     let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
     // connect operator0 to timer0
     mcpwm.operator0.set_timer(&mcpwm.timer0);
@@ -127,7 +121,7 @@ async fn main(spawner: Spawner) -> ! {
     let mut pwm_pin = mcpwm
         .operator0
         .with_pin_a(peripherals.GPIO23, PwmPinConfig::UP_ACTIVE_HIGH);
-    // start timer with timestamp values in the range that we want.
+    // start timer with timestamp values in the range that we choose.
     let timer_clock_cfg = clock_cfg
         .timer_clock_with_frequency(MAX_DUTY, PwmWorkingMode::Increase, FREQUENCY)
         .expect("Failed to create TimerClockConfig");

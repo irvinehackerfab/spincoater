@@ -14,7 +14,7 @@ use ratatui::{
     widgets::ListState,
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
-use sc_messages::Message;
+use sc_messages::{MAX_DUTY, Message};
 use tokio::net::TcpStream;
 
 const MESSAGE_CAPACITY: usize = 100;
@@ -111,9 +111,15 @@ impl App {
                 .ok_or_eyre("One command is always selected")?
             {
                 // Send 5% duty cycle command to the MCU.
-                0 => self.events.send(Message::DutyCycle(5)).await?,
+                0 => {
+                    let duty = MAX_DUTY / 20;
+                    self.events.send(Message::DutyCycle(duty)).await?;
+                }
                 // Send 10% duty cycle command to the MCU.
-                1 => self.events.send(Message::DutyCycle(10)).await?,
+                1 => {
+                    let duty = MAX_DUTY / 10;
+                    self.events.send(Message::DutyCycle(duty)).await?;
+                }
                 _ => {}
             },
             // Other handlers you could add here.

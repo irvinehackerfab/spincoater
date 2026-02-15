@@ -5,13 +5,17 @@ extern crate std;
 use core::fmt::{Display, Formatter, Result};
 use serde::{Deserialize, Serialize};
 
+/// The value corresponding to 100% duty cycle.
+/// See [`../cross/mc_esp32/src/pwm/mod.rs`] for an explanation on the choice for this value.
+pub const MAX_DUTY: u16 = u16::MAX - 1_536;
+
 /// Messages between the host PC and the microcontroller.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Message {
-    /// From PC to MCU: Set a duty cycle between 0 and 99.
+    /// From PC to MCU: Set a duty cycle.
     ///
-    /// From MCU to PC: The current duty cycle between 0 and 99.
-    DutyCycle(u8),
+    /// From MCU to PC: The current duty cycle.
+    DutyCycle(u16),
 }
 
 impl Display for Message {
@@ -37,7 +41,7 @@ mod test {
     /// This test guarantees that we can use the [read](https://docs.embassy.dev/embassy-net/git/default/tcp/struct.TcpSocket.html#method.read) method.
     #[test]
     fn test_re_deserialize() {
-        for duty in 0..u8::MAX {
+        for duty in 0..u16::MAX {
             let msg = Message::DutyCycle(duty);
             let send = to_vec::<Message, BUFFER_SIZE>(&msg).expect("Failed to serialize");
             for (i, _) in send
@@ -60,7 +64,7 @@ mod test {
     /// and [write_with](https://docs.embassy.dev/embassy-net/git/default/tcp/struct.TcpSocket.html#method.write_with) methods.
     #[test]
     fn test_fits_in_buffer() {
-        for duty in 0..u8::MAX {
+        for duty in 0..u16::MAX {
             let msg = Message::DutyCycle(duty);
             let mut send = to_vec_cobs::<Message, BUFFER_SIZE>(&msg).expect("Failed to serialize");
             println!("Cobs message is {} bytes long.", send.len());

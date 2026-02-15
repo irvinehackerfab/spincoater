@@ -13,9 +13,15 @@ This is a basic program that initializes PWM on pin [IO23](https://docs.espressi
 
 Run with `cargo run --release --bin pwm`
 
-## `wifi_pwm`
-This program initializes PWM on pin [IO23](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3) and sets it to a constant duty cycle of 5% with a frequency of 50hz. It also enables a Wifi access point that allows one connection at a time on port 8080 to send messages defined in `sc_messages` (in the workspace above this one).
+## `spincoater`
+This program does the following:
+- Initializes PWM on pin [IO23](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3)
+  - Outputs a constant duty cycle of 5% with a frequency of 50hz.
+- Enables a Wifi access point
+  - Allows one device to connect at a time
+  - Listens on a TCP socket on port 8080
+  - Send and receives messages defined in `sc_messages` (in the workspace above this one).
 
-When flashing the program, you must specify the Wifi's SSID and password through environment variables. One way to do this is by running the program with `SSID=_ PASSWORD=_ cargo run --release --bin wifi_pwm`.
+When flashing the program, you must specify the Wifi's SSID and password through environment variables. One way to do this is by running the program with `SSID=_ PASSWORD=_ cargo run --release --bin spincoater`.
 
 The password must be 8-64 characters or else the radio will panic during initialization.

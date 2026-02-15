@@ -10,22 +10,15 @@
 use embassy_executor::Spawner;
 use embassy_time::Timer;
 use esp_backtrace as _;
-use esp_hal::clock::CpuClock;
-use esp_hal::mcpwm::operator::PwmPinConfig;
-use esp_hal::mcpwm::timer::PwmWorkingMode;
-use esp_hal::mcpwm::{McPwm, PeripheralClockConfig};
-use esp_hal::time::Rate;
-use esp_hal::timer::timg::TimerGroup;
+use esp_hal::{
+    clock::CpuClock,
+    mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
+    timer::timg::TimerGroup,
+};
 use esp_println::println;
+use mc_esp32::pwm::{FREQUENCY, MAX_DUTY, PERIPHERAL_CLOCK_PRESCALER, STOP_DUTY};
 
 extern crate alloc;
-
-const FREQUENCY: Rate = Rate::from_hz(50);
-/// We can configure this to whatever we like.
-/// Setting it to 99 allows us to set duty cycle in percentages.
-const MAX_DUTY: u16 = 99;
-/// 5% of max duty
-const STOP_DUTY: u16 = 5;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -53,10 +46,7 @@ async fn main(spawner: Spawner) -> ! {
     println!("Embassy initialized!");
 
     // initialize PWM
-    // Ideally we want the lowest prescaler.
-    // 127 is the lowest you can go that divides nicely
-    // and doesn't overflow the timer clock prescaler for target PWM frequencies of around 50 hz.
-    let clock_cfg = PeripheralClockConfig::with_prescaler(127);
+    let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
     let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
     // connect operator0 to timer0
     mcpwm.operator0.set_timer(&mcpwm.timer0);

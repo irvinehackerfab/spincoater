@@ -88,7 +88,7 @@ test = false
 bench = false
 
 [[bin]]
-name = "wifi_pwm"
+name = "spincoater"
 test = false
 bench = false
 
