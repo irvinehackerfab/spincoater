@@ -16,7 +16,8 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use esp_println::println;
-use mc_esp32::gpio::pwm::{FREQUENCY, MAX_DUTY, PERIPHERAL_CLOCK_PRESCALER, STOP_DUTY};
+use mc_esp32::gpio::pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER};
+use sc_messages::STOP_DUTY;
 
 extern crate alloc;
 
@@ -57,7 +58,7 @@ async fn main(spawner: Spawner) -> ! {
         .with_pin_a(peripherals.GPIO12, PwmPinConfig::UP_ACTIVE_HIGH);
     // start timer with timestamp values in the range that we want.
     let timer_clock_cfg = clock_cfg
-        .timer_clock_with_frequency(MAX_DUTY, PwmWorkingMode::Increase, FREQUENCY)
+        .timer_clock_with_frequency(PERIOD, PwmWorkingMode::Increase, FREQUENCY)
         .expect("Failed to create TimerClockConfig");
     println!("Period of the PWM pin: {}", pwm_pin.period());
     mcpwm.timer0.start(timer_clock_cfg);

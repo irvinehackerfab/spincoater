@@ -14,7 +14,7 @@ use ratatui::{
     widgets::ListState,
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
-use sc_messages::{MAX_DUTY, Message};
+use sc_messages::{MAX_POWER_DUTY, Message, STOP_DUTY};
 use tokio::net::TcpStream;
 
 const MESSAGE_CAPACITY: usize = 100;
@@ -112,13 +112,11 @@ impl App {
             {
                 // Send 5% duty cycle command to the MCU.
                 0 => {
-                    let duty = MAX_DUTY / 20;
-                    self.events.send(Message::DutyCycle(duty)).await?;
+                    self.events.send(Message::DutyCycle(STOP_DUTY)).await?;
                 }
                 // Send 10% duty cycle command to the MCU.
                 1 => {
-                    let duty = MAX_DUTY / 10;
-                    self.events.send(Message::DutyCycle(duty)).await?;
+                    self.events.send(Message::DutyCycle(MAX_POWER_DUTY)).await?;
                 }
                 _ => {}
             },

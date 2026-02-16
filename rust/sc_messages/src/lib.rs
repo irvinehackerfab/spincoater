@@ -5,9 +5,15 @@ extern crate std;
 use core::fmt::{Display, Formatter, Result};
 use serde::{Deserialize, Serialize};
 
-/// The value corresponding to 100% duty cycle.
+/// The value corresponding to 100% of the PWM period.
 /// See [`../cross/mc_esp32/src/pwm/mod.rs`] for an explanation on the choice for this value.
-pub const MAX_DUTY: u16 = u16::MAX - 1_536;
+pub const PERIOD: u16 = u16::MAX - 1_535;
+
+/// The current motor controller reads 10% of [`PERIOD`] as 100% power.
+pub const MAX_POWER_DUTY: u16 = PERIOD / 10;
+
+/// The current motor controller reads 5% of [`PERIOD`] as 0% power.
+pub const STOP_DUTY: u16 = PERIOD / 20;
 
 /// Messages between the host PC and the microcontroller.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

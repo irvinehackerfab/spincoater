@@ -40,7 +40,7 @@ use mc_esp32::{
     gpio::{
         encoder::{ENCODER, MOTOR_REVOLUTIONS_DOUBLED},
         interrupt_handler,
-        pwm::{FREQUENCY, MAX_DUTY, PERIPHERAL_CLOCK_PRESCALER, STOP_DUTY},
+        pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER},
     },
     wifi::{
         AUTH_METHOD, GATEWAY_IP, IP_LISTEN_ENDPOINT, MAX_CONNECTIONS, RADIO, STACK_RESOURCES,
@@ -51,7 +51,7 @@ use mc_esp32::{
         },
     },
 };
-use sc_messages::Message;
+use sc_messages::{Message, STOP_DUTY};
 
 // Wifi requires heap allocation
 extern crate alloc;
@@ -174,7 +174,7 @@ async fn main(spawner: Spawner) -> ! {
         .with_pin_a(peripherals.GPIO12, PwmPinConfig::UP_ACTIVE_HIGH);
     // start timer with timestamp values in the range that we choose.
     let timer_clock_cfg = clock_cfg
-        .timer_clock_with_frequency(MAX_DUTY, PwmWorkingMode::Increase, FREQUENCY)
+        .timer_clock_with_frequency(PERIOD, PwmWorkingMode::Increase, FREQUENCY)
         .expect("Failed to create TimerClockConfig");
     mcpwm.timer0.start(timer_clock_cfg);
     pwm_pin.set_timestamp(STOP_DUTY);
