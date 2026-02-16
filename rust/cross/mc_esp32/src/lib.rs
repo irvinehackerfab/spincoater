@@ -7,9 +7,10 @@
 #![deny(clippy::large_stack_frames)]
 
 use esp_hal::system::Stack;
+use esp_rtos::embassy::Executor;
 use static_cell::StaticCell;
-pub mod encoder;
-pub mod pwm;
+pub mod gpio;
 pub mod wifi;
 
 pub static SECOND_CORE_STACK: StaticCell<Stack<8192>> = StaticCell::new();
+pub static SECOND_CORE_EXECUTOR: StaticCell<Executor> = StaticCell::new();

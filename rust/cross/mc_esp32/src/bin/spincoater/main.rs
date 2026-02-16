@@ -8,14 +8,16 @@
 #![deny(clippy::large_stack_frames)]
 
 use embassy_executor::Spawner;
+use embassy_futures::select::{Either, select};
 use embassy_net::{Ipv4Cidr, StackResources, StaticConfigV4, tcp::TcpSocket};
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex,
-    zerocopy_channel::{Channel, Receiver},
+    zerocopy_channel::{Channel, Receiver, Sender},
 };
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
+    gpio::{Event, Input, InputConfig, Io, Pull},
     interrupt::software::SoftwareInterruptControl,
     mcpwm::{
         McPwm, PeripheralClockConfig,
@@ -29,13 +31,22 @@ use esp_hal::{
 };
 use esp_println::println;
 use esp_radio::wifi::{CountryInfo, OperatingClass};
+use esp_rtos::embassy::Executor;
 use mc_esp32::{
-    SECOND_CORE_STACK,
-    pwm::{FREQUENCY, MAX_DUTY, PERIPHERAL_CLOCK_PRESCALER, STOP_DUTY},
+    SECOND_CORE_EXECUTOR, SECOND_CORE_STACK,
+    gpio::{
+        encoder::ENCODER,
+        interrupt_handler,
+        pwm::{FREQUENCY, MAX_DUTY, PERIPHERAL_CLOCK_PRESCALER, STOP_DUTY},
+    },
     wifi::{
-        AUTH_METHOD, BUFFER_SIZE, GATEWAY_IP, IP_LISTEN_ENDPOINT, KEEP_ALIVE, MAX_CONNECTIONS,
-        RADIO, RECV_MSG_BUFFER, RECV_MSG_CHANNEL, RX_BUFFER, SEND_MSG_BUFFER, SEND_MSG_CHANNEL,
-        STACK_RESOURCES, TIMEOUT, TX_BUFFER, controller_task, net_task, recv_message, send_message,
+        AUTH_METHOD, GATEWAY_IP, IP_LISTEN_ENDPOINT, MAX_CONNECTIONS, RADIO, STACK_RESOURCES,
+        controller_task, net_task,
+        tcp::{
+            BUFFER_SIZE, KEEP_ALIVE, RECV_MSG_BUFFER, RECV_MSG_CHANNEL, RX_BUFFER, SEND_MSG_BUFFER,
+            SEND_MSG_CHANNEL, TIMEOUT, TX_BUFFER, announce_handled_messages,
+            receive_unhandled_messages,
+        },
     },
 };
 use sc_messages::Message;
@@ -124,11 +135,9 @@ async fn main(spawner: Spawner) -> ! {
 
     // Initialize communication between cores
     let recv_msg_channel = RECV_MSG_CHANNEL.init_with(|| Channel::new(RECV_MSG_BUFFER.take()));
-    let (mut to_msg_handler, mut from_wifi_receiver) = recv_msg_channel.split();
+    let (mut to_msg_handler, from_receiver) = recv_msg_channel.split();
     let send_msg_channel = SEND_MSG_CHANNEL.init_with(|| Channel::new(SEND_MSG_BUFFER.take()));
-    let (mut to_transmitter, mut from_msg_handler) = send_msg_channel.split();
-
-    let (reader, writer) = socket.split();
+    let (to_transmitter, mut from_msg_handler) = send_msg_channel.split();
 
     let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     esp_rtos::start_second_core(
@@ -136,67 +145,99 @@ async fn main(spawner: Spawner) -> ! {
         software_interrupts.software_interrupt0,
         software_interrupts.software_interrupt1,
         SECOND_CORE_STACK.init_with(Stack::new),
-        move || {
-            todo!("Start another thread mode executor");
-            println!("Embassy initialized on the second core!");
+        || {
+            let executor = SECOND_CORE_EXECUTOR.init_with(Executor::new);
+            executor.run(|spawner_2| {
+                println!("Embassy initialized on the second core!");
+                // initialize PWM
+                let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
+                let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
+                // connect operator0 to timer0
+                mcpwm.operator0.set_timer(&mcpwm.timer0);
+                // connect operator0 to pin IO23:
+                // https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3
+                let mut pwm_pin = mcpwm
+                    .operator0
+                    .with_pin_a(peripherals.GPIO12, PwmPinConfig::UP_ACTIVE_HIGH);
+                // start timer with timestamp values in the range that we choose.
+                let timer_clock_cfg = clock_cfg
+                    .timer_clock_with_frequency(MAX_DUTY, PwmWorkingMode::Increase, FREQUENCY)
+                    .expect("Failed to create TimerClockConfig");
+                mcpwm.timer0.start(timer_clock_cfg);
+                pwm_pin.set_timestamp(STOP_DUTY);
 
-            // initialize PWM
-            let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
-            let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
-            // connect operator0 to timer0
-            mcpwm.operator0.set_timer(&mcpwm.timer0);
-            // connect operator0 to pin IO23:
-            // https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3
-            let mut pwm_pin = mcpwm
-                .operator0
-                .with_pin_a(peripherals.GPIO12, PwmPinConfig::UP_ACTIVE_HIGH);
-            // start timer with timestamp values in the range that we choose.
-            let timer_clock_cfg = clock_cfg
-                .timer_clock_with_frequency(MAX_DUTY, PwmWorkingMode::Increase, FREQUENCY)
-                .expect("Failed to create TimerClockConfig");
-            mcpwm.timer0.start(timer_clock_cfg);
-            pwm_pin.set_timestamp(STOP_DUTY);
+                // Set the interrupt handler for GPIO.
+                // This allows for a slightly lower latency compared to using async waits.
+                let mut io = Io::new(peripherals.IO_MUX);
+                io.set_interrupt_handler(interrupt_handler);
+
+                // Initialize encoder pin
+                let mut encoder = Input::new(
+                    peripherals.GPIO4,
+                    InputConfig::default().with_pull(Pull::Up),
+                );
+                // Start listening for rising edges
+                critical_section::with(|cs| {
+                    encoder.listen(Event::RisingEdge);
+                    ENCODER.borrow_ref_mut(cs).replace(encoder);
+                });
+
+                spawner_2.must_spawn(handle_messages(from_receiver, to_transmitter, pwm_pin));
+            });
         },
     );
 
-    // Receive messages in a loop.
+    // Await connections in a loop.
     loop {
-        println!("Wifi: Waiting for connection...");
+        println!("Socket: Waiting for connection...");
         if let Err(err) = socket.accept(IP_LISTEN_ENDPOINT).await {
             println!("Wifi: Accept error: {:?}", err);
             continue;
         }
-        println!("Wifi: Connected to address {:?}", socket.remote_endpoint());
-        loop {
-            match recv_message(&mut socket).await {
-                Ok(message) => {
-                    println!("Wifi: Got message: {message:?}");
-                    let buffer = to_msg_handler.send().await;
-                    *buffer = message;
-                    to_msg_handler.send_done();
-                    // TODO: Consider putting the write half of the socket in a different task.
-                    // Send the message back
-                    if let Err(err) = send_message(message, &mut socket).await {
-                        break err.handle(&mut socket).await;
-                    }
-                }
-                Err(err) => break err.handle(&mut socket).await,
+        println!(
+            "Socket: Got connection from address {:?}",
+            socket.remote_endpoint()
+        );
+        let (mut reader, mut writer) = socket.split();
+        // Cancel receiving and transmitting as soon as an error occurs.
+        // This gives the socket the opportunity to abort.
+        match select(
+            receive_unhandled_messages(&mut reader, &mut to_msg_handler),
+            announce_handled_messages(&mut writer, &mut from_msg_handler),
+        )
+        .await
+        {
+            Either::First(err) => {
+                println!("Receiver error: {err:?}");
             }
+            Either::Second(err) => {
+                println!("Transmitter error: {err:?}");
+            }
+        }
+        socket.abort();
+        let _ = socket.flush().await;
+        if socket.may_recv() {
+            // Flush all data from the receive buffer as well.
+            let _ = socket.read_with(|bytes| (bytes.len(), ())).await;
         }
     }
 }
 
-// #[embassy_executor::task]
-// async fn handle_messages(
-//     mut from_wifi: Receiver<'static, CriticalSectionRawMutex, Message>,
-//     mut pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
-// ) {
-//     loop {
-//         let message = from_wifi.receive().await;
-//         let message = *message;
-//         from_wifi.receive_done();
-//         match message {
-//             Message::DutyCycle(duty) => pwm_pin.set_timestamp(duty),
-//         }
-//     }
-// }
+#[embassy_executor::task]
+async fn handle_messages(
+    mut from_receiver: Receiver<'static, CriticalSectionRawMutex, Message>,
+    mut to_transmitter: Sender<'static, CriticalSectionRawMutex, Message>,
+    mut pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
+) {
+    loop {
+        let buffer = from_receiver.receive().await;
+        let message = *buffer;
+        from_receiver.receive_done();
+        match message {
+            Message::DutyCycle(duty) => pwm_pin.set_timestamp(duty),
+        }
+        let buffer = to_transmitter.send().await;
+        *buffer = message;
+        to_transmitter.send_done();
+    }
+}
