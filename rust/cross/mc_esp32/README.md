@@ -17,6 +17,8 @@ Run with `cargo run --release --bin pwm`
 This program does the following:
 - Initializes PWM on pin [IO12](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
   - Outputs a constant duty cycle of 5% with a frequency of 50hz.
+- Records hall effect sensor input on pin [IO4](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
+  - Prints the plate revolutions per minute every second.
 - Enables a Wifi access point
   - Allows one device to connect at a time
   - Listens on a TCP socket on port 8080

@@ -2,8 +2,8 @@ pub mod error;
 
 use embassy_net::tcp::{TcpReader, TcpWriter};
 use embassy_sync::{
-    blocking_mutex::raw::CriticalSectionRawMutex,
-    zerocopy_channel::{Channel, Receiver, Sender},
+    blocking_mutex::raw::NoopRawMutex,
+    channel::{Channel, Receiver, Sender},
 };
 use embassy_time::Duration;
 use esp_println::println;
@@ -23,16 +23,18 @@ pub static RX_BUFFER: StaticCell<[u8; BUFFER_SIZE]> = StaticCell::new();
 pub static TX_BUFFER: StaticCell<[u8; BUFFER_SIZE]> = StaticCell::new();
 
 /// Used for passing messages from the socket to the message handler.
-pub static RECV_MSG_BUFFER: ConstStaticCell<[Message; 1]> =
-    ConstStaticCell::new([Message::DutyCycle(0)]);
-pub static RECV_MSG_CHANNEL: StaticCell<Channel<'_, CriticalSectionRawMutex, Message>> =
-    StaticCell::new();
+///
+/// This uses `NoopRawMutex` because data is only shared in one executor.
+/// This does not use a zerocopy channel because [`Message`] is currently smaller than a reference.
+pub static RECV_MSG_CHANNEL: ConstStaticCell<Channel<NoopRawMutex, Message, 2>> =
+    ConstStaticCell::new(Channel::new());
 
 /// Used for passing messages from the message handler to the socket.
-pub static SEND_MSG_BUFFER: ConstStaticCell<[Message; 1]> =
-    ConstStaticCell::new([Message::DutyCycle(0)]);
-pub static SEND_MSG_CHANNEL: StaticCell<Channel<'_, CriticalSectionRawMutex, Message>> =
-    StaticCell::new();
+///
+/// This uses `NoopRawMutex` because data is only shared in one executor.
+/// This does not use a zerocopy channel because [`Message`] is currently smaller than a reference.
+pub static SEND_MSG_CHANNEL: ConstStaticCell<Channel<NoopRawMutex, Message, 2>> =
+    ConstStaticCell::new(Channel::new());
 
 /// Reads the transmit buffer repeatedly until a complete message is found or an error occurs.
 ///
@@ -107,15 +109,17 @@ pub async fn send_message(message: Message, writer: &mut TcpWriter<'_>) -> Resul
 /// See [`TcpError`] for all possible errors.
 pub async fn receive_unhandled_messages(
     reader: &mut TcpReader<'_>,
-    to_msg_handler: &mut Sender<'_, CriticalSectionRawMutex, Message>,
+    to_msg_handler: &mut Sender<'_, NoopRawMutex, Message, 2>,
 ) -> TcpError {
     loop {
         match recv_message(reader).await {
             Ok(message) => {
-                println!("Receiver: Got message: {message:?}");
-                let buffer = to_msg_handler.send().await;
-                *buffer = message;
-                to_msg_handler.send_done();
+                if to_msg_handler.try_send(message).is_err() {
+                    println!(
+                        "Receiver has no space to send the message. Please consider increasing channel capacity."
+                    );
+                    to_msg_handler.send(message).await;
+                }
             }
             Err(err) => break err,
         }
@@ -129,12 +133,10 @@ pub async fn receive_unhandled_messages(
 /// See [`TcpError`] for all possible errors.
 pub async fn announce_handled_messages(
     writer: &mut TcpWriter<'_>,
-    from_msg_handler: &mut Receiver<'_, CriticalSectionRawMutex, Message>,
+    from_msg_handler: &mut Receiver<'_, NoopRawMutex, Message, 2>,
 ) -> TcpError {
     loop {
-        let buffer = from_msg_handler.receive().await;
-        let message = *buffer;
-        from_msg_handler.receive_done();
+        let message = from_msg_handler.receive().await;
         if let Err(err) = send_message(message, writer).await {
             break err;
         }

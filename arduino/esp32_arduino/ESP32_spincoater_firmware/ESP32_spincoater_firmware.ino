@@ -86,7 +86,7 @@ int readRpm(){
   unsigned long measuredRpm;
   if (elapsedTimeMillis > 0) {
     // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(elapsedTimeMillis ms) * (6000 ms / 1 min)
-    // = motor revolutions * 30,000 / (37 * elapsedTimeMillis)
+    // = (2*motor revolutions) * 30,000 / (37 * elapsedTimeMillis)
     // Final units: plate revolutions per minute
     measuredRpm = motorRevolutionsDoubledClone * 30000 / (37 * elapsedTimeMillis);
   } else {
