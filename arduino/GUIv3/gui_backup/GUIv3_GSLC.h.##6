@@ -45,9 +45,8 @@
 // ------------------------------------------------
 //<Enum !Start!>
 enum {E_PG_MAIN};
-enum {E_ELEM_BOX1,E_ELEM_DURATIONDOWNBTN,E_ELEM_DURATIONUPBTN
-      ,E_ELEM_RPMDOWN,E_ELEM_RPMUP,E_ELEM_STARTBTN,E_ELEM_TEXT3
-      ,E_ELEM_TEXT4};
+enum {E_ELEM_BOX1,E_ELEM_BTN1,E_ELEM_BTN2,E_ELEM_BTN3,E_ELEM_BTN4
+      ,E_ELEM_TEXT3,E_ELEM_TEXT4};
 // Must use separate enum for fonts with MAX_FONT at end to use gslc_FontSet.
 enum {E_DOSIS_BOOK8,MAX_FONT};
 //<Enum !End!>
@@ -62,7 +61,7 @@ enum {E_DOSIS_BOOK8,MAX_FONT};
 //<ElementDefines !Start!>
 #define MAX_PAGE                1
 
-#define MAX_ELEM_PG_MAIN 8 // # Elems total on page
+#define MAX_ELEM_PG_MAIN 7 // # Elems total on page
 #define MAX_ELEM_PG_MAIN_RAM MAX_ELEM_PG_MAIN // # Elems in RAM
 //<ElementDefines !End!>
 
@@ -135,28 +134,28 @@ void InitGUIslice_gen()
   // PAGE: E_PG_MAIN
   
   
-  // create E_ELEM_STARTBTN button with text label
-  pElemRef = gslc_ElemCreateBtnTxt(&m_gui,E_ELEM_STARTBTN,E_PG_MAIN,
+  // create E_ELEM_BTN1 button with text label
+  pElemRef = gslc_ElemCreateBtnTxt(&m_gui,E_ELEM_BTN1,E_PG_MAIN,
     (gslc_tsRect){10,10,100,100},(char*)"START",0,E_DOSIS_BOOK8,&CbBtnCommon);
   gslc_ElemSetTxtCol(&m_gui,pElemRef,GSLC_COL_BLACK);
   gslc_ElemSetCol(&m_gui,pElemRef,((gslc_tsColor){0,255,128}),((gslc_tsColor){0,255,128}),GSLC_COL_GREEN);
   gslc_ElemSetRoundEn(&m_gui, pElemRef, true);
   
-  // create E_ELEM_RPMUP button with text label
-  pElemRef = gslc_ElemCreateBtnTxt(&m_gui,E_ELEM_RPMUP,E_PG_MAIN,
-    (gslc_tsRect){10,130,100,45},(char*)"RPM UP",0,E_DOSIS_BOOK8,&CbBtnCommon);
+  // create E_ELEM_BTN2 button with text label
+  pElemRef = gslc_ElemCreateBtnTxt(&m_gui,E_ELEM_BTN2,E_PG_MAIN,
+    (gslc_tsRect){10,130,100,100},(char*)"STOP",0,E_DOSIS_BOOK8,&CbBtnCommon);
   gslc_ElemSetTxtCol(&m_gui,pElemRef,GSLC_COL_BLACK);
-  gslc_ElemSetCol(&m_gui,pElemRef,GSLC_COL_YELLOW,GSLC_COL_YELLOW,GSLC_COL_ORANGE);
+  gslc_ElemSetCol(&m_gui,pElemRef,((gslc_tsColor){255,0,128}),((gslc_tsColor){255,0,128}),GSLC_COL_RED);
   gslc_ElemSetRoundEn(&m_gui, pElemRef, true);
   
-  // create E_ELEM_DURATIONUPBTN button with text label
-  pElemRef = gslc_ElemCreateBtnTxt(&m_gui,E_ELEM_DURATIONUPBTN,E_PG_MAIN,
-    (gslc_tsRect){130,140,180,40},(char*)"DURATION UP",0,E_DOSIS_BOOK8,&CbBtnCommon);
+  // create E_ELEM_BTN3 button with text label
+  pElemRef = gslc_ElemCreateBtnTxt(&m_gui,E_ELEM_BTN3,E_PG_MAIN,
+    (gslc_tsRect){130,140,180,40},(char*)"SPEED UP",0,E_DOSIS_BOOK8,&CbBtnCommon);
   gslc_ElemSetRoundEn(&m_gui, pElemRef, true);
   
-  // create E_ELEM_DURATIONDOWNBTN button with text label
-  pElemRef = gslc_ElemCreateBtnTxt(&m_gui,E_ELEM_DURATIONDOWNBTN,E_PG_MAIN,
-    (gslc_tsRect){130,190,180,40},(char*)"DURATION DOWN",0,E_DOSIS_BOOK8,&CbBtnCommon);
+  // create E_ELEM_BTN4 button with text label
+  pElemRef = gslc_ElemCreateBtnTxt(&m_gui,E_ELEM_BTN4,E_PG_MAIN,
+    (gslc_tsRect){130,190,180,40},(char*)"SLOW DOWN",0,E_DOSIS_BOOK8,&CbBtnCommon);
   gslc_ElemSetRoundEn(&m_gui, pElemRef, true);
    
   // Create E_ELEM_BOX1 box
@@ -172,13 +171,6 @@ void InitGUIslice_gen()
   pElemRef = gslc_ElemCreateTxt(&m_gui,E_ELEM_TEXT4,E_PG_MAIN,(gslc_tsRect){170,52,99,12},
     (char*)"SPIN COATER V3",0,E_DOSIS_BOOK8);
   gslc_ElemSetCol(&m_gui,pElemRef,GSLC_COL_GRAY,((gslc_tsColor){38,58,151}),((gslc_tsColor){38,58,151}));
-  
-  // create E_ELEM_RPMDOWN button with text label
-  pElemRef = gslc_ElemCreateBtnTxt(&m_gui,E_ELEM_RPMDOWN,E_PG_MAIN,
-    (gslc_tsRect){10,185,100,45},(char*)"RPM DOWN",0,E_DOSIS_BOOK8,&CbBtnCommon);
-  gslc_ElemSetTxtCol(&m_gui,pElemRef,GSLC_COL_BLACK);
-  gslc_ElemSetCol(&m_gui,pElemRef,GSLC_COL_YELLOW,GSLC_COL_YELLOW,GSLC_COL_ORANGE);
-  gslc_ElemSetRoundEn(&m_gui, pElemRef, true);
 //<InitGUI !End!>
 
 //<Startup !Start!>
