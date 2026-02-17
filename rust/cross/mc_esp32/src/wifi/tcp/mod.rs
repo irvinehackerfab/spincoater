@@ -22,18 +22,20 @@ pub const BUFFER_SIZE: usize = 64;
 pub static RX_BUFFER: StaticCell<[u8; BUFFER_SIZE]> = StaticCell::new();
 pub static TX_BUFFER: StaticCell<[u8; BUFFER_SIZE]> = StaticCell::new();
 
+/// The maximum number of messages allowed at a time in each channel to/from the message handler.
+pub const HANDLER_CHANNEL_SIZE: usize = 2;
 /// Used for passing messages from the socket to the message handler.
 ///
 /// This uses `NoopRawMutex` because data is only shared in one executor.
 /// This does not use a zerocopy channel because [`Message`] is currently smaller than a reference.
-pub static RECV_MSG_CHANNEL: ConstStaticCell<Channel<NoopRawMutex, Message, 2>> =
+pub static RECV_MSG_CHANNEL: ConstStaticCell<Channel<NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>> =
     ConstStaticCell::new(Channel::new());
 
 /// Used for passing messages from the message handler to the socket.
 ///
 /// This uses `NoopRawMutex` because data is only shared in one executor.
 /// This does not use a zerocopy channel because [`Message`] is currently smaller than a reference.
-pub static SEND_MSG_CHANNEL: ConstStaticCell<Channel<NoopRawMutex, Message, 2>> =
+pub static SEND_MSG_CHANNEL: ConstStaticCell<Channel<NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>> =
     ConstStaticCell::new(Channel::new());
 
 /// Reads the transmit buffer repeatedly until a complete message is found or an error occurs.
@@ -109,14 +111,14 @@ pub async fn send_message(message: Message, writer: &mut TcpWriter<'_>) -> Resul
 /// See [`TcpError`] for all possible errors.
 pub async fn receive_unhandled_messages(
     reader: &mut TcpReader<'_>,
-    to_msg_handler: &mut Sender<'_, NoopRawMutex, Message, 2>,
+    to_msg_handler: &mut Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
 ) -> TcpError {
     loop {
         match recv_message(reader).await {
             Ok(message) => {
                 if to_msg_handler.try_send(message).is_err() {
                     println!(
-                        "Receiver has no space to send the message. Please consider increasing channel capacity."
+                        "Receiver has no space to send the message. Please consider increasing HANDLER_CHANNEL_SIZE."
                     );
                     to_msg_handler.send(message).await;
                 }
@@ -133,7 +135,7 @@ pub async fn receive_unhandled_messages(
 /// See [`TcpError`] for all possible errors.
 pub async fn announce_handled_messages(
     writer: &mut TcpWriter<'_>,
-    from_msg_handler: &mut Receiver<'_, NoopRawMutex, Message, 2>,
+    from_msg_handler: &mut Receiver<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
 ) -> TcpError {
     loop {
         let message = from_msg_handler.receive().await;

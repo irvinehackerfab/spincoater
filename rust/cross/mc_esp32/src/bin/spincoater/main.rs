@@ -46,8 +46,9 @@ use mc_esp32::{
         AUTH_METHOD, GATEWAY_IP, IP_LISTEN_ENDPOINT, MAX_CONNECTIONS, RADIO, STACK_RESOURCES,
         controller_task, net_task,
         tcp::{
-            BUFFER_SIZE, KEEP_ALIVE, RECV_MSG_CHANNEL, RX_BUFFER, SEND_MSG_CHANNEL, TIMEOUT,
-            TX_BUFFER, announce_handled_messages, receive_unhandled_messages,
+            BUFFER_SIZE, HANDLER_CHANNEL_SIZE, KEEP_ALIVE, RECV_MSG_CHANNEL, RX_BUFFER,
+            SEND_MSG_CHANNEL, TIMEOUT, TX_BUFFER, announce_handled_messages,
+            receive_unhandled_messages,
         },
     },
 };
@@ -227,8 +228,8 @@ async fn main(spawner: Spawner) -> ! {
 
 #[embassy_executor::task]
 async fn handle_messages(
-    from_receiver: Receiver<'static, NoopRawMutex, Message, 2>,
-    to_transmitter: Sender<'static, NoopRawMutex, Message, 2>,
+    from_receiver: Receiver<'static, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
+    to_transmitter: Sender<'static, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
     mut pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
 ) {
     loop {
@@ -238,7 +239,7 @@ async fn handle_messages(
         }
         if to_transmitter.try_send(message).is_err() {
             println!(
-                "Message handler has no space to send the message. Please consider increasing channel capacity."
+                "Message handler has no space to send the message. Please consider increasing HANDLER_CHANNEL_SIZE."
             );
             to_transmitter.send(message).await;
         }
@@ -250,15 +251,18 @@ async fn read_rpm() {
     let mut previous_time = Instant::now();
     loop {
         Timer::after_secs(1).await;
+        // Relaxed ordering because the swap does not need to wait for the next atomic increment to the counter.
         let motor_revolutions_doubled = MOTOR_REVOLUTIONS_DOUBLED.swap(0, Ordering::Relaxed);
         let time = previous_time.elapsed();
-        let time_ms =
-            u32::try_from(time.as_millis()).expect("1000 milliseconds should fit in a u32.");
-        // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(`time` ms) * (6000 ms / 1 min)
-        // = (2*motor revolutions) * 30,000 / (37 * `time`)
-        // Final units: plate revolutions per minute
-        let rpm = motor_revolutions_doubled * 30_000 / (37 * (time_ms));
-        println!("RPM: {rpm}");
+        if motor_revolutions_doubled != 0 {
+            let time_ms =
+                u32::try_from(time.as_millis()).expect("1000 milliseconds should fit in a u32.");
+            // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(`time` ms) * (6000 ms / 1 min)
+            // = (2*motor revolutions) * 30,000 / (37 * `time`)
+            // Final units: plate revolutions per minute
+            let rpm = motor_revolutions_doubled * 30_000 / (37 * (time_ms));
+            println!("RPM: {rpm}");
+        }
         previous_time += time;
     }
 }
