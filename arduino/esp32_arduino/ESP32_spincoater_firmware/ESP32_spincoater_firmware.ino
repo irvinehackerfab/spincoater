@@ -8,7 +8,6 @@
 
 #include <LiquidCrystal.h>
 #include <ESP32Servo.h>
-#include <atomic>
 
 // === ESP32 pin mapping  ===
 // LCD (4-bit)
