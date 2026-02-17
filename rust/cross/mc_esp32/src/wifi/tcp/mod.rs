@@ -1,6 +1,7 @@
 pub mod error;
 
-use embassy_net::tcp::{TcpReader, TcpWriter};
+use embassy_futures::select::{Either, select};
+use embassy_net::tcp::{Error, TcpReader, TcpSocket, TcpWriter};
 use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
     channel::{Channel, Receiver, Sender},
@@ -10,7 +11,7 @@ use esp_println::println;
 use sc_messages::Message;
 use static_cell::{ConstStaticCell, StaticCell};
 
-use crate::wifi::tcp::error::TcpError;
+use crate::wifi::{IP_LISTEN_ENDPOINT, tcp::error::TcpError};
 
 /// How long the MCU will wait before disconnecting the host device.
 pub const TIMEOUT: Duration = Duration::from_secs(10);
@@ -84,11 +85,11 @@ pub async fn recv_message(reader: &mut TcpReader<'_>) -> Result<Message, TcpErro
 ///
 /// # Errors
 /// Returns an error if serialization or writing fails.
-pub async fn send_message(message: Message, writer: &mut TcpWriter<'_>) -> Result<(), TcpError> {
+pub async fn send_message(message: &Message, writer: &mut TcpWriter<'_>) -> Result<(), TcpError> {
     loop {
         if writer
             .write_with(
-                |empty_chunk| match postcard::to_slice_cobs(&message, empty_chunk) {
+                |empty_chunk| match postcard::to_slice_cobs(message, empty_chunk) {
                     // The message has been written to the buffer, so let the socket send it.
                     Ok(written_chunk) => (written_chunk.len(), Ok(true)),
                     // There isn't enough space for the message yet, so try again next time.
@@ -139,8 +140,69 @@ pub async fn announce_handled_messages(
 ) -> TcpError {
     loop {
         let message = from_msg_handler.receive().await;
-        if let Err(err) = send_message(message, writer).await {
+        if let Err(err) = send_message(&message, writer).await {
             break err;
         }
     }
+}
+
+/// This function waits for connections, and then handles sending and receiving messages using the provided channels.
+/// Upon disconnect, it waits for the next connection.
+///
+/// # Panics
+/// This function panics if it contains a logic error that needs to be fixed.
+#[allow(
+    clippy::large_stack_frames,
+    reason = "printing is necessary for debugging."
+)]
+pub async fn handle_connections(
+    mut socket: TcpSocket<'_>,
+    mut to_msg_handler: Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
+    mut from_msg_handler: Receiver<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
+) -> ! {
+    loop {
+        println!("Socket: Waiting for connection...");
+        if let Err(err) = socket.accept(IP_LISTEN_ENDPOINT).await {
+            println!("Wifi: Accept error: {:?}", err);
+            continue;
+        }
+        println!(
+            "Socket: Got connection from address {:?}",
+            socket.remote_endpoint()
+        );
+        let (mut reader, mut writer) = socket.split();
+        // Cancel receiving and transmitting as soon as an error occurs.
+        // This gives the socket the opportunity to abort.
+        match select(
+            receive_unhandled_messages(&mut reader, &mut to_msg_handler),
+            announce_handled_messages(&mut writer, &mut from_msg_handler),
+        )
+        .await
+        {
+            Either::First(err) => {
+                println!("Receiver error: {err:?}");
+            }
+            Either::Second(err) => {
+                println!("Transmitter error: {err:?}");
+            }
+        }
+        socket.abort();
+        let _ = socket.flush().await;
+        // Flush all data from the receive buffer as well.
+        flush_rx_buffer(&mut socket).await.expect(
+            "socket has data in the receive buffer, but Embassy is preventing access to it",
+        );
+    }
+}
+
+/// Flushes the receive buffer of the socket if there is data left in it.
+///
+/// # Errors
+/// This function returns an error if Embassy disallows flushing the receive buffer.
+/// If this happens, try calling this function after a new connection has been established instead.
+pub async fn flush_rx_buffer(socket: &mut TcpSocket<'_>) -> Result<(), Error> {
+    if socket.may_recv() {
+        socket.read_with(|bytes| (bytes.len(), ())).await?;
+    }
+    Ok(())
 }
