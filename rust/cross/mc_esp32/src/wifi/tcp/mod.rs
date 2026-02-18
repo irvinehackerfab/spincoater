@@ -153,7 +153,7 @@ pub async fn announce_handled_messages(
 /// This function panics if it contains a logic error that needs to be fixed.
 #[allow(
     clippy::large_stack_frames,
-    reason = "printing is necessary for debugging."
+    reason = "printing is necessary for debugging wifi."
 )]
 pub async fn handle_connections(
     mut socket: TcpSocket<'_>,
