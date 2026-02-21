@@ -9,7 +9,7 @@ use embassy_sync::{
 use embassy_time::Duration;
 use esp_println::println;
 use sc_messages::Message;
-use static_cell::{ConstStaticCell, StaticCell};
+use static_cell::ConstStaticCell;
 
 use crate::wifi::{IP_LISTEN_ENDPOINT, tcp::error::TcpError};
 
@@ -20,8 +20,8 @@ pub const TIMEOUT: Duration = Duration::from_secs(10);
 pub const KEEP_ALIVE: Duration = Duration::from_secs(5);
 
 pub const BUFFER_SIZE: usize = 64;
-pub static RX_BUFFER: StaticCell<[u8; BUFFER_SIZE]> = StaticCell::new();
-pub static TX_BUFFER: StaticCell<[u8; BUFFER_SIZE]> = StaticCell::new();
+pub static RX_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new([0u8; BUFFER_SIZE]);
+pub static TX_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new([0u8; BUFFER_SIZE]);
 
 /// The maximum number of messages allowed at a time in each channel to/from the message handler.
 pub const HANDLER_CHANNEL_SIZE: usize = 2;

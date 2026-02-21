@@ -66,6 +66,15 @@ postcard = { version = "1.1.3", features = ["defmt"] }
 
 sc_messages = { path = "../../sc_messages" }
 
+# The dependencies below are used for the display.
+embedded-hal-bus = "0.3.0"
+embedded-graphics = "0.8.2"
+mipidsi = "0.10.0"
+
+# Override mipidsi's dependency on embdedded-hal version "=1.0.0-alpha.7"
+[dependencies.embedded-hal]
+version = "1.0.0"
+
 [profile.dev]
 # Rust debug is too slow.
 # For debug builds always builds with some optimization

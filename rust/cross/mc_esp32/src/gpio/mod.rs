@@ -4,6 +4,7 @@ use esp_hal::handler;
 
 use crate::gpio::encoder::{ENCODER, MOTOR_REVOLUTIONS_DOUBLED};
 
+pub mod display;
 pub mod encoder;
 pub mod pwm;
 
