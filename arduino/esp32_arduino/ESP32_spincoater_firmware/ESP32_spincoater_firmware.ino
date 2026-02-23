@@ -6,18 +6,20 @@
 //3,1,0, 12 are whatever
 
 
-#include <LiquidCrystal.h>
 #include <ESP32Servo.h>
 
 // === ESP32 pin mapping  ===
-// LCD (4-bit)
-#define PIN_RS 21
-#define PIN_RW 22  // If you tie RW to GND physically, set this to 0 and wire RW to GND
-#define PIN_E  19
-#define PIN_D4 18
-#define PIN_D5 17
-#define PIN_D6 16
-#define PIN_D7 5
+// Display pins
+// These are set directly in the library, not here.
+// See this issue for more information:
+// https://github.com/irvinehackerfab/spincoater/issues/6
+// TFT_MISO and T_DO: 19
+// TFT_MOSI and T_DIN: 23
+// TFT_SCK and T_CLK: 18
+// TFT_CS: 15
+// TFT_DC: 2
+// TFT_RST: 4
+// TOUCH_CS: 33
 
 // Buttons (use INPUT_PULLUP)
 #define PIN_RPM_UP    25
@@ -44,7 +46,6 @@ unsigned long previousTimeMillis;
 constexpr double adj_mtr = 1.42857143;
 
 Servo servo; // Setup the Servo
-auto lcd = LiquidCrystal(PIN_RS, PIN_RW, PIN_E, PIN_D4, PIN_D5, PIN_D6, PIN_D7); // Setup LCD
 
 // Saves Data for the Spin Phase
 struct spinState {
@@ -60,7 +61,6 @@ void Spin(int rpm, int duration);
 void halfRevolutionInterrupt();
 int readRpm();
 int mapRPM(int);
-void startScreen();
 void updateValues();
 
 // Handles the interrupts of the HE sensor.
@@ -137,19 +137,10 @@ void setSpin(int curr, int target){
   servo.writeMicroseconds(mapRPM(target));
 }
 
-// Initial Start Screen (Press Start to Continue)
-void startScreen(){
-  lcd.clear();
-  lcd.setCursor(0, 0); lcd.print("UCI Spin Coater!");
-  lcd.setCursor(0, 1); lcd.print("Press Start...");
-  while(1){ if(debounce(4)){ return; } }
-}
-
 // Menu Loop (User Selects RPM and Duration)
 spinState menuLoop(){
   spinState state;
   bool initial = true;
-  lcd.clear();
   while(true){
     bool updated = true;
     if(debounce(1)){ // Increases RPM
@@ -178,8 +169,6 @@ spinState menuLoop(){
 
     // Updates the Display with the Current Values
     if(updated || initial){
-      lcd.setCursor(0, 0); lcd.print("RPM: "); lcd.print("    "); lcd.setCursor(5, 0); lcd.print((int)(state.rpm / adj_mtr));
-      lcd.setCursor(0, 1); lcd.print("Duration: "); lcd.print("    ");  lcd.setCursor(10, 1); lcd.print((int)state.duration);
       initial = false;
     }
   }
@@ -187,10 +176,6 @@ spinState menuLoop(){
 
 // Controls the PreSpin Phase (Add Photoresist here)
 void preSpin(){
-  lcd.clear();
-  lcd.setCursor(0,0); lcd.print("Pre-Spin Phase");
-  lcd.setCursor(0,1); lcd.print("RPM: 600");
-
   setSpin(0, preSpinRPM);
   while(1){
     if (debounce(4)){ // Exit using Start Button
@@ -201,9 +186,6 @@ void preSpin(){
 
 // Controls Spin Phase & Display
 void Spin(int rpm, int duration){
-  lcd.clear();
-  lcd.setCursor(0,0); lcd.print("Spinning...");
-  lcd.setCursor(0, 1); lcd.print("Duration: "); lcd.print((int)duration);
   setSpin(preSpinRPM, rpm);
   int progress = 0;
   int startTime = millis();
@@ -213,15 +195,12 @@ void Spin(int rpm, int duration){
     progress = millis() - startTime;
     int timeLeft = ceil(duration - progress/1000.0);
     if(timeLeft != lastDisplayed){
-      lcd.setCursor(0, 1); lcd.print("Duration: ");lcd.setCursor(10, 1);  lcd.print("     "); lcd.setCursor(10, 1); lcd.print(timeLeft);
       lastDisplayed = timeLeft;
     }
     if(debounce(4)){break;} // Early Exit with Start Button
     Serial.println(readRpm());
   }
   setSpin(rpm, 0);
-  lcd.clear();
-  lcd.setCursor(0,0); lcd.print("Completed Spin!");
   delay(3000);
 }
 
@@ -244,11 +223,6 @@ void setup() {
   delay(200);                          // short delay for stable boot
   servo.attach(PIN_MOTOR, 1000, 2000); // then attach servo
   servo.writeMicroseconds(1500); // for esc
-
-
-  // Setup LCD
-  lcd.begin(16, 2);
-  lcd.clear();
 
   // Setup IR Sensor interrupt using the pin number
   motorRevolutionsDoubled = 0;
@@ -283,8 +257,6 @@ void test(){
 void loop() {
   test(); // These two lines are for testing/graphing
   //while(1){}
-
-  startScreen();
   while(1){
     spinState state = menuLoop();
     Serial.println("Finished Menu State");
