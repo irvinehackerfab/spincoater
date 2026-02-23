@@ -7,16 +7,13 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-use core::cell::RefCell;
-
-use critical_section::Mutex;
 use embassy_executor::Spawner;
 use embassy_net::{Ipv4Cidr, StackResources, StaticConfigV4, tcp::TcpSocket};
 use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
     channel::{Receiver, Sender},
 };
-use embedded_hal_bus::spi::CriticalSectionDevice;
+use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
@@ -55,6 +52,8 @@ use mc_esp32::{
     },
 };
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
+use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
+use ratatui::Terminal;
 use sc_messages::{Message, STOP_DUTY};
 
 // Wifi requires heap allocation
@@ -183,24 +182,22 @@ async fn main(spawner: Spawner) -> ! {
     mcpwm.timer0.start(timer_clock_cfg);
     pwm_pin.set_timestamp(STOP_DUTY);
 
-    // Initialize SPI for the display
+    // Initialize the display
     // https://esp32.implrust.com/tft-display/circuit.html
-    let spi = Mutex::new(RefCell::new(
-        Spi::new(
-            peripherals.SPI2,
-            Config::default()
-                .with_frequency(Rate::from_mhz(4))
-                .with_mode(esp_hal::spi::Mode::_0),
-        )
-        .expect("Frequency is within 70kHz..80MHz")
-        .into_async()
-        // Master In Slave Out. SPI read line from the display to the microcontroller.
-        .with_miso(peripherals.GPIO19)
-        // Master Out Slave In. This is the SPI data line from the microcontroller to the display. Used to send pixel data and commands.
-        .with_mosi(peripherals.GPIO23)
-        // Serial Clock. SPI clock signal from the microcontroller. It synchronizes the data being sent.
-        .with_sck(peripherals.GPIO18),
-    ));
+    let spi = Spi::new(
+        peripherals.SPI2,
+        Config::default()
+            .with_frequency(Rate::from_mhz(4))
+            .with_mode(esp_hal::spi::Mode::_0),
+    )
+    .expect("Frequency is within 70kHz..80MHz")
+    .into_async()
+    // Master In Slave Out. SPI read line from the display to the microcontroller.
+    .with_miso(peripherals.GPIO19)
+    // Master Out Slave In. This is the SPI data line from the microcontroller to the display. Used to send pixel data and commands.
+    .with_mosi(peripherals.GPIO23)
+    // Serial Clock. SPI clock signal from the microcontroller. It synchronizes the data being sent.
+    .with_sck(peripherals.GPIO18);
     // Chip Select. This tells the display when it should listen to SPI commands. Keep it low (active) when sending data.
     // [`ExclusiveDevice::new_no_delay`] says to have an initial output of high.
     let cs = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
@@ -209,13 +206,14 @@ async fn main(spawner: Spawner) -> ! {
     // Resets the display. Useful during startup to make sure the display starts in a known state.
     // Starts off low because [`Ili9341::new`] sets the reset low, then high
     let reset = Output::new(peripherals.GPIO4, Level::Low, OutputConfig::default());
-    let spi_device = CriticalSectionDevice::new_no_delay(&spi, cs).expect("cs is already high");
+    let spi_device = ExclusiveDevice::new_no_delay(spi, cs).expect("cs is already high");
     let interface = SpiInterface::new(spi_device, dc, SPI_BUFFER.take());
     let mut display = mipidsi::Builder::new(ILI9341Rgb565, interface)
         .reset_pin(reset)
         .init(&mut Delay::new())
         .expect("Failed to init display");
-    // Todo: initialize touch with a chip select on pin 33
+    let backend = EmbeddedBackend::new(&mut display, EmbeddedBackendConfig::default());
+    let terminal = Terminal::new(backend).expect("Failed to create terminal");
 
     // Setup communication between tasks
     let recv_msg_channel = RECV_MSG_CHANNEL.take();
