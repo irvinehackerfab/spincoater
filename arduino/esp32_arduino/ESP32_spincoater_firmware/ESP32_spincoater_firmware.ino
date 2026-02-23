@@ -224,7 +224,7 @@ void setup() {
   servo.attach(PIN_MOTOR, 1000, 2000); // then attach servo
   servo.writeMicroseconds(1500); // for esc
 
-  // Setup IR Sensor interrupt using the pin number
+  // Setup HE Sensor interrupt using the pin number
   motorRevolutionsDoubled = 0;
   previousTimeMillis = millis();
   attachInterrupt(digitalPinToInterrupt(PIN_HE), halfRevolutionInterrupt, RISING);
