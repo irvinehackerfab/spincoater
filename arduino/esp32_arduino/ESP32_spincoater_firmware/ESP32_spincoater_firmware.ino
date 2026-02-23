@@ -7,6 +7,7 @@
 
 
 #include <ESP32Servo.h>
+#include "GUIv3_GSLC.h"
 
 // === ESP32 pin mapping  ===
 // Display pins
@@ -224,6 +225,10 @@ void setup() {
   servo.attach(PIN_MOTOR, 1000, 2000); // then attach servo
   servo.writeMicroseconds(1500); // for esc
 
+  // Setup display
+  gslc_InitDebug(&DebugOut);
+  InitGUIslice_gen();
+
   // Setup HE Sensor interrupt using the pin number
   motorRevolutionsDoubled = 0;
   previousTimeMillis = millis();
@@ -258,6 +263,7 @@ void loop() {
   test(); // These two lines are for testing/graphing
   //while(1){}
   while(1){
+    gslc_Update(&m_gui);
     spinState state = menuLoop();
     Serial.println("Finished Menu State");
     preSpin();

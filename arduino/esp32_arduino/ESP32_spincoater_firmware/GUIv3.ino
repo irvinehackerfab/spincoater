@@ -14,9 +14,6 @@
 // ------------------------------------------------
 #include "GUIv3_GSLC.h"
 
-#define SCREEN_WIDTH 320
-#define SCREEN_HEIGHT 240
-#define FONT_SIZE 2
 
 // ------------------------------------------------
 // Program Globals
@@ -44,18 +41,22 @@ bool CbBtnCommon(void* pvGui,void *pvElemRef,gslc_teTouch eTouch,int16_t nX,int1
     // From the element's ID we can determine which button was pressed.
     switch (pElem->nId) {
 //<Button Enums !Start!>
-      case E_ELEM_BTN1:
-        Serial.println("START");
+      case E_ELEM_STARTBTN:
+        Serial.println("Start Button Pressed");
         break;
-      case E_ELEM_BTN2:
-      Serial.println("STOP");
+      case E_ELEM_RPMUP:
+        Serial.println("RPMUP Button Pressed");
         break;
-      case E_ELEM_BTN3:
-      Serial.println("SLOW");
+      case E_ELEM_DURATIONUPBTN:
+        Serial.println("DURATIONUP Button Pressed");
         break;
-      case E_ELEM_BTN4:
-      Serial.println("FAST");
+      case E_ELEM_DURATIONDOWNBTN:
+       Serial.println("DURATIONDOWN Button Pressed");
         break;
+      case E_ELEM_RPMDOWN:
+         Serial.println("RPMDOWN Button Pressed");
+        break;
+
 //<Button Enums !End!>
       default:
         break;
@@ -77,41 +78,3 @@ bool CbBtnCommon(void* pvGui,void *pvElemRef,gslc_teTouch eTouch,int16_t nX,int1
 //<Slider Callback !End!>
 //<Tick Callback !Start!>
 //<Tick Callback !End!>
-
-void setup()
-{
-  // ------------------------------------------------
-  // Initialize
-  // ------------------------------------------------
-  Serial.begin(9600);
-  // Wait for USB Serial 
-  //delay(1000);  // NOTE: Some devices require a delay after Serial.begin() before serial port can be used
-
-  gslc_InitDebug(&DebugOut);
-
-  // ------------------------------------------------
-  // Create graphic elements
-  // ------------------------------------------------
-  InitGUIslice_gen();
-
-}
-
-// -----------------------------------
-// Main event loop
-// -----------------------------------
-void loop()
-{
-
-  // ------------------------------------------------
-  // Update GUI Elements
-  // ------------------------------------------------
-  
-  //TODO - Add update code for any text, gauges, or sliders
-  
-  // ------------------------------------------------
-  // Periodically call GUIslice update function
-  // ------------------------------------------------
-  gslc_Update(&m_gui);
-    
-}
-
