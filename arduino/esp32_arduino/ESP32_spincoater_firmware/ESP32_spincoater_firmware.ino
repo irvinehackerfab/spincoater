@@ -22,6 +22,7 @@
 // TFT_RST: 4
 // TOUCH_CS: 33
 
+// TODO: Remove all usages of the push buttons now that we have a touchscreen
 // Buttons (use INPUT_PULLUP)
 #define PIN_RPM_UP    25
 #define PIN_RPM_DOWN  26
