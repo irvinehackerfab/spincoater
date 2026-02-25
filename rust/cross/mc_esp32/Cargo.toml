@@ -70,7 +70,7 @@ sc_messages = { path = "../../sc_messages" }
 embedded-hal-bus = "0.3.0"
 embedded-graphics = "0.8.2"
 mipidsi = "0.10.0"
-mousefood = "0.4.0"
+mousefood = { version = "0.4.0", default-features = false, features = ["fonts"] }
 ratatui = { version = "0.30.0", default-features = false, features = ["all-widgets"] }
 
 # Override mipidsi's dependency on embdedded-hal version "=1.0.0-alpha.7"
