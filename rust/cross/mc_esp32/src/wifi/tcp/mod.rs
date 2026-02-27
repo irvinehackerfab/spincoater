@@ -1,3 +1,4 @@
+//! This module contains all of the TCP-socket-specific functionality of the wifi.
 pub mod error;
 
 use embassy_futures::select::{Either, select};
@@ -19,8 +20,14 @@ pub const TIMEOUT: Duration = Duration::from_secs(10);
 /// This prevents the socket from closing due to inactivity.
 pub const KEEP_ALIVE: Duration = Duration::from_secs(5);
 
+/// The number of bytes each buffer can hold.
+/// This should be enough bytes to store multiple [`sc_messages::Message`]s.
+///
+/// Keep this up to date with `../../sc_messages/src/lib.rs` `BUFFER_SIZE`
 pub const BUFFER_SIZE: usize = 64;
+/// The static variable for the receive buffer.
 pub static RX_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new([0u8; BUFFER_SIZE]);
+/// The static variable for the transmit buffer.
 pub static TX_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new([0u8; BUFFER_SIZE]);
 
 /// The maximum number of messages allowed at a time in each channel to/from the message handler.

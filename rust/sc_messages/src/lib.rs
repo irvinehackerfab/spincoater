@@ -1,3 +1,4 @@
+//! This cross-platform crate describes the message types sent between the host PC and microcontrollers.
 #![no_std]
 #[cfg(feature = "std")]
 extern crate std;
@@ -39,7 +40,7 @@ mod test {
     use super::*;
     use postcard::{Error, from_bytes, from_bytes_cobs, to_vec, to_vec_cobs};
 
-    // Keep this up to date with ../cross/mc_esp32/src/bin/wifi_pwm/wifi/mod.rs BUFFER_SIZE
+    /// Keep this up to date with `../cross/mc_esp32/src/wifi/tcp/mod.rs` `BUFFER_SIZE`
     const BUFFER_SIZE: usize = 64;
 
     /// The correct message must be obtainable from multiple deserialization attempts on the same buffer.

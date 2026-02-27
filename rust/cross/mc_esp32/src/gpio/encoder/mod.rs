@@ -1,3 +1,7 @@
+//! This module contains all encoder-specific functionality.
+//!
+//! If you're looking for the interrupt service routine that handles hall effect sensor readings,
+//! it's located in the [gpio](`crate::gpio`) module.
 use core::{
     cell::RefCell,
     sync::atomic::{AtomicU32, Ordering},
@@ -35,6 +39,7 @@ pub async fn read_rpm() -> ! {
             // Final units: plate revolutions per minute
             let rpm = motor_revolutions_doubled * 30_000 / (37 * (time_ms));
             println!("RPM: {rpm}");
+            // Todo: Send RPM to terminal
         }
         // Increment the time passed regardless of the revolutions counted.
         previous_time += time;

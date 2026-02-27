@@ -1,3 +1,6 @@
+//! This crate provides a TUI for the PC connecting to the spincoater's ESP32.
+pub mod app;
+
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use cfg_if::cfg_if;
@@ -5,10 +8,6 @@ use color_eyre::Result;
 use tokio::net::TcpStream;
 
 use crate::app::App;
-
-pub mod app;
-pub mod event;
-pub mod ui;
 
 cfg_if! {
     if #[cfg(debug_assertions)] {
@@ -28,7 +27,7 @@ cfg_if! {
         /// Binds a TCP socket to [`DEV_ADDRESS`] and spawns a task to accept and send back all messages.
         fn open_dev_connection() -> Result<()> {
             use crate::DEV_ADDRESS;
-            use crate::event::BUFFER_SIZE;
+            use crate::app::event::BUFFER_SIZE;
             use tokio::io::AsyncReadExt;
             use tokio::io::AsyncWriteExt;
             use tokio::net::TcpSocket;
@@ -67,7 +66,7 @@ cfg_if! {
             Ok(())
         }
     } else {
-        // Keep this up to date with ../cross/mc_esp32/src/bin/wifi_pwm/wifi/mod.rs
+        /// Keep this up to date with the IP and port listed in `../cross/mc_esp32/src/wifi/mod.rs`
         pub(crate) const MCU_ADDRESS: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(192, 168, 2, 1), 8080);
 
         #[tokio::main]

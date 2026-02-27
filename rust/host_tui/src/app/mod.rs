@@ -1,10 +1,14 @@
+//! This module contains the app representing the TUI.
+pub mod event;
+pub mod ui;
+
 use std::fmt::{Display, Formatter};
 use std::fs::{DirBuilder, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::{env, fs::File, io::BufWriter};
 
-use crate::event::{EventHandler, TuiEvent};
+use crate::app::event::{EventHandler, TuiEvent};
 use chrono::{DateTime, Local};
 use color_eyre::{Result, eyre::OptionExt};
 use crossterm::event::Event;
@@ -17,6 +21,9 @@ use ringbuffer::{AllocRingBuffer, RingBuffer};
 use sc_messages::{MAX_POWER_DUTY, Message, STOP_DUTY};
 use tokio::net::TcpStream;
 
+/// The maximum number of messages kept in the TUI at a time
+/// (all messages are written to the log file.)
+///
 const MESSAGE_CAPACITY: usize = 100;
 
 /// Application.
@@ -29,8 +36,12 @@ pub struct App {
     /// The state of the commands section.
     pub commands_state: ListState,
     /// The last [`MESSAGE_CAPACITY`] messages sent from/to the MCU since the app started.
+    ///
+    /// When max capacity is reached, the oldest messages are overridden.
     pub messages: AllocRingBuffer<MessageInfo>,
+    /// The log file.
     pub log_file: BufWriter<File>,
+    /// The log file path.
     pub log_file_path: String,
 }
 
@@ -55,6 +66,7 @@ impl App {
         })
     }
 
+    /// Opens the log file.
     fn open_log_file(directory: &str, date: String) -> Result<(PathBuf, BufWriter<File>)> {
         let mut dir = env::current_dir()?;
         dir.push(directory);
@@ -127,6 +139,7 @@ impl App {
     }
 }
 
+/// A message, with the time it was received.
 #[derive(Debug, Clone)]
 pub struct MessageInfo {
     pub message: Message,

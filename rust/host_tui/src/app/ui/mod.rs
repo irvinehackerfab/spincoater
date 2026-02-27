@@ -1,3 +1,4 @@
+//! This module describes the UI layout of the terminal.
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Layout, Rect},

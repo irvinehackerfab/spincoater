@@ -1,31 +1,24 @@
-use embedded_hal_bus::spi::{CriticalSectionDevice, NoDelay};
+//! This module contains all display functionality.
+pub mod terminal;
+
+use embedded_hal_bus::spi::{ExclusiveDevice, NoDelay};
 use esp_hal::{Async, gpio::Output, spi::master::Spi};
 use mipidsi::{Display, interface::SpiInterface, models::ILI9341Rgb565};
-use mousefood::{EmbeddedBackend, prelude::Rgb565};
-use ratatui::Terminal;
-use static_cell::ConstStaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 /// The buffer used for display pixels
 pub static SPI_BUFFER: ConstStaticCell<[u8; 512]> = ConstStaticCell::new([0u8; 512]);
 
-/// This task
-#[embassy_executor::task]
-pub async fn update_display(
-    terminal: &'static mut Terminal<
-        EmbeddedBackend<
-            'static,
-            Display<
-                SpiInterface<
-                    'static,
-                    CriticalSectionDevice<'static, Spi<'static, Async>, Output<'static>, NoDelay>,
-                    Output<'static>,
-                >,
-                ILI9341Rgb565,
-                Output<'static>,
-            >,
-            Rgb565,
-        >,
+/// The entire type of the display as a type alias, so it can be reused.
+pub type DisplayType = Display<
+    SpiInterface<
+        'static,
+        ExclusiveDevice<Spi<'static, Async>, Output<'static>, NoDelay>,
+        Output<'static>,
     >,
-) {
-    todo!("terminal.draw()")
-}
+    ILI9341Rgb565,
+    Output<'static>,
+>;
+
+/// The static cell for the display.
+pub static DISPLAY: StaticCell<DisplayType> = StaticCell::new();

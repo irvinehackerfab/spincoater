@@ -1,3 +1,4 @@
+//! This module contains all of the wifi functionality.
 pub mod tcp;
 
 use core::net::Ipv4Addr;
@@ -10,20 +11,24 @@ use esp_radio::{
 };
 use static_cell::StaticCell;
 
+/// Keep this up to date with the address listed in `../../host_tui/src/main.rs`
 pub const GATEWAY_IP: Ipv4Addr = Ipv4Addr::new(192, 168, 2, 1);
+/// Keep this up to date with the address listed in `../../host_tui/src/main.rs`
 pub const PORT: u16 = 8080;
+/// We want to listen for connections no matter the IP address.
 pub const IP_LISTEN_ENDPOINT: IpListenEndpoint = IpListenEndpoint {
     addr: None,
     port: PORT,
 };
 
+/// I would use [`AuthMethod::Wpa3Personal`], but it isn't supported for access point mode.
 pub const AUTH_METHOD: AuthMethod = AuthMethod::Wpa2Personal;
+/// We only want one active connection at a time.
 pub const MAX_CONNECTIONS: u16 = 1;
 
-// Static resources
-/// The radio must be made static so Rust doesn't think it can ever be dropped.
+/// The static variable that holds the radio.
 pub static RADIO: StaticCell<Controller> = StaticCell::new();
-/// We only use 1 socket right now
+/// We only use 1 socket right now.
 pub static STACK_RESOURCES: StaticCell<StackResources<1>> = StaticCell::new();
 
 /// This task restarts the wifi 5 seconds after it stops.
@@ -46,6 +51,7 @@ pub async fn controller_task(mut wifi_controller: WifiController<'static>) {
     }
 }
 
+/// This task runs the network stack.
 #[embassy_executor::task]
 pub async fn net_task(mut runner: Runner<'static, WifiDevice<'static>>) {
     runner.run().await;

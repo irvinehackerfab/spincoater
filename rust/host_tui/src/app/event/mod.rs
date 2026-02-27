@@ -1,3 +1,4 @@
+//! This module decribes events that cause updates to the TUI.
 use crate::app::MessageInfo;
 use bytes::{BufMut, BytesMut};
 use color_eyre::{Result, eyre::OptionExt};
@@ -14,10 +15,10 @@ use tokio::{
     sync::mpsc::{self, UnboundedSender},
 };
 
-// Keep this up to date with ../cross/mc_esp32/src/bin/wifi_pwm/wifi/mod.rs BUFFER_SIZE
+/// Keep this up to date with `../cross/mc_esp32/src/wifi/tcp/mod.rs` `BUFFER_SIZE`
 pub const BUFFER_SIZE: usize = 64;
 
-/// Representation of all possible events.
+/// All possible TUI events.
 #[derive(Clone, Debug)]
 pub enum TuiEvent {
     /// Crossterm events such as keyboard inputs.
@@ -81,6 +82,7 @@ impl EventHandler {
     }
 }
 
+/// Sends crossterm events to the terminal whenever they occur.
 async fn await_crossterm_events(to_handler: UnboundedSender<Result<TuiEvent>>) {
     let mut reader = crossterm::event::EventStream::new();
     loop {

@@ -37,7 +37,10 @@ use esp_radio::wifi::{CountryInfo, OperatingClass};
 use mc_esp32::{
     SECOND_CORE_STACK,
     gpio::{
-        display::SPI_BUFFER,
+        display::{
+            DISPLAY, SPI_BUFFER,
+            terminal::{TERMINAL, update_terminal},
+        },
         encoder::{ENCODER, read_rpm},
         interrupt_handler,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER},
@@ -208,12 +211,16 @@ async fn main(spawner: Spawner) -> ! {
     let reset = Output::new(peripherals.GPIO4, Level::Low, OutputConfig::default());
     let spi_device = ExclusiveDevice::new_no_delay(spi, cs).expect("cs is already high");
     let interface = SpiInterface::new(spi_device, dc, SPI_BUFFER.take());
-    let mut display = mipidsi::Builder::new(ILI9341Rgb565, interface)
-        .reset_pin(reset)
-        .init(&mut Delay::new())
-        .expect("Failed to init display");
-    let backend = EmbeddedBackend::new(&mut display, EmbeddedBackendConfig::default());
-    let terminal = Terminal::new(backend).expect("Failed to create terminal");
+    let display = DISPLAY.init_with(|| {
+        mipidsi::Builder::new(ILI9341Rgb565, interface)
+            .reset_pin(reset)
+            .init(&mut Delay::new())
+            .expect("Failed to init display")
+    });
+    let backend = EmbeddedBackend::new(display, EmbeddedBackendConfig::default());
+    let terminal =
+        TERMINAL.init_with(|| Terminal::new(backend).expect("Failed to create terminal"));
+    spawner.must_spawn(update_terminal(terminal));
 
     // Setup communication between tasks
     let recv_msg_channel = RECV_MSG_CHANNEL.take();

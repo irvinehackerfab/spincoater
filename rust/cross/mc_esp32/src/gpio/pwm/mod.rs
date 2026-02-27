@@ -1,8 +1,6 @@
-//! This module contains the PWM output constants used by all ESP32 programs.
-//!
+//! This module contains PWM output functionality.
 use esp_hal::time::Rate;
 
-// PWM output constants
 /// The current motor controller reads PWM at 50 Hz.
 pub const FREQUENCY: Rate = Rate::from_hz(50);
 

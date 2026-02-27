@@ -1,3 +1,5 @@
+//! This crate contains all ESP32-specific spincoater functionality.
+//! It is meant to be compiled with Espressif's toolchain, not the regular Rust toolchain. See the README for more information.
 #![no_std]
 #![deny(
     clippy::mem_forget,
@@ -11,4 +13,5 @@ use static_cell::StaticCell;
 pub mod gpio;
 pub mod wifi;
 
-pub static SECOND_CORE_STACK: StaticCell<Stack<4096>> = StaticCell::new();
+/// The static variable that holds the second core stack.
+pub static SECOND_CORE_STACK: StaticCell<Stack<1024>> = StaticCell::new();
