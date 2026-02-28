@@ -23,6 +23,14 @@ This program does the following:
   - Allows one device to connect at a time
   - Listens on a TCP socket on port 8080
   - Send and receives messages defined in `sc_messages` (in the workspace above this one).
+- Initializes the [TFT display](https://protosupplies.com/product/tft-lcd-2-8-240x320-rgb-spi-display-with-touchscreen/) with the following pins:
+  - MISO: GPIO19
+  - MOSI: GPIO23
+  - SCK: GPIO18
+  - CS: GPIO15
+  - DC: GPIO2
+  - RESET: GPIO4
+  - T_CS (touch chip select, not used yet): GPIO33
 
 When flashing the program, you must specify the Wifi's SSID and password through environment variables. One way to do this is by running the program with `SSID=_ PASSWORD=_ cargo run --release --bin spincoater`.
 

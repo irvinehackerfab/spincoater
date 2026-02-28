@@ -104,7 +104,6 @@ async fn main(spawner: Spawner) -> ! {
         wifi_config,
     )
     .expect("Failed to initialize Wi-Fi controller");
-    println!("Wifi capabilities: {:?}", wifi_controller.capabilities());
     let net_config = embassy_net::Config::ipv4_static(StaticConfigV4 {
         address: Ipv4Cidr::new(GATEWAY_IP, 24),
         gateway: Some(GATEWAY_IP),

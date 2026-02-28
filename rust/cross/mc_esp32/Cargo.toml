@@ -82,10 +82,6 @@ version = "1.0.0"
 # For debug builds always builds with some optimization
 opt-level = "s"
 
-# https://docs.espressif.com/projects/rust/esp-radio/0.17.0/esp32/esp_radio/index.html#optimization-level
-[profile.dev.package.esp-radio]
-opt-level = 3
-
 [profile.release]
 codegen-units = 1     # LLVM can perform better optimizations using a single thread
 debug = 2
