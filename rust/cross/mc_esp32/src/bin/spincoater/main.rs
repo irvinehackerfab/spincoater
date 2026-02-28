@@ -38,7 +38,7 @@ use mc_esp32::{
     SECOND_CORE_STACK,
     gpio::{
         display::{
-            DISPLAY, SPI_BUFFER,
+            DISPLAY, ORIENTATION, SPI_BUFFER,
             terminal::{
                 TERMINAL, TERMINAL_CHANNEL, TERMINAL_CHANNEL_SIZE, TuiEvent, update_terminal,
             },
@@ -215,7 +215,7 @@ async fn main(spawner: Spawner) -> ! {
     let display = DISPLAY.init_with(|| {
         mipidsi::Builder::new(ILI9341Rgb565, interface)
             .reset_pin(reset)
-            .orientation(Orientation::default().flip_vertical())
+            .orientation(ORIENTATION)
             .init(&mut Delay::new())
             .expect("Failed to init display")
     });

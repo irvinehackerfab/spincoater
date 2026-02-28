@@ -3,7 +3,7 @@ pub mod terminal;
 
 use embedded_hal_bus::spi::{ExclusiveDevice, NoDelay};
 use esp_hal::{Async, gpio::Output, spi::master::Spi};
-use mipidsi::{Display, interface::SpiInterface, models::ILI9341Rgb565};
+use mipidsi::{Display, interface::SpiInterface, models::ILI9341Rgb565, options::Orientation};
 use static_cell::{ConstStaticCell, StaticCell};
 
 /// The buffer used for display pixels
@@ -22,3 +22,6 @@ pub type DisplayType = Display<
 
 /// The static cell for the display.
 pub static DISPLAY: StaticCell<DisplayType> = StaticCell::new();
+
+/// The orientation settings for mipidsi.
+pub const ORIENTATION: Orientation = Orientation::new().flip_vertical();
