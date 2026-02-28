@@ -57,7 +57,7 @@ use mc_esp32::{
         },
     },
 };
-use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
+use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565, options::Orientation};
 use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
 use ratatui::Terminal;
 use sc_messages::{Message, STOP_DUTY};
@@ -215,6 +215,7 @@ async fn main(spawner: Spawner) -> ! {
     let display = DISPLAY.init_with(|| {
         mipidsi::Builder::new(ILI9341Rgb565, interface)
             .reset_pin(reset)
+            .orientation(Orientation::default().flip_vertical())
             .init(&mut Delay::new())
             .expect("Failed to init display")
     });
