@@ -34,6 +34,7 @@ use esp_hal::{
 };
 use esp_println::println;
 use esp_radio::wifi::{CountryInfo, OperatingClass};
+use ibm437::IBM437_9X14_REGULAR;
 use mc_esp32::{
     SECOND_CORE_STACK,
     gpio::{
@@ -57,7 +58,7 @@ use mc_esp32::{
         },
     },
 };
-use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565, options::Orientation};
+use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
 use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
 use ratatui::Terminal;
 use sc_messages::{Message, STOP_DUTY};
@@ -219,7 +220,11 @@ async fn main(spawner: Spawner) -> ! {
             .init(&mut Delay::new())
             .expect("Failed to init display")
     });
-    let backend = EmbeddedBackend::new(display, EmbeddedBackendConfig::default());
+    let config = EmbeddedBackendConfig {
+        font_regular: IBM437_9X14_REGULAR,
+        ..EmbeddedBackendConfig::default()
+    };
+    let backend = EmbeddedBackend::new(display, config);
     let terminal =
         TERMINAL.init_with(|| Terminal::new(backend).expect("Failed to create terminal"));
 

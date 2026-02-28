@@ -70,8 +70,10 @@ sc_messages = { path = "../../sc_messages" }
 embedded-hal-bus = "0.3.0"
 embedded-graphics = "0.8.2"
 mipidsi = "0.10.0"
-mousefood = { version = "0.4.0", default-features = false, features = ["fonts"] }
+mousefood = { version = "0.4.0", default-features = false }
 ratatui = { version = "0.30.0", default-features = false, features = ["all-widgets"] }
+# Alternate mousefood font with unnecessary characters removed to save binary space
+ibm437 = { version = "0.3.3", default-features = false, features = ["regular9x14"] }
 
 # Override mipidsi's dependency on embdedded-hal version "=1.0.0-alpha.7"
 [dependencies.embedded-hal]
