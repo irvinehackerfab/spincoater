@@ -26,7 +26,7 @@ pub static SECOND_CORE_STACK: StaticCell<Stack<1024>> = StaticCell::new();
 // Todo: Once you stop getting these errors and have finalized your capacities,
 // remove this function to save stack space.
 /// Tries to send a message on a channel.
-/// If sending fails, prints out a "buffer full" notice and calls send asynchronously.
+/// If sending fails, prints out a "channel full" notice and calls send asynchronously.
 pub async fn send_or_report_and_send<T, const N: usize>(
     sender: &channel::Sender<'_, NoopRawMutex, T, N>,
     message: T,

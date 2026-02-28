@@ -95,11 +95,11 @@ pub async fn recv_message(reader: &mut TcpReader<'_>) -> Result<Message, TcpErro
 ///
 /// # Errors
 /// Returns an error if serialization or writing fails.
-pub async fn send_message(message: &Message, writer: &mut TcpWriter<'_>) -> Result<(), TcpError> {
+pub async fn send_message(message: Message, writer: &mut TcpWriter<'_>) -> Result<(), TcpError> {
     loop {
         if writer
             .write_with(
-                |empty_chunk| match postcard::to_slice_cobs(message, empty_chunk) {
+                |empty_chunk| match postcard::to_slice_cobs(&message, empty_chunk) {
                     // The message has been written to the buffer, so let the socket send it.
                     Ok(written_chunk) => (written_chunk.len(), Ok(true)),
                     // There isn't enough space for the message yet, so try again next time.
@@ -122,7 +122,7 @@ pub async fn send_message(message: &Message, writer: &mut TcpWriter<'_>) -> Resu
 /// See [`TcpError`] for all possible errors.
 pub async fn receive_unhandled_messages(
     reader: &mut TcpReader<'_>,
-    to_msg_handler: &mut Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
+    to_msg_handler: &Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
 ) -> TcpError {
     loop {
         match recv_message(reader).await {
@@ -141,11 +141,11 @@ pub async fn receive_unhandled_messages(
 /// See [`TcpError`] for all possible errors.
 pub async fn announce_handled_messages(
     writer: &mut TcpWriter<'_>,
-    from_msg_handler: &mut Receiver<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
+    from_msg_handler: &Receiver<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
 ) -> TcpError {
     loop {
         let message = from_msg_handler.receive().await;
-        if let Err(err) = send_message(&message, writer).await {
+        if let Err(err) = send_message(message, writer).await {
             break err;
         }
     }
@@ -158,8 +158,8 @@ pub async fn announce_handled_messages(
 /// This function panics if it contains a logic error that needs to be fixed.
 pub async fn handle_socket_connections(
     mut socket: TcpSocket<'_>,
-    mut to_msg_handler: Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
-    mut from_msg_handler: Receiver<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
+    to_msg_handler: Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
+    from_msg_handler: Receiver<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
     to_terminal: Sender<'_, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 ) -> ! {
     loop {
@@ -176,8 +176,8 @@ pub async fn handle_socket_connections(
         // Cancel receiving and transmitting as soon as an error occurs.
         // This gives the socket the opportunity to abort.
         match select(
-            receive_unhandled_messages(&mut reader, &mut to_msg_handler),
-            announce_handled_messages(&mut writer, &mut from_msg_handler),
+            receive_unhandled_messages(&mut reader, &to_msg_handler),
+            announce_handled_messages(&mut writer, &from_msg_handler),
         )
         .await
         {
