@@ -21,7 +21,7 @@ pub mod gpio;
 pub mod wifi;
 
 /// The static variable that holds the second core stack.
-pub static SECOND_CORE_STACK: StaticCell<Stack<1024>> = StaticCell::new();
+pub static SECOND_CORE_STACK: StaticCell<Stack<2048>> = StaticCell::new();
 
 // Todo: Once you stop getting these errors and have finalized your capacities,
 // remove this function to save stack space.

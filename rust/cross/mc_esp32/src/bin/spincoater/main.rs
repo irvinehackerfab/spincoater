@@ -88,9 +88,8 @@ async fn main(spawner: Spawner) -> ! {
     let peripherals = esp_hal::init(config);
 
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
-    // If you ever decide to use COEX (wifi and bluetooth at the same time)
-    // then uncomment this line.
-    // esp_alloc::heap_allocator!(size: 64 * 1024);
+    // Ratatui requires extra memory
+    esp_alloc::heap_allocator!(size: 64 * 1024);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
