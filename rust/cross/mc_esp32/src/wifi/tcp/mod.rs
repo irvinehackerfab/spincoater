@@ -12,7 +12,10 @@ use esp_println::println;
 use sc_messages::Message;
 use static_cell::ConstStaticCell;
 
-use crate::wifi::{IP_LISTEN_ENDPOINT, tcp::error::TcpError};
+use crate::{
+    gpio::display::terminal::{TERMINAL_CHANNEL_SIZE, TuiEvent},
+    wifi::{IP_LISTEN_ENDPOINT, WifiState, send_or_report_and_send, tcp::error::TcpError},
+};
 
 /// How long the MCU will wait before disconnecting the host device.
 pub const TIMEOUT: Duration = Duration::from_secs(10);
@@ -124,12 +127,7 @@ pub async fn receive_unhandled_messages(
     loop {
         match recv_message(reader).await {
             Ok(message) => {
-                if to_msg_handler.try_send(message).is_err() {
-                    println!(
-                        "Receiver has no space to send the message. Please consider increasing HANDLER_CHANNEL_SIZE."
-                    );
-                    to_msg_handler.send(message).await;
-                }
+                send_or_report_and_send(to_msg_handler, message).await;
             }
             Err(err) => break err,
         }
@@ -158,25 +156,22 @@ pub async fn announce_handled_messages(
 ///
 /// # Panics
 /// This function panics if it contains a logic error that needs to be fixed.
-#[allow(
-    clippy::large_stack_frames,
-    reason = "printing is necessary for debugging wifi."
-)]
-pub async fn handle_connections(
+pub async fn handle_socket_connections(
     mut socket: TcpSocket<'_>,
     mut to_msg_handler: Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
     mut from_msg_handler: Receiver<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
+    to_terminal: Sender<'_, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 ) -> ! {
     loop {
-        println!("Socket: Waiting for connection...");
-        if let Err(err) = socket.accept(IP_LISTEN_ENDPOINT).await {
-            println!("Wifi: Accept error: {:?}", err);
-            continue;
-        }
-        println!(
-            "Socket: Got connection from address {:?}",
-            socket.remote_endpoint()
-        );
+        socket
+            .accept(IP_LISTEN_ENDPOINT)
+            .await
+            .expect("Failed to listen for socket connections");
+        send_or_report_and_send(
+            &to_terminal,
+            TuiEvent::WifiEvent(WifiState::ApSocketConnected),
+        )
+        .await;
         let (mut reader, mut writer) = socket.split();
         // Cancel receiving and transmitting as soon as an error occurs.
         // This gives the socket the opportunity to abort.
@@ -195,10 +190,17 @@ pub async fn handle_connections(
         }
         socket.abort();
         let _ = socket.flush().await;
+        send_or_report_and_send(
+            &to_terminal,
+            TuiEvent::WifiEvent(WifiState::SocketDisconnected),
+        )
+        .await;
         // Flush all data from the receive buffer as well.
-        flush_rx_buffer(&mut socket).await.expect(
-            "socket has data in the receive buffer, but Embassy is preventing access to it",
-        );
+        // Embassy may prevent this from working properly,
+        // in which case we must wait for a new connection to flush the buffer.
+        flush_rx_buffer(&mut socket)
+            .await
+            .expect("Failed to flush RX buffer");
     }
 }
 

@@ -39,18 +39,21 @@ use mc_esp32::{
     gpio::{
         display::{
             DISPLAY, SPI_BUFFER,
-            terminal::{TERMINAL, update_terminal},
+            terminal::{
+                TERMINAL, TERMINAL_CHANNEL, TERMINAL_CHANNEL_SIZE, TuiEvent, update_terminal,
+            },
         },
         encoder::{ENCODER, read_rpm},
         interrupt_handler,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER},
     },
+    send_or_report_and_send,
     wifi::{
-        AUTH_METHOD, GATEWAY_IP, MAX_CONNECTIONS, RADIO, STACK_RESOURCES, controller_task,
+        AUTH_METHOD, GATEWAY_IP, MAX_CONNECTIONS, RADIO, STACK_RESOURCES, handle_connections,
         net_task,
         tcp::{
             HANDLER_CHANNEL_SIZE, KEEP_ALIVE, RECV_MSG_CHANNEL, RX_BUFFER, SEND_MSG_CHANNEL,
-            TIMEOUT, TX_BUFFER, handle_connections,
+            TIMEOUT, TX_BUFFER, handle_socket_connections,
         },
     },
 };
@@ -130,9 +133,11 @@ async fn main(spawner: Spawner) -> ! {
         .set_config(&wifi_config)
         .expect("Failed to set Wifi config");
 
-    // Spawn tasks
-    spawner.must_spawn(controller_task(wifi_controller));
-    spawner.must_spawn(net_task(runner));
+    // Initialize wifi driver
+    wifi_controller
+        .start_async()
+        .await
+        .expect("Failed to start wifi");
 
     // Initialize TCP socket
     let rx_buffer = RX_BUFFER.take();
@@ -166,12 +171,10 @@ async fn main(spawner: Spawner) -> ! {
             });
         },
     );
-    spawner.must_spawn(read_rpm());
 
-    // initialize PWM
+    // Initialize PWM
     let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
     let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
-    // connect operator0 to timer0
     mcpwm.operator0.set_timer(&mcpwm.timer0);
     // connect operator0 to pin IO23:
     // https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3
@@ -220,7 +223,6 @@ async fn main(spawner: Spawner) -> ! {
     let backend = EmbeddedBackend::new(display, EmbeddedBackendConfig::default());
     let terminal =
         TERMINAL.init_with(|| Terminal::new(backend).expect("Failed to create terminal"));
-    spawner.must_spawn(update_terminal(terminal));
 
     // Setup communication between tasks
     let recv_msg_channel = RECV_MSG_CHANNEL.take();
@@ -229,29 +231,48 @@ async fn main(spawner: Spawner) -> ! {
     let send_msg_channel = SEND_MSG_CHANNEL.take();
     let to_transmitter = send_msg_channel.sender();
     let from_msg_handler = send_msg_channel.receiver();
+    let terminal_channel = TERMINAL_CHANNEL.take();
+    let from_wifi = terminal_channel.receiver();
 
-    spawner.must_spawn(handle_messages(from_receiver, to_transmitter, pwm_pin));
+    spawner.must_spawn(handle_connections(
+        wifi_controller,
+        terminal_channel.sender(),
+    ));
+    spawner.must_spawn(net_task(runner));
+    spawner.must_spawn(read_rpm(terminal_channel.sender()));
+    spawner.must_spawn(handle_messages(
+        pwm_pin,
+        from_receiver,
+        to_transmitter,
+        terminal_channel.sender(),
+    ));
+    spawner.must_spawn(update_terminal(terminal, from_wifi));
 
     // Await connections in a loop.
-    handle_connections(socket, to_msg_handler, from_msg_handler).await;
+    handle_socket_connections(
+        socket,
+        to_msg_handler,
+        from_msg_handler,
+        terminal_channel.sender(),
+    )
+    .await;
 }
 
 #[embassy_executor::task]
 async fn handle_messages(
+    mut pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
     from_receiver: Receiver<'static, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
     to_transmitter: Sender<'static, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
-    mut pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
+    to_terminal: Sender<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 ) {
     loop {
         let message = from_receiver.receive().await;
         match message {
-            Message::DutyCycle(duty) => pwm_pin.set_timestamp(duty),
+            Message::DutyCycle(duty) => {
+                pwm_pin.set_timestamp(duty);
+                send_or_report_and_send(&to_terminal, TuiEvent::DutyChanged(duty)).await;
+            }
         }
-        if to_transmitter.try_send(message).is_err() {
-            println!(
-                "Message handler has no space to send the message. Please consider increasing HANDLER_CHANNEL_SIZE."
-            );
-            to_transmitter.send(message).await;
-        }
+        send_or_report_and_send(&to_transmitter, message).await;
     }
 }

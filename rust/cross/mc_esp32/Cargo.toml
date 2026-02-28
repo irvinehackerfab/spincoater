@@ -82,6 +82,10 @@ version = "1.0.0"
 # For debug builds always builds with some optimization
 opt-level = "s"
 
+# https://docs.espressif.com/projects/rust/esp-radio/0.17.0/esp32/esp_radio/index.html#optimization-level
+[profile.dev.package.esp-radio]
+opt-level = 3
+
 [profile.release]
 codegen-units = 1     # LLVM can perform better optimizations using a single thread
 debug = 2
@@ -90,6 +94,14 @@ incremental = false
 lto = 'fat'
 opt-level = 's'
 overflow-checks = false
+
+# https://docs.espressif.com/projects/rust/esp-radio/0.17.0/esp32/esp_radio/index.html#optimization-level
+[profile.release.package.esp-radio]
+opt-level = 3
+
+# https://docs.rs/mousefood/latest/mousefood/#performance-and-hardware-support
+[profile.release.package.mousefood]
+opt-level = 3
 
 [lib]
 test = false

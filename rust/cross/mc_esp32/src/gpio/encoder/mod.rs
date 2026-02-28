@@ -8,9 +8,14 @@ use core::{
 };
 
 use critical_section::Mutex;
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Sender};
 use embassy_time::Timer;
 use esp_hal::{gpio::Input, time::Instant};
-use esp_println::println;
+
+use crate::{
+    gpio::display::terminal::{TERMINAL_CHANNEL_SIZE, TuiEvent},
+    send_or_report_and_send,
+};
 
 /// Provides access to the hall effect sensor.
 pub static ENCODER: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
@@ -23,8 +28,12 @@ pub static MOTOR_REVOLUTIONS_DOUBLED: AtomicU32 = AtomicU32::new(0);
 /// # Panics
 /// This task panics if more than [`u32::MAX`] milliseconds has passed after 1000 milliseconds has passed,
 /// which should never happen.
+///
+/// It also panics if the rpm exceeds 65535.
 #[embassy_executor::task]
-pub async fn read_rpm() -> ! {
+pub async fn read_rpm(
+    to_terminal: Sender<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
+) -> ! {
     let mut previous_time = Instant::now();
     loop {
         Timer::after_secs(1).await;
@@ -38,8 +47,8 @@ pub async fn read_rpm() -> ! {
             // = (2*motor revolutions) * 30,000 / (37 * `time`)
             // Final units: plate revolutions per minute
             let rpm = motor_revolutions_doubled * 30_000 / (37 * (time_ms));
-            println!("RPM: {rpm}");
-            // Todo: Send RPM to terminal
+            let rpm = u16::try_from(rpm).expect("The rpm should never exceed 65535.");
+            send_or_report_and_send(&to_terminal, TuiEvent::RpmValue(rpm)).await;
         }
         // Increment the time passed regardless of the revolutions counted.
         previous_time += time;
