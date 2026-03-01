@@ -36,4 +36,9 @@ When flashing the program, you must specify the Wifi's SSID and password through
 
 The password must be 8-64 characters or else the radio will panic during initialization.
 
+You must set a static IP to connect to the wifi. For example:
+- IP: 192.168.2.2
+- Netmask: 255.255.255.0
+- Gateway: 192.168.2.1
+
 If the program crashes with the error message `Detected a write to the stack guard value on AppCpu`, it means a stack overflowed. You'll likely need to increase the second core stack size in [`lib.rs`](src/lib.rs).
