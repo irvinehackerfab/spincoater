@@ -1,4 +1,5 @@
 //! This module contains all of the wifi functionality.
+pub mod channel;
 pub mod tcp;
 
 use core::{fmt::Debug, net::Ipv4Addr};
@@ -10,9 +11,8 @@ use esp_radio::{
 };
 use static_cell::StaticCell;
 
-use crate::{
-    gpio::display::terminal::{TERMINAL_CHANNEL_SIZE, TuiEvent},
-    send_or_report_and_send,
+use crate::gpio::display::terminal::channel::{
+    TERMINAL_CHANNEL_SIZE, TuiEvent, send_event_or_report,
 };
 
 /// Keep this up to date with the address listed in `../../host_tui/src/main.rs`
@@ -36,7 +36,7 @@ pub static RADIO: StaticCell<Controller> = StaticCell::new();
 pub static STACK_RESOURCES: StaticCell<StackResources<1>> = StaticCell::new();
 
 /// All possible Wifi states for the program.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub enum WifiState {
     #[default]
     /// The access point is waiting for a connection.
@@ -46,7 +46,7 @@ pub enum WifiState {
     /// The socket is disconnected.
     ///
     /// Whether the client is disconnected or not depends on whether
-    /// [`WifiState::ApClientDisconnected`] or [`WifiEvent::ApClientConnected`]
+    /// [`WifiState::ApClientDisconnected`] or [`WifiState::ApClientConnected`]
     /// was most recently sent before this.
     SocketDisconnected,
     /// The host is connected to the socket.
@@ -64,7 +64,7 @@ pub async fn handle_connections(
         wifi_controller
             .wait_for_event(WifiEvent::ApStaConnected)
             .await;
-        send_or_report_and_send(
+        send_event_or_report(
             &to_terminal,
             TuiEvent::WifiEvent(WifiState::ApClientConnected),
         )
@@ -72,7 +72,7 @@ pub async fn handle_connections(
         wifi_controller
             .wait_for_event(WifiEvent::ApStaDisconnected)
             .await;
-        send_or_report_and_send(
+        send_event_or_report(
             &to_terminal,
             TuiEvent::WifiEvent(WifiState::ApClientDisconnected),
         )

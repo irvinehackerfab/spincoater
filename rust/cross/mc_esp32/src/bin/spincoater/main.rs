@@ -41,21 +41,23 @@ use mc_esp32::{
         display::{
             DISPLAY, ORIENTATION, SPI_BUFFER,
             terminal::{
-                TERMINAL, TERMINAL_CHANNEL, TERMINAL_CHANNEL_SIZE, TuiEvent, update_terminal,
+                TERMINAL,
+                channel::{
+                    ChannelKind, TERMINAL_CHANNEL, TERMINAL_CHANNEL_SIZE, TuiEvent,
+                    send_event_or_report,
+                },
+                update_terminal,
             },
         },
         encoder::{ENCODER, read_rpm},
         interrupt_handler,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER},
     },
-    send_or_report_and_send,
     wifi::{
-        AUTH_METHOD, GATEWAY_IP, MAX_CONNECTIONS, RADIO, STACK_RESOURCES, handle_connections,
-        net_task,
-        tcp::{
-            HANDLER_CHANNEL_SIZE, KEEP_ALIVE, RECV_MSG_CHANNEL, RX_BUFFER, SEND_MSG_CHANNEL,
-            TIMEOUT, TX_BUFFER, handle_socket_connections,
-        },
+        AUTH_METHOD, GATEWAY_IP, MAX_CONNECTIONS, RADIO, STACK_RESOURCES,
+        channel::{HANDLER_CHANNEL_SIZE, RECV_MSG_CHANNEL, SEND_MSG_CHANNEL, send_msg_or_report},
+        handle_connections, net_task,
+        tcp::{KEEP_ALIVE, RX_BUFFER, TIMEOUT, TX_BUFFER, handle_socket_connections},
     },
 };
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
@@ -221,6 +223,7 @@ async fn main(spawner: Spawner) -> ! {
             .expect("Failed to init display")
     });
     let config = EmbeddedBackendConfig {
+        // The default font is too small so we use a bigger (and more optimzied) one
         font_regular: IBM437_9X14_REGULAR,
         ..EmbeddedBackendConfig::default()
     };
@@ -262,6 +265,10 @@ async fn main(spawner: Spawner) -> ! {
     .await;
 }
 
+/// Handles all control messages.
+///
+/// This is kept separate from [`mc_esp32::wifi::tcp::receive_unhandled_messages`]
+/// in case we ever decide to add other control methods (like the touchscreen).
 #[embassy_executor::task]
 async fn handle_messages(
     mut pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
@@ -274,9 +281,9 @@ async fn handle_messages(
         match message {
             Message::DutyCycle(duty) => {
                 pwm_pin.set_timestamp(duty);
-                send_or_report_and_send(&to_terminal, TuiEvent::DutyChanged(duty)).await;
+                send_event_or_report(&to_terminal, TuiEvent::DutyChanged(duty)).await;
             }
         }
-        send_or_report_and_send(&to_transmitter, message).await;
+        send_msg_or_report(&to_transmitter, message, &to_terminal, ChannelKind::SendMsg).await;
     }
 }

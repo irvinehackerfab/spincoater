@@ -5,7 +5,7 @@ use embassy_futures::select::{Either, select};
 use embassy_net::tcp::{Error, TcpReader, TcpSocket, TcpWriter};
 use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
-    channel::{Channel, Receiver, Sender},
+    channel::{Receiver, Sender},
 };
 use embassy_time::Duration;
 use esp_println::println;
@@ -13,8 +13,14 @@ use sc_messages::Message;
 use static_cell::ConstStaticCell;
 
 use crate::{
-    gpio::display::terminal::{TERMINAL_CHANNEL_SIZE, TuiEvent},
-    wifi::{IP_LISTEN_ENDPOINT, WifiState, send_or_report_and_send, tcp::error::TcpError},
+    gpio::display::terminal::channel::{
+        ChannelKind, TERMINAL_CHANNEL_SIZE, TuiEvent, send_event_or_report,
+    },
+    wifi::{
+        IP_LISTEN_ENDPOINT, WifiState,
+        channel::{HANDLER_CHANNEL_SIZE, send_msg_or_report},
+        tcp::error::TcpError,
+    },
 };
 
 /// How long the MCU will wait before disconnecting the host device.
@@ -32,22 +38,6 @@ pub const BUFFER_SIZE: usize = 64;
 pub static RX_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new([0u8; BUFFER_SIZE]);
 /// The static variable for the transmit buffer.
 pub static TX_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new([0u8; BUFFER_SIZE]);
-
-/// The maximum number of messages allowed at a time in each channel to/from the message handler.
-pub const HANDLER_CHANNEL_SIZE: usize = 2;
-/// Used for passing messages from the socket to the message handler.
-///
-/// This uses `NoopRawMutex` because data is only shared in one executor.
-/// This does not use a zerocopy channel because [`Message`] is currently smaller than a reference.
-pub static RECV_MSG_CHANNEL: ConstStaticCell<Channel<NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>> =
-    ConstStaticCell::new(Channel::new());
-
-/// Used for passing messages from the message handler to the socket.
-///
-/// This uses `NoopRawMutex` because data is only shared in one executor.
-/// This does not use a zerocopy channel because [`Message`] is currently smaller than a reference.
-pub static SEND_MSG_CHANNEL: ConstStaticCell<Channel<NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>> =
-    ConstStaticCell::new(Channel::new());
 
 /// Reads the transmit buffer repeatedly until a complete message is found or an error occurs.
 ///
@@ -123,11 +113,13 @@ pub async fn send_message(message: Message, writer: &mut TcpWriter<'_>) -> Resul
 pub async fn receive_unhandled_messages(
     reader: &mut TcpReader<'_>,
     to_msg_handler: &Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
+    to_terminal: &Sender<'_, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 ) -> TcpError {
     loop {
         match recv_message(reader).await {
             Ok(message) => {
-                send_or_report_and_send(to_msg_handler, message).await;
+                send_msg_or_report(to_msg_handler, message, to_terminal, ChannelKind::RecvMsg)
+                    .await;
             }
             Err(err) => break err,
         }
@@ -167,7 +159,7 @@ pub async fn handle_socket_connections(
             .accept(IP_LISTEN_ENDPOINT)
             .await
             .expect("Failed to listen for socket connections");
-        send_or_report_and_send(
+        send_event_or_report(
             &to_terminal,
             TuiEvent::WifiEvent(WifiState::ApSocketConnected),
         )
@@ -176,7 +168,7 @@ pub async fn handle_socket_connections(
         // Cancel receiving and transmitting as soon as an error occurs.
         // This gives the socket the opportunity to abort.
         match select(
-            receive_unhandled_messages(&mut reader, &to_msg_handler),
+            receive_unhandled_messages(&mut reader, &to_msg_handler, &to_terminal),
             announce_handled_messages(&mut writer, &from_msg_handler),
         )
         .await
@@ -190,7 +182,7 @@ pub async fn handle_socket_connections(
         }
         socket.abort();
         let _ = socket.flush().await;
-        send_or_report_and_send(
+        send_event_or_report(
             &to_terminal,
             TuiEvent::WifiEvent(WifiState::SocketDisconnected),
         )
