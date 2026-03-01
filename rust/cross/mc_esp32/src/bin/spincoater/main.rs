@@ -28,7 +28,6 @@ use esp_hal::{
     peripherals::MCPWM0,
     rng::Rng,
     spi::master::{Config, Spi},
-    system::Stack,
     time::Rate,
     timer::timg::TimerGroup,
 };
@@ -98,14 +97,13 @@ async fn main(spawner: Spawner) -> ! {
     esp_rtos::start(timg0.timer0);
     println!("Embassy initialized on the first core!");
 
+    let radio =
+        RADIO.init_with(|| esp_radio::init().expect("Failed to initialize Wi-Fi/BLE controller"));
     let wifi_config = esp_radio::wifi::Config::default()
         .with_country_code(CountryInfo::from(*b"US").with_operating_class(OperatingClass::Indoors));
-    let (mut wifi_controller, interfaces) = esp_radio::wifi::new(
-        RADIO.init_with(|| esp_radio::init().expect("Failed to initialize Wi-Fi/BLE controller")),
-        peripherals.WIFI,
-        wifi_config,
-    )
-    .expect("Failed to initialize Wi-Fi controller");
+    let (mut wifi_controller, interfaces) =
+        esp_radio::wifi::new(radio, peripherals.WIFI, wifi_config)
+            .expect("Failed to initialize Wi-Fi controller");
     let net_config = embassy_net::Config::ipv4_static(StaticConfigV4 {
         address: Ipv4Cidr::new(GATEWAY_IP, 24),
         gateway: Some(GATEWAY_IP),
@@ -153,7 +151,7 @@ async fn main(spawner: Spawner) -> ! {
         peripherals.CPU_CTRL,
         software_interrupts.software_interrupt0,
         software_interrupts.software_interrupt1,
-        SECOND_CORE_STACK.init_with(Stack::new),
+        SECOND_CORE_STACK.take(),
         || {
             // Set the interrupt handler for GPIO.
             // This allows for a slightly lower latency compared to waiting asynchronously.
@@ -190,46 +188,49 @@ async fn main(spawner: Spawner) -> ! {
     pwm_pin.set_timestamp(STOP_DUTY);
 
     // Initialize the display
-    // https://esp32.implrust.com/tft-display/circuit.html
-    let spi = Spi::new(
-        peripherals.SPI2,
-        Config::default()
-            .with_frequency(Rate::from_mhz(4))
-            .with_mode(esp_hal::spi::Mode::_0),
-    )
-    .expect("Frequency is within 70kHz..80MHz")
-    .into_async()
-    // Master In Slave Out. SPI read line from the display to the microcontroller.
-    .with_miso(peripherals.GPIO19)
-    // Master Out Slave In. This is the SPI data line from the microcontroller to the display. Used to send pixel data and commands.
-    .with_mosi(peripherals.GPIO23)
-    // Serial Clock. SPI clock signal from the microcontroller. It synchronizes the data being sent.
-    .with_sck(peripherals.GPIO18);
-    // Chip Select. This tells the display when it should listen to SPI commands. Keep it low (active) when sending data.
-    // [`ExclusiveDevice::new_no_delay`] says to have an initial output of high.
-    let cs = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
-    // Data/Command control pin. Set high to send data, low to send commands. Used to switch between writing commands and pixel data.
-    let dc = Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default());
-    // Resets the display. Useful during startup to make sure the display starts in a known state.
-    // Starts off low because [`Ili9341::new`] sets the reset low, then high
-    let reset = Output::new(peripherals.GPIO4, Level::Low, OutputConfig::default());
-    let spi_device = ExclusiveDevice::new_no_delay(spi, cs).expect("cs is already high");
-    let interface = SpiInterface::new(spi_device, dc, SPI_BUFFER.take());
-    let display = DISPLAY.init_with(|| {
-        mipidsi::Builder::new(ILI9341Rgb565, interface)
-            .reset_pin(reset)
-            .orientation(ORIENTATION)
-            .init(&mut Delay::new())
-            .expect("Failed to init display")
+    // init_with constructs the value in-place to save stack space.
+    let terminal = TERMINAL.init_with(|| {
+        // init_with constructs the value in-place to save stack space.
+        let display = DISPLAY.init_with(|| {
+            // https://esp32.implrust.com/tft-display/circuit.html
+            let spi = Spi::new(
+                peripherals.SPI2,
+                Config::default()
+                    .with_frequency(Rate::from_mhz(4))
+                    .with_mode(esp_hal::spi::Mode::_0),
+            )
+            .expect("Frequency is within 70kHz..80MHz")
+            .into_async()
+            // Master In Slave Out. SPI read line from the display to the microcontroller.
+            .with_miso(peripherals.GPIO19)
+            // Master Out Slave In. This is the SPI data line from the microcontroller to the display. Used to send pixel data and commands.
+            .with_mosi(peripherals.GPIO23)
+            // Serial Clock. SPI clock signal from the microcontroller. It synchronizes the data being sent.
+            .with_sck(peripherals.GPIO18);
+            // Chip Select. This tells the display when it should listen to SPI commands. Keep it low (active) when sending data.
+            // [`ExclusiveDevice::new_no_delay`] says to have an initial output of high.
+            let cs = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
+            // Data/Command control pin. Set high to send data, low to send commands. Used to switch between writing commands and pixel data.
+            let dc = Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default());
+            // Resets the display. Useful during startup to make sure the display starts in a known state.
+            // Starts off low because [`Ili9341::new`] sets the reset low, then high
+            let reset = Output::new(peripherals.GPIO4, Level::Low, OutputConfig::default());
+            let spi_device = ExclusiveDevice::new_no_delay(spi, cs).expect("cs is already high");
+            let interface = SpiInterface::new(spi_device, dc, SPI_BUFFER.take());
+            mipidsi::Builder::new(ILI9341Rgb565, interface)
+                .reset_pin(reset)
+                .orientation(ORIENTATION)
+                .init(&mut Delay::new())
+                .expect("Failed to init display")
+        });
+        let config = EmbeddedBackendConfig {
+            // The default font is too small so we use a bigger (and more optimzied) one
+            font_regular: IBM437_9X14_REGULAR,
+            ..EmbeddedBackendConfig::default()
+        };
+        let backend = EmbeddedBackend::new(display, config);
+        Terminal::new(backend).expect("Failed to create terminal")
     });
-    let config = EmbeddedBackendConfig {
-        // The default font is too small so we use a bigger (and more optimzied) one
-        font_regular: IBM437_9X14_REGULAR,
-        ..EmbeddedBackendConfig::default()
-    };
-    let backend = EmbeddedBackend::new(display, config);
-    let terminal =
-        TERMINAL.init_with(|| Terminal::new(backend).expect("Failed to create terminal"));
 
     // Setup communication between tasks
     let recv_msg_channel = RECV_MSG_CHANNEL.take();
@@ -239,7 +240,7 @@ async fn main(spawner: Spawner) -> ! {
     let to_transmitter = send_msg_channel.sender();
     let from_msg_handler = send_msg_channel.receiver();
     let terminal_channel = TERMINAL_CHANNEL.take();
-    let from_wifi = terminal_channel.receiver();
+    let from_all = terminal_channel.receiver();
 
     spawner.must_spawn(handle_connections(
         wifi_controller,
@@ -253,7 +254,7 @@ async fn main(spawner: Spawner) -> ! {
         to_transmitter,
         terminal_channel.sender(),
     ));
-    spawner.must_spawn(update_terminal(terminal, from_wifi));
+    spawner.must_spawn(update_terminal(terminal, from_all));
 
     // Await connections in a loop.
     handle_socket_connections(

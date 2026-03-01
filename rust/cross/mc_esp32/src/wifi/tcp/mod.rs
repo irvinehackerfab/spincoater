@@ -1,7 +1,9 @@
 //! This module contains all of the TCP-socket-specific functionality of the wifi.
 pub mod error;
 
-use embassy_futures::select::{Either, select};
+use core::fmt::Display;
+
+use embassy_futures::select::select;
 use embassy_net::tcp::{Error, TcpReader, TcpSocket, TcpWriter};
 use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
@@ -17,7 +19,7 @@ use crate::{
         ChannelKind, TERMINAL_CHANNEL_SIZE, TuiEvent, send_event_or_report,
     },
     wifi::{
-        IP_LISTEN_ENDPOINT, WifiState,
+        IP_LISTEN_ENDPOINT,
         channel::{HANDLER_CHANNEL_SIZE, send_msg_or_report},
         tcp::error::TcpError,
     },
@@ -38,6 +40,30 @@ pub const BUFFER_SIZE: usize = 64;
 pub static RX_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new([0u8; BUFFER_SIZE]);
 /// The static variable for the transmit buffer.
 pub static TX_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new([0u8; BUFFER_SIZE]);
+
+/// All possible states for the socket.
+#[derive(Debug, Default)]
+pub enum SocketState {
+    /// The host is not connected to the socket.
+    #[default]
+    Disconnected,
+    /// The host is connected to the socket.
+    Connected,
+}
+
+/// Display implementation used by [`crate::gpio::display::terminal::TerminalState::draw`].
+impl Display for SocketState {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "Socket state: {}",
+            match self {
+                SocketState::Disconnected => "no connection",
+                SocketState::Connected => "connected",
+            }
+        )
+    }
+}
 
 /// Reads the transmit buffer repeatedly until a complete message is found or an error occurs.
 ///
@@ -114,14 +140,17 @@ pub async fn receive_unhandled_messages(
     reader: &mut TcpReader<'_>,
     to_msg_handler: &Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
     to_terminal: &Sender<'_, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
-) -> TcpError {
+) {
     loop {
         match recv_message(reader).await {
             Ok(message) => {
                 send_msg_or_report(to_msg_handler, message, to_terminal, ChannelKind::RecvMsg)
                     .await;
             }
-            Err(err) => break err,
+            Err(err) => {
+                println!("RX error: {err:?}");
+                break;
+            }
         }
     }
 }
@@ -134,11 +163,12 @@ pub async fn receive_unhandled_messages(
 pub async fn announce_handled_messages(
     writer: &mut TcpWriter<'_>,
     from_msg_handler: &Receiver<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
-) -> TcpError {
+) {
     loop {
         let message = from_msg_handler.receive().await;
         if let Err(err) = send_message(message, writer).await {
-            break err;
+            println!("TX error: {err:?}");
+            break;
         }
     }
 }
@@ -159,32 +189,20 @@ pub async fn handle_socket_connections(
             .accept(IP_LISTEN_ENDPOINT)
             .await
             .expect("Failed to listen for socket connections");
-        send_event_or_report(
-            &to_terminal,
-            TuiEvent::WifiEvent(WifiState::ApSocketConnected),
-        )
-        .await;
+        send_event_or_report(&to_terminal, TuiEvent::SocketEvent(SocketState::Connected)).await;
         let (mut reader, mut writer) = socket.split();
         // Cancel receiving and transmitting as soon as an error occurs.
         // This gives the socket the opportunity to abort.
-        match select(
+        select(
             receive_unhandled_messages(&mut reader, &to_msg_handler, &to_terminal),
             announce_handled_messages(&mut writer, &from_msg_handler),
         )
-        .await
-        {
-            Either::First(err) => {
-                println!("Receiver error: {err:?}");
-            }
-            Either::Second(err) => {
-                println!("Transmitter error: {err:?}");
-            }
-        }
+        .await;
         socket.abort();
         let _ = socket.flush().await;
         send_event_or_report(
             &to_terminal,
-            TuiEvent::WifiEvent(WifiState::SocketDisconnected),
+            TuiEvent::SocketEvent(SocketState::Disconnected),
         )
         .await;
         // Flush all data from the receive buffer as well.

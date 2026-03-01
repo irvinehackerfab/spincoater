@@ -6,7 +6,7 @@ use embassy_sync::{
 };
 use static_cell::ConstStaticCell;
 
-use crate::wifi::WifiState;
+use crate::wifi::{ApState, tcp::SocketState};
 
 /// The maximum number of messages allowed at a time in each channel to/from the terminal.
 pub const TERMINAL_CHANNEL_SIZE: usize = 8;
@@ -22,7 +22,9 @@ pub static TERMINAL_CHANNEL: ConstStaticCell<
 #[derive(Debug)]
 pub enum TuiEvent {
     /// The wifi state changed.
-    WifiEvent(WifiState),
+    WifiEvent(ApState),
+    /// The socket state changed.
+    SocketEvent(SocketState),
     /// The PWM output duty cycle changed.
     DutyChanged(u16),
     /// A value for plate revolutions per minute has been calculated.

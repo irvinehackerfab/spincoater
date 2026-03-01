@@ -2,7 +2,10 @@
 pub mod channel;
 pub mod tcp;
 
-use core::{fmt::Debug, net::Ipv4Addr};
+use core::{
+    fmt::{Debug, Display},
+    net::Ipv4Addr,
+};
 use embassy_net::{IpListenEndpoint, Runner, StackResources};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Sender};
 use esp_radio::{
@@ -35,22 +38,28 @@ pub static RADIO: StaticCell<Controller> = StaticCell::new();
 /// We only use 1 socket right now.
 pub static STACK_RESOURCES: StaticCell<StackResources<1>> = StaticCell::new();
 
-/// All possible Wifi states for the program.
+/// All possible access point states.
 #[derive(Debug, Default, Clone, Copy)]
-pub enum WifiState {
+pub enum ApState {
     #[default]
     /// The access point is waiting for a connection.
-    ApClientDisconnected,
-    /// A client connected to the access point.
-    ApClientConnected,
-    /// The socket is disconnected.
-    ///
-    /// Whether the client is disconnected or not depends on whether
-    /// [`WifiState::ApClientDisconnected`] or [`WifiState::ApClientConnected`]
-    /// was most recently sent before this.
-    SocketDisconnected,
-    /// The host is connected to the socket.
-    ApSocketConnected,
+    Disconnected,
+    /// The host is connected to the access point.
+    Connected,
+}
+
+/// Display implementation used by [`crate::gpio::display::terminal::TerminalState::draw`].
+impl Display for ApState {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "Access point state: {}",
+            match self {
+                ApState::Disconnected => "no connection",
+                ApState::Connected => "connected",
+            }
+        )
+    }
 }
 
 /// This task detects various events emitted by the wifi controller.
@@ -64,19 +73,11 @@ pub async fn handle_connections(
         wifi_controller
             .wait_for_event(WifiEvent::ApStaConnected)
             .await;
-        send_event_or_report(
-            &to_terminal,
-            TuiEvent::WifiEvent(WifiState::ApClientConnected),
-        )
-        .await;
+        send_event_or_report(&to_terminal, TuiEvent::WifiEvent(ApState::Connected)).await;
         wifi_controller
             .wait_for_event(WifiEvent::ApStaDisconnected)
             .await;
-        send_event_or_report(
-            &to_terminal,
-            TuiEvent::WifiEvent(WifiState::ApClientDisconnected),
-        )
-        .await;
+        send_event_or_report(&to_terminal, TuiEvent::WifiEvent(ApState::Disconnected)).await;
     }
 }
 

@@ -9,9 +9,9 @@
 #![warn(clippy::large_stack_frames)]
 
 use esp_hal::system::Stack;
-use static_cell::StaticCell;
+use static_cell::ConstStaticCell;
 pub mod gpio;
 pub mod wifi;
 
 /// The static variable that holds the second core stack.
-pub static SECOND_CORE_STACK: StaticCell<Stack<2048>> = StaticCell::new();
+pub static SECOND_CORE_STACK: ConstStaticCell<Stack<2048>> = ConstStaticCell::new(Stack::new());

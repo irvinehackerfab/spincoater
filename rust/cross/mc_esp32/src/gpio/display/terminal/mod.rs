@@ -12,17 +12,21 @@ use crate::{
         DisplayType,
         terminal::channel::{ChannelStatus, TERMINAL_CHANNEL_SIZE, TuiEvent},
     },
-    wifi::WifiState,
+    wifi::{ApState, tcp::SocketState},
 };
 
 /// The static cell for the terminal.
+///
+/// [`update_terminal`] needs to borrow the terminal because passing it by value would copy 348 bytes.
 pub static TERMINAL: StaticCell<Terminal<EmbeddedBackend<DisplayType, Rgb565>>> = StaticCell::new();
 
 /// The state of the terminal.
 #[derive(Debug, Default)]
 pub struct TerminalState {
-    /// The current state of the wifi.
-    wifi_state: WifiState,
+    /// The current state of the access point.
+    ap_state: ApState,
+    /// The current state of the socket.
+    socket_state: SocketState,
     /// The current PWM output duty cycle.
     duty: u16,
     /// Plate revolutions per minute.
@@ -35,15 +39,16 @@ pub struct TerminalState {
 #[embassy_executor::task]
 pub async fn update_terminal(
     terminal: &'static mut Terminal<EmbeddedBackend<'static, DisplayType, Rgb565>>,
-    from_wifi: Receiver<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
+    from_all: Receiver<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 ) -> ! {
     let mut state = TerminalState::default();
     loop {
         terminal
             .draw(|frame| state.draw(frame))
             .expect("Failed to draw to terminal");
-        match from_wifi.receive().await {
-            TuiEvent::WifiEvent(wifi_state) => state.wifi_state = wifi_state,
+        match from_all.receive().await {
+            TuiEvent::WifiEvent(wifi_state) => state.ap_state = wifi_state,
+            TuiEvent::SocketEvent(socket_state) => state.socket_state = socket_state,
             TuiEvent::DutyChanged(duty) => state.duty = duty,
             TuiEvent::RpmValue(rpm) => state.rpm = rpm,
             TuiEvent::ChannelFull(channel_kind) => state.channel_status.set_full(channel_kind),
