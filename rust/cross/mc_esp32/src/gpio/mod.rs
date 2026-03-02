@@ -21,12 +21,12 @@ pub mod pwm;
 #[handler]
 pub fn interrupt_handler() {
     let encoder_rising_edge = critical_section::with(|cs| {
-        let mut encoder = ENCODER.borrow_ref_mut(cs);
-        let Some(encoder) = encoder.as_mut() else {
+        let encoder = ENCODER.borrow_ref(cs);
+        match encoder.as_ref() {
+            Some(encoder) => encoder.is_interrupt_set(),
             // Some other interrupt occurred before the encoder was set up.
-            return false;
-        };
-        encoder.is_interrupt_set()
+            None => false,
+        }
     });
     if encoder_rising_edge {
         let previous_value = MOTOR_REVOLUTIONS_DOUBLED.fetch_add(1, Ordering::Relaxed);
