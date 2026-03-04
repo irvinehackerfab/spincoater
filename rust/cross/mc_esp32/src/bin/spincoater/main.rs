@@ -126,7 +126,10 @@ async fn main(spawner: Spawner) -> ! {
             .with_ssid(SSID.into())
             .with_auth_method(AUTH_METHOD)
             .with_password(PASSWORD.into())
-            .with_max_connections(MAX_CONNECTIONS),
+            .with_max_connections(MAX_CONNECTIONS)
+            .with_beacon_timeout(
+                u16::try_from(TIMEOUT.as_secs()).expect("10 should fit in a u16."),
+            ),
     );
     wifi_controller
         .set_config(&wifi_config)
@@ -232,10 +235,12 @@ async fn main(spawner: Spawner) -> ! {
         Terminal::new(backend).expect("Failed to create terminal")
     });
 
+    // Disable touch chip select for now
+    let _ = Output::new(peripherals.GPIO33, Level::Low, OutputConfig::default());
+
     // Setup communication between tasks
     let recv_msg_channel = RECV_MSG_CHANNEL.take();
-    let to_msg_handler = recv_msg_channel.sender();
-    let from_receiver = recv_msg_channel.receiver();
+    let from_wifi = recv_msg_channel.receiver();
     let send_msg_channel = SEND_MSG_CHANNEL.take();
     let to_transmitter = send_msg_channel.sender();
     let from_msg_handler = send_msg_channel.receiver();
@@ -244,13 +249,14 @@ async fn main(spawner: Spawner) -> ! {
 
     spawner.must_spawn(handle_connections(
         wifi_controller,
+        recv_msg_channel.sender(),
         terminal_channel.sender(),
     ));
     spawner.must_spawn(net_task(runner));
     spawner.must_spawn(read_rpm(terminal_channel.sender()));
     spawner.must_spawn(handle_messages(
         pwm_pin,
-        from_receiver,
+        from_wifi,
         to_transmitter,
         terminal_channel.sender(),
     ));
@@ -259,7 +265,7 @@ async fn main(spawner: Spawner) -> ! {
     // Await connections in a loop.
     handle_socket_connections(
         socket,
-        to_msg_handler,
+        recv_msg_channel.sender(),
         from_msg_handler,
         terminal_channel.sender(),
     )
@@ -273,12 +279,12 @@ async fn main(spawner: Spawner) -> ! {
 #[embassy_executor::task]
 async fn handle_messages(
     mut pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
-    from_receiver: Receiver<'static, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
+    from_wifi: Receiver<'static, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
     to_transmitter: Sender<'static, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
     to_terminal: Sender<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 ) {
     loop {
-        let message = from_receiver.receive().await;
+        let message = from_wifi.receive().await;
         match message {
             Message::DutyCycle(duty) => {
                 pwm_pin.set_timestamp(duty);

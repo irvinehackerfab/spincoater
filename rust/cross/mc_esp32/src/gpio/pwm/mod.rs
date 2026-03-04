@@ -17,7 +17,8 @@ pub const FREQUENCY: Rate = Rate::from_hz(50);
 /// See [the Wikipedia page](https://en.wikipedia.org/wiki/Prescaler) on prescalers for more info.
 pub const PERIPHERAL_CLOCK_PRESCALER: u8 = 0;
 
-/// The value corresponding to 100% PWM period - 1.
+/// The value corresponding to __100% PWM period - 1.__
+/// (100% PWM period is [`sc_messages::PERIOD`].)
 /// We can configure this to whatever we like.
 ///
 /// Since we can only control the duty cycle with whole numbers,

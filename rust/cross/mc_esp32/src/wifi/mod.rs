@@ -8,14 +8,19 @@ use core::{
 };
 use embassy_net::{IpListenEndpoint, Runner, StackResources};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Sender};
+use esp_println::println;
 use esp_radio::{
     Controller,
     wifi::{AuthMethod, WifiController, WifiDevice, WifiEvent},
 };
+use sc_messages::{Message, STOP_DUTY};
 use static_cell::StaticCell;
 
-use crate::gpio::display::terminal::channel::{
-    TERMINAL_CHANNEL_SIZE, TuiEvent, send_event_or_report,
+use crate::{
+    gpio::display::terminal::channel::{
+        ChannelKind, TERMINAL_CHANNEL_SIZE, TuiEvent, send_event_or_report,
+    },
+    wifi::channel::{HANDLER_CHANNEL_SIZE, send_msg_or_report},
 };
 
 /// Keep this up to date with the address listed in `../../host_tui/src/main.rs`
@@ -66,18 +71,41 @@ impl Display for ApState {
 #[embassy_executor::task]
 pub async fn handle_connections(
     mut wifi_controller: WifiController<'static>,
+    to_msg_handler: Sender<'static, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
     to_terminal: Sender<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 ) -> ! {
     // No need to send [`ApClientDisconnected`] because the terminal starts with that state.
     loop {
-        wifi_controller
-            .wait_for_event(WifiEvent::ApStaConnected)
+        let events = wifi_controller
+            .wait_for_events(
+                WifiEvent::ApStaConnected
+                    | WifiEvent::ApStaDisconnected
+                    | WifiEvent::ApStop
+                    | WifiEvent::StaBeaconTimeout,
+                false,
+            )
             .await;
-        send_event_or_report(&to_terminal, TuiEvent::WifiEvent(ApState::Connected)).await;
-        wifi_controller
-            .wait_for_event(WifiEvent::ApStaDisconnected)
+        println!("{:?}", events);
+        assert!(
+            !events.contains(WifiEvent::ApStop),
+            "Wifi access point stopped"
+        );
+        if events.contains(WifiEvent::ApStaConnected) {
+            send_event_or_report(&to_terminal, TuiEvent::WifiEvent(ApState::Connected)).await;
+        }
+        if !events
+            .intersection(WifiEvent::ApStaDisconnected | WifiEvent::StaBeaconTimeout)
+            .is_empty()
+        {
+            send_msg_or_report(
+                &to_msg_handler,
+                Message::DutyCycle(STOP_DUTY),
+                &to_terminal,
+                ChannelKind::RecvMsg,
+            )
             .await;
-        send_event_or_report(&to_terminal, TuiEvent::WifiEvent(ApState::Disconnected)).await;
+            send_event_or_report(&to_terminal, TuiEvent::WifiEvent(ApState::Disconnected)).await;
+        }
     }
 }
 

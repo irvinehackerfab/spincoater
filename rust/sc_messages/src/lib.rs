@@ -22,6 +22,8 @@ pub enum Message {
     /// From PC to MCU: Set a duty cycle.
     ///
     /// From MCU to PC: The current duty cycle.
+    ///
+    /// The range of values for this is 0..[`PERIOD`]
     DutyCycle(u16),
 }
 

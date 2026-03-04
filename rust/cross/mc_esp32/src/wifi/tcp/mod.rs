@@ -25,7 +25,8 @@ use crate::{
     },
 };
 
-/// How long the MCU will wait before disconnecting the host device.
+/// How long the MCU will wait before disconnecting an inactive host device from both
+/// the access point and socket.
 pub const TIMEOUT: Duration = Duration::from_secs(10);
 /// How often the MCU will send keep-alive packets.
 /// This prevents the socket from closing due to inactivity.

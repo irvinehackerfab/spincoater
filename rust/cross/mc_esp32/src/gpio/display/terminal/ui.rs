@@ -4,8 +4,9 @@ use esp_alloc::HEAP;
 use ratatui::{
     Frame,
     text::{Line, Text, ToLine, ToSpan},
-    widgets::{Block, Paragraph},
+    widgets::{Block, Paragraph, Wrap},
 };
+use sc_messages::PERIOD;
 
 use crate::gpio::display::terminal::TerminalState;
 
@@ -16,10 +17,20 @@ impl TerminalState {
 
         let heap_stats = HEAP.stats();
 
+        let duty_percent = u32::from(self.duty) * 100 / u32::from(PERIOD);
+
         let paragraph = Paragraph::new(Text::from_iter([
             self.ap_state.to_line(),
             self.socket_state.to_line(),
-            Line::from_iter(["Duty cycle: ".to_span(), self.duty.to_span()]),
+            Line::from_iter([
+                "Duty cycle: ".to_span(),
+                self.duty.to_span(),
+                " / ".to_span(),
+                PERIOD.to_span(),
+                " (".to_span(),
+                duty_percent.to_span(),
+                ")%".to_span(),
+            ]),
             Line::from_iter(["Plate RPM: ".to_span(), self.rpm.to_span()]),
             // Debug info
             Line::raw("\nDebug info:"),
@@ -44,7 +55,8 @@ impl TerminalState {
                 ])
             },
         ]))
-        .block(block);
+        .block(block)
+        .wrap(Wrap::default());
         frame.render_widget(paragraph, frame.area());
     }
 }
