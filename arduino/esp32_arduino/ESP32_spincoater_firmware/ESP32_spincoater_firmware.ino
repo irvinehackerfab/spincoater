@@ -44,7 +44,7 @@ constexpr int maxRPM = 12000;
 
 // HE Sensor Variables
 volatile unsigned long motorRevolutionsDoubled;
-unsigned long previousTimeMicros;
+unsigned long previousTimeMillis;
 constexpr double adj_mtr = 1.42857143;
 
 Servo servo; // Setup the Servo
@@ -82,22 +82,21 @@ int readRpm(){
   unsigned long motorRevolutionsDoubledClone = motorRevolutionsDoubled;
   motorRevolutionsDoubled = 0;
   interrupts();
-  unsigned long long elapsedTimeMicros = micros() - previousTimeMicros;
-  previousTimeMicros = micros();
-  unsigned long long measuredRpm;
-  if (elapsedTimeMicros > 0) {
+  unsigned long elapsedTimeMillis = millis() - previousTimeMillis;
+  previousTimeMillis = millis();
+  unsigned long measuredRpm;
+  if (elapsedTimeMillis > 0) {
+    // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(elapsedTimeMillis ms) * (6000 ms / 1 min)
+    // = (2*motor revolutions) * 30,000 / (37 * elapsedTimeMillis)
     Serial.print("Motor revs: ");
     Serial.println(motorRevolutionsDoubled);
-    Serial.print("Micros: ");
-    Serial.println(elapsedTimeMicros);
-    // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(elapsedTimeMicros us) * (60,000,000 us / 1 min)
-    // = (2*motor revolutions) * 300,000,000 / (37 * elapsedTimeMicros)
+    Serial.print("Millis: ");
+    Serial.println(elapsedTimeMillis);
     // Final units: plate revolutions per minute
-    measuredRpm = motorRevolutionsDoubledClone * 300000000 / (37 * elapsedTimeMicros);
+    measuredRpm = motorRevolutionsDoubledClone * 30000 / (37 * elapsedTimeMillis);
   } else {
     measuredRpm = 0;
   }
-  // Serial.println(elapsedTimeMicros);
   return measuredRpm;
 }
 
@@ -194,21 +193,28 @@ void preSpin(){
 // Controls Spin Phase & Display
 void Spin(int rpm, int duration){
   setSpin(preSpinRPM, rpm);
-  int progress = 0;
-  int startTime = millis();
-  int lastDisplayed = -1;
+  // int progress = 0;
+  unsigned int startTimeMillis = millis();
+  // int lastDisplayed = -1;
 
-  while(progress < duration * 1000){
-    progress = millis() - startTime;
-    int timeLeft = ceil(duration - progress/1000.0);
-    if(timeLeft != lastDisplayed){
-      lastDisplayed = timeLeft;
-    }
-    if(debounce(4)){break;} // Early Exit with Start Button
-    rpm = readRpm();
-    if (rpm != 0) {
-      // Serial.println(rpm);
-    }
+  // while(progress < duration * 1000){
+  //   progress = millis() - startTime;
+  //   int timeLeft = ceil(duration - progress/1000.0);
+  //   if(timeLeft != lastDisplayed){
+  //     lastDisplayed = timeLeft;
+  //   }
+  //   if(debounce(4)){break;} // Early Exit with Start Button
+  //   rpm = readRpm();
+  //   if (rpm != 0) {
+  //     // Serial.println(rpm);
+  //   }
+  // }
+  while (!debounce(4)) {
+      // Waiting for 90 ms means you multiply the "motorRevolutionsDoubled" by 9.009,
+      // which hopefully doesn't lose much precision.
+      delay(90);
+      rpm = readRpm();
+      Serial.println(rpm);
   }
   setSpin(rpm, 0);
   delay(3000);
@@ -240,7 +246,7 @@ void setup() {
 
   // Setup HE Sensor interrupt using the pin number
   motorRevolutionsDoubled = 0;
-  previousTimeMicros = micros();
+  previousTimeMillis = millis();
   attachInterrupt(digitalPinToInterrupt(PIN_HE), halfRevolutionInterrupt, RISING);
 
   Serial.println("ESP32 Spin Coater ready");
