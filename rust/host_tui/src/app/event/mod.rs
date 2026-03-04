@@ -1,8 +1,11 @@
 //! This module decribes events that cause updates to the TUI.
 use crate::app::MessageInfo;
 use bytes::{BufMut, BytesMut};
-use color_eyre::{Result, eyre::OptionExt};
-use futures::{FutureExt, StreamExt};
+use color_eyre::{
+    Result,
+    eyre::{OptionExt, eyre},
+};
+use futures::StreamExt;
 use postcard::from_bytes_cobs;
 use ratatui::crossterm::event::Event as CrosstermEvent;
 use sc_messages::Message;
@@ -86,22 +89,24 @@ impl EventHandler {
 async fn await_crossterm_events(to_handler: UnboundedSender<Result<TuiEvent>>) {
     let mut reader = crossterm::event::EventStream::new();
     loop {
-        match reader.next().await {
-            Some(result) => match result {
+        if let Some(result) = reader.next().await {
+            match result {
                 Ok(event) => {
                     // If the channel is closed, this task is done.
                     if to_handler.send(Ok(TuiEvent::Crossterm(event))).is_err() {
                         return;
                     }
                 }
+                // I'm not sure what these errors are, so for now we will print them and end the program.
                 Err(error) => {
-                    eprintln!("EventStream error: {error}");
-                    // The errors are undocumented so I'm curious to see what they are.
-                    panic!("See previous message")
+                    let _ = to_handler.send(Err(error.into()));
+                    return;
                 }
-            },
+            }
+        } else {
             // If the stream is closed, this task is done.
-            None => return,
+            let _ = to_handler.send(Err(eyre!("Crossterm event stream closed")));
+            return;
         }
     }
 }
