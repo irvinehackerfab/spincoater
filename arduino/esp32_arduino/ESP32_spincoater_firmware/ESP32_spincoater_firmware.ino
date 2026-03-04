@@ -44,7 +44,7 @@ constexpr int maxRPM = 12000;
 
 // HE Sensor Variables
 volatile unsigned long motorRevolutionsDoubled;
-unsigned long previousTimeMillis;
+unsigned long previousTimeMicros;
 constexpr double adj_mtr = 1.42857143;
 
 Servo servo; // Setup the Servo
@@ -82,17 +82,22 @@ int readRpm(){
   unsigned long motorRevolutionsDoubledClone = motorRevolutionsDoubled;
   motorRevolutionsDoubled = 0;
   interrupts();
-  unsigned long elapsedTimeMillis = millis() - previousTimeMillis;
-  previousTimeMillis = millis();
-  unsigned long measuredRpm;
-  if (elapsedTimeMillis > 0) {
-    // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(elapsedTimeMillis ms) * (6000 ms / 1 min)
-    // = (2*motor revolutions) * 30,000 / (37 * elapsedTimeMillis)
+  unsigned long long elapsedTimeMicros = micros() - previousTimeMicros;
+  previousTimeMicros = micros();
+  unsigned long long measuredRpm;
+  if (elapsedTimeMicros > 0) {
+    Serial.print("Motor revs: ");
+    Serial.println(motorRevolutionsDoubled);
+    Serial.print("Micros: ");
+    Serial.println(elapsedTimeMicros);
+    // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(elapsedTimeMicros us) * (60,000,000 us / 1 min)
+    // = (2*motor revolutions) * 300,000,000 / (37 * elapsedTimeMicros)
     // Final units: plate revolutions per minute
-    measuredRpm = motorRevolutionsDoubledClone * 30000 / (37 * elapsedTimeMillis);
+    measuredRpm = motorRevolutionsDoubledClone * 300000000 / (37 * elapsedTimeMicros);
   } else {
     measuredRpm = 0;
   }
+  // Serial.println(elapsedTimeMicros);
   return measuredRpm;
 }
 
@@ -124,7 +129,7 @@ bool debounce(int buttonNumber) {
 // Maps input RPM to a value that is understandable by the Servo
 int mapRPM(int x){
   // map returns long; ceil used in original — keep same behavior
-  return ceil(map(x, 0, maxRPM, 1500, 1000));
+  return ceil(map(x, 0, maxRPM, 1500, 2000));
 }
 
 // Transitions between the current RPM (curr) and the target RPM (target)
@@ -200,7 +205,10 @@ void Spin(int rpm, int duration){
       lastDisplayed = timeLeft;
     }
     if(debounce(4)){break;} // Early Exit with Start Button
-    Serial.println(readRpm());
+    rpm = readRpm();
+    if (rpm != 0) {
+      // Serial.println(rpm);
+    }
   }
   setSpin(rpm, 0);
   delay(3000);
@@ -232,7 +240,7 @@ void setup() {
 
   // Setup HE Sensor interrupt using the pin number
   motorRevolutionsDoubled = 0;
-  previousTimeMillis = millis();
+  previousTimeMicros = micros();
   attachInterrupt(digitalPinToInterrupt(PIN_HE), halfRevolutionInterrupt, RISING);
 
   Serial.println("ESP32 Spin Coater ready");
@@ -261,7 +269,7 @@ void test(){
 
 // System Loop
 void loop() {
-  test(); // These two lines are for testing/graphing
+  // test(); // These two lines are for testing/graphing
   //while(1){}
   while(1){
     gslc_Update(&m_gui);
