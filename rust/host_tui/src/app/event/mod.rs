@@ -86,7 +86,7 @@ impl EventHandler {
 async fn await_crossterm_events(to_handler: UnboundedSender<Result<TuiEvent>>) {
     let mut reader = crossterm::event::EventStream::new();
     loop {
-        match reader.next().fuse().await {
+        match reader.next().await {
             Some(result) => match result {
                 Ok(event) => {
                     // If the channel is closed, this task is done.
