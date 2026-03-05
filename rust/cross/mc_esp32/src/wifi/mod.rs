@@ -6,13 +6,14 @@ use core::{
     fmt::{Debug, Display},
     net::Ipv4Addr,
 };
-use embassy_net::{IpListenEndpoint, Runner, StackResources};
+use embassy_net::{IpListenEndpoint, Ipv4Cidr, Runner, StackResources, StaticConfigV4};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Sender};
 use esp_println::println;
 use esp_radio::{
     Controller,
     wifi::{AuthMethod, WifiController, WifiDevice, WifiEvent},
 };
+use heapless::Vec;
 use sc_messages::{Message, STOP_DUTY};
 use static_cell::StaticCell;
 
@@ -42,6 +43,13 @@ pub const MAX_CONNECTIONS: u16 = 1;
 pub static RADIO: StaticCell<Controller> = StaticCell::new();
 /// We only use 1 socket right now.
 pub static STACK_RESOURCES: StaticCell<StackResources<1>> = StaticCell::new();
+
+/// The IP address configuration.
+pub const IP_CONFIG: StaticConfigV4 = StaticConfigV4 {
+    address: Ipv4Cidr::new(GATEWAY_IP, 24),
+    gateway: Some(GATEWAY_IP),
+    dns_servers: Vec::new(),
+};
 
 /// All possible access point states.
 #[derive(Debug, Default, Clone, Copy)]

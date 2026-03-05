@@ -8,7 +8,7 @@
 #![deny(clippy::large_stack_frames)]
 
 use embassy_executor::Spawner;
-use embassy_net::{Ipv4Cidr, StackResources, StaticConfigV4, tcp::TcpSocket};
+use embassy_net::{StackResources, tcp::TcpSocket};
 use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
     channel::{Receiver, Sender},
@@ -53,7 +53,7 @@ use mc_esp32::{
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER},
     },
     wifi::{
-        AUTH_METHOD, GATEWAY_IP, MAX_CONNECTIONS, RADIO, STACK_RESOURCES,
+        AUTH_METHOD, IP_CONFIG, MAX_CONNECTIONS, RADIO, STACK_RESOURCES,
         channel::{HANDLER_CHANNEL_SIZE, RECV_MSG_CHANNEL, SEND_MSG_CHANNEL, send_msg_or_report},
         handle_connections, net_task,
         tcp::{KEEP_ALIVE, RX_BUFFER, TIMEOUT, TX_BUFFER, handle_socket_connections},
@@ -104,12 +104,7 @@ async fn main(spawner: Spawner) -> ! {
     let (mut wifi_controller, interfaces) =
         esp_radio::wifi::new(radio, peripherals.WIFI, wifi_config)
             .expect("Failed to initialize Wi-Fi controller");
-    let net_config = embassy_net::Config::ipv4_static(StaticConfigV4 {
-        address: Ipv4Cidr::new(GATEWAY_IP, 24),
-        gateway: Some(GATEWAY_IP),
-        // TODO: I would make the StaticConfigV4 a const, but embassy_net is limited to heapless v0.8.0 so I can't initialize this in a const context until they update.
-        dns_servers: Default::default(),
-    });
+    let net_config = embassy_net::Config::ipv4_static(IP_CONFIG);
     let rng = Rng::new();
     let seed = u64::from(rng.random()) << 32 | u64::from(rng.random());
     // Init network stack

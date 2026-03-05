@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::{env, fs::File, io::BufWriter};
 
 use crate::app::event::{EventHandler, TuiEvent};
+use cfg_if::cfg_if;
 use chrono::{DateTime, Local};
 use color_eyre::{Result, eyre::OptionExt};
 use crossterm::event::Event;
@@ -155,13 +156,28 @@ impl From<Message> for MessageInfo {
     }
 }
 
-impl Display for MessageInfo {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} -- {}",
-            self.timestamp.format("%m-%d-%Y %H:%M:%S"),
-            self.message
-        )
+cfg_if! {
+    if #[cfg(feature = "dev-socket")] {
+        impl Display for MessageInfo {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                write!(
+                    f,
+                    "{} (fake socket) -- {}",
+                    self.timestamp.format("%m-%d-%Y %H:%M:%S"),
+                    self.message
+                )
+            }
+        }
+    } else {
+        impl Display for MessageInfo {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                write!(
+                    f,
+                    "{} -- {}",
+                    self.timestamp.format("%m-%d-%Y %H:%M:%S"),
+                    self.message
+                )
+            }
+        }
     }
 }

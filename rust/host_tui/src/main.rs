@@ -10,7 +10,7 @@ use tokio::net::TcpStream;
 use crate::app::App;
 
 cfg_if! {
-    if #[cfg(debug_assertions)] {
+    if #[cfg(feature = "dev-socket")] {
         pub(crate) const DEV_ADDRESS: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 8080);
 
         #[tokio::main]
@@ -72,7 +72,7 @@ cfg_if! {
         #[tokio::main]
         async fn main() -> Result<()> {
             color_eyre::install()?;
-            println!("Attempting to connect to MCU. If you're not connected to the wifi, connect and restart the program.");
+            println!("Attempting to connect to the MCU. If you're not connected to the wifi, connect and restart the program.");
             let stream = TcpStream::connect(MCU_ADDRESS).await?;
             let terminal = ratatui::init();
             let result = App::new(stream)?.run(terminal).await;

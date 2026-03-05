@@ -108,7 +108,9 @@ pub async fn recv_message(reader: &mut TcpReader<'_>) -> Result<Message, TcpErro
 /// Uses the transmit buffer repeatedly until a complete message can be sent or an error occurs.
 ///
 /// The message is [COBS encoded](https://docs.rs/postcard/latest/postcard/ser_flavors/struct.Cobs.html).
-/// The message must fit in [`BUFFER_SIZE`] bytes or else this method will never return.
+///
+/// The message must fit in [`BUFFER_SIZE`] bytes or else this method will never return,
+/// so keep an eye on the size of [`Message`].
 ///
 /// # Errors
 /// Returns an error if serialization or writing fails.

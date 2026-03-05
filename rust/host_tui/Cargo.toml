@@ -26,5 +26,8 @@ sc_messages = { path = "../sc_messages" }
 # For async messages from MCU
 tokio = { workspace = true, features = ["full"] }
 
+[features]
+dev-socket = []
+
 [lints]
 workspace = true

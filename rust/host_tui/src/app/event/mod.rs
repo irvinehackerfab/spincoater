@@ -124,8 +124,11 @@ async fn await_stream_messages(
         // BUFFER_SIZE is too small if we're filling up the buffer.
         assert!(buffer.has_remaining_mut());
         match from_mcu.read_buf(&mut buffer).await {
-            // End of file
-            Ok(0) => return,
+            Ok(0) => {
+                // If the socket closes, the task is done.
+                let _ = to_handler.send(Err(eyre!("Connection reset by peer")));
+                return;
+            }
             Ok(_) => {
                 let mut written_chunk = buffer.split();
                 // We must search for 0 before deserializing because from_bytes_cobs mutates the slice regardless of success.
@@ -166,6 +169,8 @@ async fn await_stream_messages(
 
 #[cfg(test)]
 mod test {
+    use postcard::Result;
+
     use super::*;
 
     /// Incremental writes like those in a TCP stream must work properly.
@@ -184,9 +189,22 @@ mod test {
 
     #[test]
     fn test_to_slice() {
-        let mut buf = [0u8; 32];
+        let mut buf = [0u8; BUFFER_SIZE];
 
         let used = postcard::to_slice(&true, &mut buf).expect("Failed to serialize");
         assert_eq!(used, &[0x01]);
+    }
+
+    /// Postcard returns [`postcard::Error::DeserializeUnexpectedEnd`]
+    /// when it reads a single 0.
+    #[test]
+    fn test_read_zero() {
+        let mut buf = [0u8; BUFFER_SIZE];
+
+        let used: Result<Message> = postcard::from_bytes_cobs(&mut buf[0..1]);
+        assert!(matches!(
+            used,
+            Err(postcard::Error::DeserializeUnexpectedEnd)
+        ));
     }
 }
