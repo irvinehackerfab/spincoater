@@ -7,6 +7,7 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use bytes::BytesMut;
 use embassy_executor::Spawner;
 use embassy_net::{StackResources, tcp::TcpSocket};
 use embassy_sync::{
@@ -56,7 +57,10 @@ use mc_esp32::{
         AUTH_METHOD, IP_CONFIG, MAX_CONNECTIONS, RADIO, STACK_RESOURCES,
         channel::{HANDLER_CHANNEL_SIZE, RECV_MSG_CHANNEL, SEND_MSG_CHANNEL, send_msg_or_report},
         handle_connections, net_task,
-        tcp::{KEEP_ALIVE, RX_BUFFER, TIMEOUT, TX_BUFFER, handle_socket_connections},
+        tcp::{
+            BUFFER_SIZE, KEEP_ALIVE, RX_BUFFER, RX_BUFFER_2, TIMEOUT, TX_BUFFER,
+            handle_socket_connections,
+        },
     },
 };
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
@@ -142,6 +146,7 @@ async fn main(spawner: Spawner) -> ! {
     let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer);
     socket.set_timeout(Some(TIMEOUT));
     socket.set_keep_alive(Some(KEEP_ALIVE));
+    let buffer = RX_BUFFER_2.init_with(|| BytesMut::with_capacity(BUFFER_SIZE));
 
     // Setup encoder interrupt to run on the second core
     let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
@@ -263,6 +268,7 @@ async fn main(spawner: Spawner) -> ! {
     // Await connections in a loop.
     handle_socket_connections(
         socket,
+        buffer,
         recv_msg_channel.sender(),
         from_msg_handler,
         terminal_channel.sender(),

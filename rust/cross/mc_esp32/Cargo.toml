@@ -59,6 +59,7 @@ smoltcp = { version = "0.12.0", default-features = false, features = [
   "socket-tcp",
   "socket-udp",
 ] }
+bytes = { version = "1.11.1", default-features = false }
 heapless = "0.8.0"
 critical-section = "1.2.0"
 static_cell = "2.1.1"
@@ -75,6 +76,7 @@ mousefood = { version = "0.4.0", default-features = false }
 ratatui = { version = "0.30.0", default-features = false, features = ["all-widgets"] }
 # Alternate mousefood font with unnecessary characters removed to save binary space
 ibm437 = { version = "0.3.3", default-features = false, features = ["regular9x14"] }
+enumset = "1.1.10"
 
 # Override mipidsi's dependency on embdedded-hal version "=1.0.0-alpha.7"
 [dependencies.embedded-hal]

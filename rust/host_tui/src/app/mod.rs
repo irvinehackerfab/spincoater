@@ -125,11 +125,19 @@ impl App {
             {
                 // Send 5% duty cycle command to the MCU.
                 0 => {
-                    self.events.send(Message::DutyCycle(STOP_DUTY)).await?;
+                    let message = Message::DutyCycle(STOP_DUTY);
+                    self.events.send(message).await?;
+                    let message_info = MessageInfo::new(message, false);
+                    writeln!(self.log_file, "{message_info}")?;
+                    let _ = self.messages.enqueue(message_info);
                 }
                 // Send 10% duty cycle command to the MCU.
                 1 => {
-                    self.events.send(Message::DutyCycle(MAX_POWER_DUTY)).await?;
+                    let message = Message::DutyCycle(MAX_POWER_DUTY);
+                    self.events.send(message).await?;
+                    let message_info = MessageInfo::new(message, false);
+                    writeln!(self.log_file, "{message_info}")?;
+                    let _ = self.messages.enqueue(message_info);
                 }
                 _ => {}
             },
@@ -143,15 +151,18 @@ impl App {
 /// A message, with the time it was received.
 #[derive(Debug, Clone)]
 pub struct MessageInfo {
-    pub message: Message,
-    pub timestamp: DateTime<Local>,
+    message: Message,
+    timestamp: DateTime<Local>,
+    from_mcu: bool,
 }
 
-impl From<Message> for MessageInfo {
-    fn from(message: Message) -> Self {
+impl MessageInfo {
+    #[must_use]
+    pub fn new(message: Message, from_mcu: bool) -> Self {
         Self {
             message,
             timestamp: Local::now(),
+            from_mcu,
         }
     }
 }
@@ -162,8 +173,9 @@ cfg_if! {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(
                     f,
-                    "{} (fake socket) -- {}",
+                    "{} (fake socket) -- {}: {}",
                     self.timestamp.format("%m-%d-%Y %H:%M:%S"),
+                    if self.from_mcu { "From MCU" } else { "To MCU" },
                     self.message
                 )
             }
@@ -173,8 +185,9 @@ cfg_if! {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 write!(
                     f,
-                    "{} -- {}",
+                    "{} -- {}: {}",
                     self.timestamp.format("%m-%d-%Y %H:%M:%S"),
+                    if self.from_mcu { "From MCU" } else { "To MCU" },
                     self.message
                 )
             }

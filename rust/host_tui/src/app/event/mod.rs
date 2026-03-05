@@ -139,7 +139,7 @@ async fn await_stream_messages(
                         Ok(message) => {
                             // Send message
                             if to_handler
-                                .send(Ok(TuiEvent::Wireless(MessageInfo::from(message))))
+                                .send(Ok(TuiEvent::Wireless(MessageInfo::new(message, true))))
                                 .is_err()
                             {
                                 // If the channel is closed, this task is done.

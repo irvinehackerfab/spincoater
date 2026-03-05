@@ -3,16 +3,19 @@ pub mod error;
 
 use core::fmt::Display;
 
+use bytes::{BufMut, BytesMut};
 use embassy_futures::select::select;
-use embassy_net::tcp::{Error, TcpReader, TcpSocket, TcpWriter};
+use embassy_net::tcp::{TcpReader, TcpSocket, TcpWriter};
 use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
     channel::{Receiver, Sender},
 };
 use embassy_time::Duration;
+use embedded_io::ReadReady;
 use esp_println::println;
+use postcard::from_bytes_cobs;
 use sc_messages::Message;
-use static_cell::ConstStaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 use crate::{
     gpio::display::terminal::channel::{
@@ -42,6 +45,10 @@ pub static RX_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new(
 /// The static variable for the transmit buffer.
 pub static TX_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new([0u8; BUFFER_SIZE]);
 
+/// Because smoltcp (and therefore [`embassy_net`]) does not always allow you to read all bytes
+/// in [`RX_BUFFER`] at once, we need another buffer to store the result of multiple [`TcpReader::read_with`] calls.
+pub static RX_BUFFER_2: StaticCell<BytesMut> = StaticCell::new();
+
 /// All possible states for the socket.
 #[derive(Debug, Default)]
 pub enum SocketState {
@@ -63,45 +70,6 @@ impl Display for SocketState {
                 SocketState::Connected => "connected",
             }
         )
-    }
-}
-
-/// Reads the transmit buffer repeatedly until a complete message is found or an error occurs.
-///
-/// The message must be [COBS encoded](https://docs.rs/postcard/latest/postcard/ser_flavors/struct.Cobs.html)
-/// and must fit in [`BUFFER_SIZE`] bytes.
-///
-/// # Errors
-/// Returns an error if deserialization or reading fails.
-///
-/// # Panics
-/// Panics if the socket's receive buffer has [`BUFFER_SIZE`] or more bytes queued.
-pub async fn recv_message(reader: &mut TcpReader<'_>) -> Result<Message, TcpError> {
-    loop {
-        // BUFFER_SIZE is too small if we're filling up the buffer.
-        assert!(reader.recv_queue() < BUFFER_SIZE);
-        if let Some(message) = reader
-            .read_with(|written_chunk| {
-                // Only deserialize if at least one complete message is in the buffer.
-                match written_chunk.iter().position(|byte| *byte == 0u8) {
-                    Some(idx) => {
-                        // Get the actual number of bytes to read.
-                        let end = idx + 1;
-                        // Attempt to deserialize once.
-                        let deserialization_result =
-                            postcard::from_bytes_cobs::<Message>(&mut written_chunk[..end]);
-                        // Wraps the message in an Option if there is a message.
-                        let resulting_option = deserialization_result.map(Option::from);
-                        // Tell the socket to clear the bytes we used and return our result.
-                        (end, resulting_option)
-                    }
-                    None => (0, Ok(None)),
-                }
-            })
-            .await??
-        {
-            return Ok(message);
-        }
     }
 }
 
@@ -137,25 +105,71 @@ pub async fn send_message(message: Message, writer: &mut TcpWriter<'_>) -> Resul
 /// Receives messages from the host device, and sends them to the message handler.
 ///
 /// This loop continues until an error occurs.
-/// # Errors
-/// See [`TcpError`] for all possible errors.
+/// Deserialization errors are printed out.
+/// All errors are printed out and cause
+/// [`TuiEvent::SocketEvent`] with [`SocketState::Disconnected`] to be sent to the terminal.
 pub async fn receive_unhandled_messages(
     reader: &mut TcpReader<'_>,
+    buffer: &mut BytesMut,
     to_msg_handler: &Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
     to_terminal: &Sender<'_, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 ) {
-    loop {
-        match recv_message(reader).await {
-            Ok(message) => {
-                send_msg_or_report(to_msg_handler, message, to_terminal, ChannelKind::RecvMsg)
-                    .await;
+    'outer: loop {
+        if let Ok(()) = reader
+            .read_with(|written_chunk| {
+                buffer.put_slice(written_chunk);
+                (written_chunk.len(), ())
+            })
+            .await
+        {
+            let mut written_chunk = buffer.split();
+            // We must search for 0 before deserializing because from_bytes_cobs mutates the slice regardless of success.
+            while let Some(idx) = written_chunk.iter().position(|byte| *byte == 0u8) {
+                let end = idx + 1;
+                let mut msg_chunk = written_chunk.split_to(end);
+                match from_bytes_cobs::<Message>(&mut msg_chunk) {
+                    Ok(message) => {
+                        // Return message
+                        send_msg_or_report(
+                            to_msg_handler,
+                            message,
+                            to_terminal,
+                            ChannelKind::RecvMsg,
+                        )
+                        .await;
+                    }
+                    Err(error) => {
+                        // If deserialization fails, the task is done.
+                        println!("Deserialization failed: {error}");
+                        send_event_or_report(
+                            to_terminal,
+                            TuiEvent::SocketEvent(SocketState::Disconnected),
+                        )
+                        .await;
+                        // Clear the written data so the buffer can be reused.
+                        msg_chunk.clear();
+                        written_chunk.unsplit(msg_chunk);
+                        buffer.unsplit(written_chunk);
+                        break 'outer;
+                    }
+                }
+                // Clear the written data so the buffer can be reused.
+                msg_chunk.clear();
+                written_chunk.unsplit(msg_chunk);
             }
-            Err(err) => {
-                println!("RX error: {err:?}");
-                break;
-            }
+            buffer.unsplit(written_chunk);
+        } else {
+            // If reading fails, the connection was reset.
+            send_event_or_report(
+                to_terminal,
+                TuiEvent::SocketEvent(SocketState::Disconnected),
+            )
+            .await;
+            break;
         }
     }
+    // Clear the buffer so it can be reused.
+    buffer.clear();
 }
 
 /// Receives messages that have been handled by the handler, and sends them to the host device.
@@ -183,6 +197,7 @@ pub async fn announce_handled_messages(
 /// This function panics if it contains a logic error that needs to be fixed.
 pub async fn handle_socket_connections(
     mut socket: TcpSocket<'_>,
+    buffer: &mut BytesMut,
     to_msg_handler: Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
     from_msg_handler: Receiver<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
     to_terminal: Sender<'_, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
@@ -197,7 +212,7 @@ pub async fn handle_socket_connections(
         // Cancel receiving and transmitting as soon as an error occurs.
         // This gives the socket the opportunity to abort.
         select(
-            receive_unhandled_messages(&mut reader, &to_msg_handler, &to_terminal),
+            receive_unhandled_messages(&mut reader, buffer, &to_msg_handler, &to_terminal),
             announce_handled_messages(&mut writer, &from_msg_handler),
         )
         .await;
@@ -208,23 +223,5 @@ pub async fn handle_socket_connections(
             TuiEvent::SocketEvent(SocketState::Disconnected),
         )
         .await;
-        // Flush all data from the receive buffer as well.
-        // Embassy may prevent this from working properly,
-        // in which case we must wait for a new connection to flush the buffer.
-        flush_rx_buffer(&mut socket)
-            .await
-            .expect("Failed to flush RX buffer");
     }
-}
-
-/// Flushes the receive buffer of the socket if there is data left in it.
-///
-/// # Errors
-/// This function returns an error if Embassy disallows flushing the receive buffer.
-/// If this happens, try calling this function after a new connection has been established instead.
-pub async fn flush_rx_buffer(socket: &mut TcpSocket<'_>) -> Result<(), Error> {
-    if socket.may_recv() {
-        socket.read_with(|bytes| (bytes.len(), ())).await?;
-    }
-    Ok(())
 }
