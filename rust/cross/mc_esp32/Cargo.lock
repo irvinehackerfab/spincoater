@@ -1349,7 +1349,6 @@ dependencies = [
  "embedded-hal-bus",
  "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
- "enumset",
  "esp-alloc",
  "esp-backtrace",
  "esp-bootloader-esp-idf",

@@ -3,7 +3,7 @@ pub mod error;
 
 use core::fmt::Display;
 
-use bytes::{BufMut, BytesMut};
+use bytes::BytesMut;
 use embassy_futures::select::select;
 use embassy_net::tcp::{TcpReader, TcpSocket, TcpWriter};
 use embassy_sync::{
@@ -11,10 +11,9 @@ use embassy_sync::{
     channel::{Receiver, Sender},
 };
 use embassy_time::Duration;
-use embedded_io::ReadReady;
 use esp_println::println;
 use postcard::from_bytes_cobs;
-use sc_messages::Message;
+use sc_messages::{Message, STOP_DUTY};
 use static_cell::{ConstStaticCell, StaticCell};
 
 use crate::{
@@ -114,62 +113,42 @@ pub async fn receive_unhandled_messages(
     to_msg_handler: &Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
     to_terminal: &Sender<'_, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 ) {
-    'outer: loop {
-        if let Ok(()) = reader
-            .read_with(|written_chunk| {
-                buffer.put_slice(written_chunk);
-                (written_chunk.len(), ())
-            })
-            .await
-        {
-            let mut written_chunk = buffer.split();
-            // We must search for 0 before deserializing because from_bytes_cobs mutates the slice regardless of success.
-            while let Some(idx) = written_chunk.iter().position(|byte| *byte == 0u8) {
-                let end = idx + 1;
-                let mut msg_chunk = written_chunk.split_to(end);
-                match from_bytes_cobs::<Message>(&mut msg_chunk) {
-                    Ok(message) => {
-                        // Return message
-                        send_msg_or_report(
-                            to_msg_handler,
-                            message,
-                            to_terminal,
-                            ChannelKind::RecvMsg,
-                        )
+    'outer: while let Ok(()) = reader
+        .read_with(|written_chunk| {
+            buffer.extend_from_slice(written_chunk);
+            (written_chunk.len(), ())
+        })
+        .await
+    {
+        let mut written_chunk = buffer.split();
+        // We must search for 0 before deserializing because from_bytes_cobs mutates the slice regardless of success.
+        while let Some(idx) = written_chunk.iter().position(|byte| *byte == 0u8) {
+            let end = idx + 1;
+            let mut msg_chunk = written_chunk.split_to(end);
+            match from_bytes_cobs::<Message>(&mut msg_chunk) {
+                Ok(message) => {
+                    // Return message
+                    send_msg_or_report(to_msg_handler, message, to_terminal, ChannelKind::RecvMsg)
                         .await;
-                    }
-                    Err(error) => {
-                        // If deserialization fails, the task is done.
-                        println!("Deserialization failed: {error}");
-                        send_event_or_report(
-                            to_terminal,
-                            TuiEvent::SocketEvent(SocketState::Disconnected),
-                        )
-                        .await;
-                        // Clear the written data so the buffer can be reused.
-                        msg_chunk.clear();
-                        written_chunk.unsplit(msg_chunk);
-                        buffer.unsplit(written_chunk);
-                        break 'outer;
-                    }
                 }
-                // Clear the written data so the buffer can be reused.
-                msg_chunk.clear();
-                written_chunk.unsplit(msg_chunk);
+                Err(error) => {
+                    // If deserialization fails, the task is done.
+                    println!("Deserialization failed: {error}");
+                    // Clear everything so the buffer can be reused.
+                    written_chunk.unsplit(msg_chunk);
+                    written_chunk.clear();
+                    buffer.unsplit(written_chunk);
+                    break 'outer;
+                }
             }
-            buffer.unsplit(written_chunk);
-        } else {
-            // If reading fails, the connection was reset.
-            send_event_or_report(
-                to_terminal,
-                TuiEvent::SocketEvent(SocketState::Disconnected),
-            )
-            .await;
-            break;
+            // Clear the deserialized data so we can search for another 0u8.
+            msg_chunk.clear();
+            written_chunk.unsplit(msg_chunk);
         }
+        // We don't clear here because `read_with` may have given us half a message,
+        // and will give the other half later.
+        buffer.unsplit(written_chunk);
     }
-    // Clear the buffer so it can be reused.
-    buffer.clear();
 }
 
 /// Receives messages that have been handled by the handler, and sends them to the host device.
@@ -216,11 +195,26 @@ pub async fn handle_socket_connections(
             announce_handled_messages(&mut writer, &from_msg_handler),
         )
         .await;
+        // Clear the buffer of any unprocessed bytes.
+        // Keep in mind that if `announce_handled_messages` cancels `receive_unhandled_messages`,
+        // The buffer may have unprocessed bytes and may have lost some capacity that was split off.
+        // This is okay, because BytesMut can reallocate.
+        buffer.clear();
+        // Abort the connection.
         socket.abort();
         let _ = socket.flush().await;
+        // Update the TUI
         send_event_or_report(
             &to_terminal,
             TuiEvent::SocketEvent(SocketState::Disconnected),
+        )
+        .await;
+        // Ensure PWM output is disabled
+        send_msg_or_report(
+            &to_msg_handler,
+            Message::DutyCycle(STOP_DUTY),
+            &to_terminal,
+            ChannelKind::RecvMsg,
         )
         .await;
     }

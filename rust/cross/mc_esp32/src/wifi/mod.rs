@@ -8,8 +8,6 @@ use core::{
 };
 use embassy_net::{IpListenEndpoint, Ipv4Cidr, Runner, StackResources, StaticConfigV4};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Sender};
-use enumset::EnumSet;
-use esp_println::println;
 use esp_radio::{
     Controller,
     wifi::{AuthMethod, WifiController, WifiDevice, WifiEvent},
@@ -85,8 +83,15 @@ pub async fn handle_connections(
 ) -> ! {
     // No need to send [`ApClientDisconnected`] because the terminal starts with that state.
     loop {
-        let events = wifi_controller.wait_for_events(EnumSet::all(), false).await;
-        println!("{:?}", events);
+        let events = wifi_controller
+            .wait_for_events(
+                WifiEvent::ApStop
+                    | WifiEvent::ApStaDisconnected
+                    | WifiEvent::ApStaDisconnected
+                    | WifiEvent::StaBeaconTimeout,
+                false,
+            )
+            .await;
         assert!(
             !events.contains(WifiEvent::ApStop),
             "Wifi access point stopped"
