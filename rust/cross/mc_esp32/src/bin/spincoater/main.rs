@@ -158,7 +158,7 @@ async fn main(spawner: Spawner) -> ! {
 
             // Initialize encoder pin
             let mut encoder = Input::new(
-                peripherals.GPIO16,
+                peripherals.GPIO17,
                 InputConfig::default().with_pull(Pull::Up),
             );
             // Start listening for rising edges
@@ -177,7 +177,7 @@ async fn main(spawner: Spawner) -> ! {
     // https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3
     let mut pwm_pin = mcpwm
         .operator0
-        .with_pin_a(peripherals.GPIO12, PwmPinConfig::UP_ACTIVE_HIGH);
+        .with_pin_a(peripherals.GPIO32, PwmPinConfig::UP_ACTIVE_HIGH);
     // start timer with timestamp values in the range that we choose.
     let timer_clock_cfg = clock_cfg
         .timer_clock_with_frequency(PERIOD, PwmWorkingMode::Increase, FREQUENCY)
@@ -207,7 +207,7 @@ async fn main(spawner: Spawner) -> ! {
             .with_sck(peripherals.GPIO18);
             // Chip Select. This tells the display when it should listen to SPI commands. Keep it low (active) when sending data.
             // [`ExclusiveDevice::new_no_delay`] says to have an initial output of high.
-            let cs = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
+            let cs = Output::new(peripherals.GPIO16, Level::High, OutputConfig::default());
             // Data/Command control pin. Set high to send data, low to send commands. Used to switch between writing commands and pixel data.
             let dc = Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default());
             // Resets the display. Useful during startup to make sure the display starts in a known state.
@@ -229,6 +229,9 @@ async fn main(spawner: Spawner) -> ! {
         let backend = EmbeddedBackend::new(display, config);
         Terminal::new(backend).expect("Failed to create terminal")
     });
+
+    // Enable the backlight at all times so we can always see the display.
+    let _ = Output::new(peripherals.GPIO22, Level::High, OutputConfig::default());
 
     // Disable touch chip select for now
     let _ = Output::new(peripherals.GPIO33, Level::Low, OutputConfig::default());

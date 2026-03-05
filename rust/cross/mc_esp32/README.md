@@ -9,16 +9,19 @@ This was generated from [esp-generate](https://docs.espressif.com/projects/rust/
 The `editor_configurations` folder contains default configurations for various editors. To avoid conflicting with any configurations you may have, they have no effect until you move them out into the `mc_esp32` folder and add a `.` to the front of the name.
 
 # Programs
+## __Note__
+[0, RX, TX, EN, 12, 13, 14, 15 and 3V3](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) may be used for the [ESP-PROG-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#header-block) and should not be used for programs.
+
 ## `pwm`
-This is a basic program that initializes PWM on pin [IO12](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) and sets it to a constant duty cycle of 5% with a frequency of 50hz.
+This is a basic program that initializes PWM on pin [IO32](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) and sets it to a constant duty cycle of 5% with a frequency of 50hz.
 
 Run with `cargo run --release --bin pwm`
 
 ## `spincoater`
 This program does the following:
-- Initializes PWM on pin [IO12](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
+- Initializes PWM on pin [IO32](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
   - Outputs a constant duty cycle of 5% with a frequency of 50hz.
-- Records hall effect sensor input on pin [IO16](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
+- Records hall effect sensor input on pin [IO17](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
   - Prints the plate revolutions per minute every second.
 - Enables a Wifi access point
   - Allows one device to connect at a time
@@ -28,10 +31,12 @@ This program does the following:
   - MISO: GPIO19
   - MOSI: GPIO23
   - SCK: GPIO18
-  - CS: GPIO15
+  - CS: GPIO16
   - DC: GPIO2
   - RESET: GPIO4
   - T_CS (touch chip select, not used yet): GPIO33
+  - LED: GPIO22
+  - 5V is used to power the LCD.
 
 When flashing the program, you must specify the Wifi's SSID and password through environment variables. One way to do this is by running the program with `SSID=_ PASSWORD=_ cargo run --release --bin spincoater`.
 

@@ -1,15 +1,15 @@
 // madhephaestus/ESP32Servo: Arduino-compatible servo library for the ESP32
 // TaskScheduler | Arduino Documentation
 
-//We can’t use 6-11 because they are for flashing
-//34-39 are for input only.
-//3,1,0, 12 are whatever
-
-
 #include <ESP32Servo.h>
 #include "GUIv3_GSLC.h"
 
 // === ESP32 pin mapping  ===
+// See the user guide for all pin descriptions:
+// https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html
+
+// 0, RX, TX, EN, 12, 13, 14, 15 and 3V3 may be used for the ESP-PROG-2.
+
 // Display pins
 // These are set directly in the library, not here.
 // See this issue for more information:
@@ -17,24 +17,26 @@
 // TFT_MISO and T_DO: 19
 // TFT_MOSI and T_DIN: 23
 // TFT_SCK and T_CLK: 18
-// TFT_CS: 15
+// TFT_CS: 16
 // TFT_DC: 2
 // TFT_RST: 4
 // TOUCH_CS: 33
+#define LED 22
+// The LCD is powered with the 5V pin.
 
 // TODO: Remove all usages of the push buttons now that we have a touchscreen
 // Buttons (use INPUT_PULLUP)
 #define PIN_RPM_UP    25
 #define PIN_RPM_DOWN  26
 #define PIN_TIME_UP   27
-#define PIN_TIME_DOWN 14
-#define PIN_START     13
+#define PIN_TIME_DOWN 34
+#define PIN_START     35
 
 // Motor (servo) pin
-#define PIN_MOTOR 12
+#define PIN_MOTOR 32
 
 // Hall effect sensor (interrupt)
-#define PIN_HE 4
+#define PIN_HE 17
 
 // Motor Spinning Constants
 constexpr int preSpinRPM = 600;
@@ -243,6 +245,8 @@ void setup() {
   // Setup display
   gslc_InitDebug(&DebugOut);
   InitGUIslice_gen();
+  pinMode(LED, OUTPUT);
+  digitalWrite(LED, HIGH);
 
   // Setup HE Sensor interrupt using the pin number
   motorRevolutionsDoubled = 0;
