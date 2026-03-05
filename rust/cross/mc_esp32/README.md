@@ -38,7 +38,7 @@ This program does the following:
   - LED: GPIO22
   - 5V is used to power the LCD.
 
-When flashing the program, you must specify the Wifi's SSID and password through environment variables. One way to do this is by running the program with `SSID=_ PASSWORD=_ cargo run --release --bin spincoater`.
+When flashing the program, you must specify the Wifi's SSID and password through environment variables. One way to do this is by running the program with `SSID=_ PASSWORD=_ cargo run --bin spincoater`.
 
 The password must be 8-64 characters or else the radio will panic during initialization.
 
