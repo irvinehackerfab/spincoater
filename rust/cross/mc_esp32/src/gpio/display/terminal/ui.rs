@@ -17,14 +17,14 @@ impl TerminalState {
 
         let heap_stats = HEAP.stats();
 
-        let duty_percent = u32::from(self.duty) * 100 / u32::from(PERIOD);
+        let duty_percent = u32::from(self.duty.0) * 100 / u32::from(PERIOD);
 
         let paragraph = Paragraph::new(Text::from_iter([
             self.ap_state.to_line(),
             self.socket_state.to_line(),
             Line::from_iter([
                 "Duty cycle: ".to_span(),
-                self.duty.to_span(),
+                self.duty.0.to_span(),
                 " / ".to_span(),
                 PERIOD.to_span(),
                 " (".to_span(),

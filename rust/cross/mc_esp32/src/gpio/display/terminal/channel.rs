@@ -4,6 +4,7 @@ use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
     channel::{Channel, Sender, TrySendError},
 };
+use sc_messages::DutyCycle;
 use static_cell::ConstStaticCell;
 
 use crate::wifi::{ApState, tcp::SocketState};
@@ -26,7 +27,7 @@ pub enum TuiEvent {
     /// The socket state changed.
     SocketEvent(SocketState),
     /// The PWM output duty cycle changed.
-    DutyChanged(u16),
+    DutyChanged(DutyCycle),
     /// A value for plate revolutions per minute has been calculated.
     RpmValue(u16),
     /// A channel was found to be full.

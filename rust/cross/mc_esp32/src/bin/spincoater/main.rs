@@ -188,7 +188,7 @@ async fn main(spawner: Spawner) -> ! {
         .timer_clock_with_frequency(PERIOD, PwmWorkingMode::Increase, FREQUENCY)
         .expect("Failed to create TimerClockConfig");
     mcpwm.timer0.start(timer_clock_cfg);
-    pwm_pin.set_timestamp(STOP_DUTY);
+    pwm_pin.set_timestamp(STOP_DUTY.0);
 
     // Initialize the display
     // init_with constructs the value in-place to save stack space.
@@ -291,7 +291,7 @@ async fn handle_messages(
         let message = from_wifi.receive().await;
         match message {
             Message::DutyCycle(duty) => {
-                pwm_pin.set_timestamp(duty);
+                pwm_pin.set_timestamp(duty.0);
                 send_event_or_report(&to_terminal, TuiEvent::DutyChanged(duty)).await;
             }
         }

@@ -11,10 +11,15 @@ use serde::{Deserialize, Serialize};
 pub const PERIOD: u16 = u16::MAX - 1_535;
 
 /// The current motor controller reads 10% of [`PERIOD`] as 100% power.
-pub const MAX_POWER_DUTY: u16 = PERIOD / 10;
+pub const MAX_POWER_DUTY: DutyCycle = DutyCycle(PERIOD / 10);
 
 /// The current motor controller reads 5% of [`PERIOD`] as 0% power.
-pub const STOP_DUTY: u16 = PERIOD / 20;
+pub const STOP_DUTY: DutyCycle = DutyCycle(PERIOD / 20);
+
+/// A duty cycle.
+/// 0-100% is encoded as 0..[`PERIOD`].
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DutyCycle(pub u16);
 
 /// Messages between the host PC and the microcontroller.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -22,15 +27,13 @@ pub enum Message {
     /// From PC to MCU: Set a duty cycle.
     ///
     /// From MCU to PC: The current duty cycle.
-    ///
-    /// The range of values for this is 0..[`PERIOD`]
-    DutyCycle(u16),
+    DutyCycle(DutyCycle),
 }
 
 impl Display for Message {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            Message::DutyCycle(duty) => write!(f, "Set duty cycle to: {duty}"),
+            Message::DutyCycle(duty) => write!(f, "Set duty cycle to: {}", duty.0),
         }
     }
 }
@@ -51,6 +54,7 @@ mod test {
     #[test]
     fn test_re_deserialize() {
         for duty in 0..u16::MAX {
+            let duty = DutyCycle(duty);
             let msg = Message::DutyCycle(duty);
             let send = to_vec::<Message, BUFFER_SIZE>(&msg).expect("Failed to serialize");
             for (i, _) in send
@@ -74,6 +78,7 @@ mod test {
     #[test]
     fn test_fits_in_buffer() {
         for duty in 0..u16::MAX {
+            let duty = DutyCycle(duty);
             let msg = Message::DutyCycle(duty);
             let mut send = to_vec_cobs::<Message, BUFFER_SIZE>(&msg).expect("Failed to serialize");
             println!("Cobs message is {} bytes long.", send.len());

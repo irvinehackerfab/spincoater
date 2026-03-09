@@ -5,6 +5,7 @@ pub mod ui;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver};
 use mousefood::{EmbeddedBackend, prelude::Rgb565};
 use ratatui::Terminal;
+use sc_messages::DutyCycle;
 use static_cell::StaticCell;
 
 use crate::{
@@ -28,7 +29,7 @@ pub struct TerminalState {
     /// The current state of the socket.
     socket_state: SocketState,
     /// The current PWM output duty cycle.
-    duty: u16,
+    duty: DutyCycle,
     /// Plate revolutions per minute.
     rpm: u16,
     /// Information about the [`embassy_sync::channel::Channel`]s we use.

@@ -1,16 +1,16 @@
 //! This module contains the app representing the TUI.
 pub mod event;
+pub mod message;
 pub mod ui;
 
-use std::fmt::{Display, Formatter};
 use std::fs::{DirBuilder, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::{env, fs::File, io::BufWriter};
 
 use crate::app::event::{EventHandler, TuiEvent};
-use cfg_if::cfg_if;
-use chrono::{DateTime, Local};
+use crate::app::message::MessageInfo;
+use chrono::Local;
 use color_eyre::{Result, eyre::OptionExt};
 use crossterm::event::Event;
 use ratatui::{
@@ -19,7 +19,7 @@ use ratatui::{
     widgets::ListState,
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
-use sc_messages::{MAX_POWER_DUTY, Message, STOP_DUTY};
+use sc_messages::{DutyCycle, MAX_POWER_DUTY, Message, STOP_DUTY};
 use tokio::net::TcpStream;
 
 /// The maximum number of messages kept in the TUI at a time
@@ -36,6 +36,8 @@ pub struct App {
     pub events: EventHandler,
     /// The state of the commands section.
     pub commands_state: ListState,
+    /// The ramp up time of the motor, as reported by the MCU.
+    pub duty_cycle: DutyCycle,
     /// The last [`MESSAGE_CAPACITY`] messages sent from/to the MCU since the app started.
     ///
     /// When max capacity is reached, the oldest messages are overridden.
@@ -60,6 +62,7 @@ impl App {
         Ok(Self {
             running: true,
             events: EventHandler::new(stream),
+            duty_cycle: DutyCycle(0),
             commands_state: ListState::default().with_selected(Some(0)),
             messages: AllocRingBuffer::new(MESSAGE_CAPACITY),
             log_file,
@@ -101,6 +104,9 @@ impl App {
                     _ => {}
                 },
                 TuiEvent::Wireless(message_info) => {
+                    match message_info.message {
+                        Message::DutyCycle(duty_cycle) => self.duty_cycle = duty_cycle,
+                    }
                     writeln!(self.log_file, "{message_info}")?;
                     let _ = self.messages.enqueue(message_info);
                 }
@@ -145,52 +151,5 @@ impl App {
             _ => {}
         }
         Ok(())
-    }
-}
-
-/// A message, with the time it was received.
-#[derive(Debug, Clone)]
-pub struct MessageInfo {
-    message: Message,
-    timestamp: DateTime<Local>,
-    from_mcu: bool,
-}
-
-impl MessageInfo {
-    #[must_use]
-    pub fn new(message: Message, from_mcu: bool) -> Self {
-        Self {
-            message,
-            timestamp: Local::now(),
-            from_mcu,
-        }
-    }
-}
-
-cfg_if! {
-    if #[cfg(feature = "dev-socket")] {
-        impl Display for MessageInfo {
-            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-                write!(
-                    f,
-                    "{} (fake socket) -- {}: {}",
-                    self.timestamp.format("%m-%d-%Y %H:%M:%S"),
-                    if self.from_mcu { "From MCU" } else { "To MCU" },
-                    self.message
-                )
-            }
-        }
-    } else {
-        impl Display for MessageInfo {
-            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-                write!(
-                    f,
-                    "{} -- {}: {}",
-                    self.timestamp.format("%m-%d-%Y %H:%M:%S"),
-                    if self.from_mcu { "From MCU" } else { "To MCU" },
-                    self.message
-                )
-            }
-        }
     }
 }
