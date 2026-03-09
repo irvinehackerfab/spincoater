@@ -62,7 +62,7 @@ async fn main(spawner: Spawner) -> ! {
         .expect("Failed to create TimerClockConfig");
     println!("Period of the PWM pin: {}", pwm_pin.period());
     mcpwm.timer0.start(timer_clock_cfg);
-    pwm_pin.set_timestamp(STOP_DUTY);
+    pwm_pin.set_timestamp(STOP_DUTY.0);
 
     loop {
         Timer::after_secs(1).await;
