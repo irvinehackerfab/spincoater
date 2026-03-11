@@ -19,8 +19,9 @@ use ratatui::{
     widgets::ListState,
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
-use sc_messages::{DutyCycle, MAX_POWER_DUTY, Message, STOP_DUTY};
+use sc_messages::{DutyCycle, Message, STOP_DUTY};
 use tokio::net::TcpStream;
+use tui_input::Input;
 
 /// The maximum number of messages kept in the TUI at a time
 /// (all messages are written to the log file.)
@@ -35,7 +36,7 @@ pub struct App {
     /// Event handler.
     pub events: EventHandler,
     /// The state of the commands section.
-    pub commands_state: ListState,
+    pub commands_state: CommandsState,
     /// The ramp up time of the motor, as reported by the MCU.
     pub duty_cycle: DutyCycle,
     /// The last [`MESSAGE_CAPACITY`] messages sent from/to the MCU since the app started.
@@ -62,8 +63,8 @@ impl App {
         Ok(Self {
             running: true,
             events: EventHandler::new(stream),
-            duty_cycle: DutyCycle(0),
-            commands_state: ListState::default().with_selected(Some(0)),
+            duty_cycle: DutyCycle::try_from(0)?,
+            commands_state: CommandsState::List(ListState::default().with_selected(Some(0))),
             messages: AllocRingBuffer::new(MESSAGE_CAPACITY),
             log_file,
             log_file_path,
@@ -92,7 +93,7 @@ impl App {
     /// Returns an error if drawing to the terminal, receiving events or handling keystrokes fails.
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         while self.running {
-            terminal.draw(|frame| frame.render_widget(&mut self, frame.area()))?;
+            terminal.draw(|frame| self.render(frame))?;
             match self.events.next().await?? {
                 TuiEvent::Crossterm(event) => match event {
                     Event::Key(key_event)
@@ -117,39 +118,79 @@ impl App {
 
     /// Handles the key events and updates the state of [`App`].
     async fn handle_key_events(&mut self, key_event: KeyEvent) -> Result<()> {
-        match key_event.code {
-            KeyCode::Esc | KeyCode::Char('q') => self.running = false,
-            KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
-                self.running = false;
-            }
-            KeyCode::Up => self.commands_state.scroll_up_by(1),
-            KeyCode::Down => self.commands_state.scroll_down_by(1),
-            KeyCode::Enter => match self
-                .commands_state
-                .selected()
-                .ok_or_eyre("One command is always selected")?
-            {
-                // Send 5% duty cycle command to the MCU.
-                0 => {
-                    let message = Message::DutyCycle(STOP_DUTY);
-                    self.events.send(message).await?;
-                    let message_info = MessageInfo::new(message, false);
-                    writeln!(self.log_file, "{message_info}")?;
-                    let _ = self.messages.enqueue(message_info);
+        match &mut self.commands_state {
+            CommandsState::List(list_state) => match key_event.code {
+                KeyCode::Esc | KeyCode::Char('q') => self.running = false,
+                KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
+                    self.running = false;
                 }
-                // Send 10% duty cycle command to the MCU.
-                1 => {
-                    let message = Message::DutyCycle(MAX_POWER_DUTY);
-                    self.events.send(message).await?;
-                    let message_info = MessageInfo::new(message, false);
-                    writeln!(self.log_file, "{message_info}")?;
-                    let _ = self.messages.enqueue(message_info);
-                }
+                KeyCode::Up => list_state.scroll_up_by(1),
+                KeyCode::Down => list_state.scroll_down_by(1),
+                KeyCode::Enter => match list_state
+                    .selected()
+                    .ok_or_eyre("One command is always selected")?
+                {
+                    // Create a prompt for setting the duty cycle.
+                    0 => {
+                        self.commands_state = CommandsState::Input {
+                            input: Input::default(),
+                            last_error: None,
+                        }
+                    }
+                    // Stop the motor immediately.
+                    1 => {
+                        self.send_message(Message::DutyCycle(STOP_DUTY)).await?;
+                    }
+                    _ => {}
+                },
+                // Other handlers you could add here.
                 _ => {}
             },
-            // Other handlers you could add here.
-            _ => {}
+            CommandsState::Input { input, last_error } => match key_event.code {
+                KeyCode::Enter => match input.value().parse::<u16>() {
+                    Ok(duty_cycle) => match DutyCycle::try_from(duty_cycle) {
+                        Ok(duty_cycle) => {
+                            self.send_message(Message::DutyCycle(duty_cycle)).await?;
+                            self.commands_state =
+                                CommandsState::List(ListState::default().with_selected(Some(0)));
+                        }
+                        Err(err) => *last_error = Some(err.to_string()),
+                    },
+                    Err(err) => *last_error = Some(err.to_string()),
+                },
+                KeyCode::Esc => {
+                    self.commands_state =
+                        CommandsState::List(ListState::default().with_selected(Some(0)));
+                }
+                _ => {
+                    let _ = tui_input::backend::crossterm::EventHandler::handle_event(
+                        input,
+                        &Event::Key(key_event),
+                    );
+                }
+            },
         }
         Ok(())
     }
+
+    /// A reusable method for sending a message and logging it.
+    async fn send_message(&mut self, message: Message) -> Result<()> {
+        self.events.send(message).await?;
+        let message_info = MessageInfo::new(message, false);
+        writeln!(self.log_file, "{message_info}")?;
+        let _ = self.messages.enqueue(message_info);
+        Ok(())
+    }
+}
+
+/// The current state of the commands section.
+#[derive(Debug)]
+pub enum CommandsState {
+    /// The options are currently listed.
+    List(ListState),
+    /// The user is being prompted to input a duty cycle.
+    Input {
+        input: Input,
+        last_error: Option<String>,
+    },
 }

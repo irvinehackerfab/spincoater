@@ -3,7 +3,11 @@
 #[cfg(feature = "std")]
 extern crate std;
 
-use core::fmt::{Display, Formatter, Result};
+use core::{
+    fmt::{self, Display, Formatter},
+    ops::Deref,
+    result::Result,
+};
 use serde::{Deserialize, Serialize};
 
 /// The value corresponding to 100% of the PWM period.
@@ -19,7 +23,51 @@ pub const STOP_DUTY: DutyCycle = DutyCycle(PERIOD / 20);
 /// A duty cycle.
 /// 0-100% is encoded as 0..[`PERIOD`].
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct DutyCycle(pub u16);
+pub struct DutyCycle(u16);
+
+impl Deref for DutyCycle {
+    type Target = u16;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for DutyCycle {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// The [`u16`]'s value was too high to be considered a [`DutyCycle`].
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
+pub struct OutOfRange(pub u16);
+
+impl Display for OutOfRange {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} is greater than the maximum duty cycle of {}.",
+            self.0, PERIOD
+        )
+    }
+}
+
+impl TryFrom<u16> for DutyCycle {
+    type Error = OutOfRange;
+
+    /// Attempt to wrap a [`u16`] in [`DutyCycle`].
+    ///
+    /// This fails if the value is greater than [`PERIOD`].
+    fn try_from(value: u16) -> Result<DutyCycle, OutOfRange> {
+        if value <= PERIOD {
+            Ok(Self(value))
+        } else {
+            Err(OutOfRange(value))
+        }
+    }
+}
 
 /// Messages between the host PC and the microcontroller.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -31,7 +79,7 @@ pub enum Message {
 }
 
 impl Display for Message {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Message::DutyCycle(duty) => write!(f, "Set duty cycle to: {}", duty.0),
         }
