@@ -4,6 +4,7 @@ pub mod error;
 use core::fmt::Display;
 
 use bytes::BytesMut;
+use defmt::error;
 use embassy_futures::select::select;
 use embassy_net::tcp::{TcpReader, TcpSocket, TcpWriter};
 use embassy_sync::{
@@ -11,7 +12,6 @@ use embassy_sync::{
     channel::{Receiver, Sender},
 };
 use embassy_time::Duration;
-use esp_println::println;
 use postcard::from_bytes_cobs;
 use sc_messages::{Message, STOP_DUTY};
 use static_cell::{ConstStaticCell, StaticCell};
@@ -133,7 +133,7 @@ pub async fn receive_unhandled_messages(
                 }
                 Err(error) => {
                     // If deserialization fails, the task is done.
-                    println!("Deserialization failed: {error}");
+                    error!("Deserialization failed: {}", error);
                     // Clear everything so the buffer can be reused.
                     written_chunk.unsplit(msg_chunk);
                     written_chunk.clear();
@@ -163,7 +163,7 @@ pub async fn announce_handled_messages(
     loop {
         let message = from_msg_handler.receive().await;
         if let Err(err) = send_message(message, writer).await {
-            println!("TX error: {err:?}");
+            error!("TX error: {:?}", err);
             break;
         }
     }

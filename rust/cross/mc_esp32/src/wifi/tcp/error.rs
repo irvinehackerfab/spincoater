@@ -1,7 +1,7 @@
 //! This module contains wifi errors.
 
 /// All possible wifi errors.
-#[derive(Debug)]
+#[derive(Debug, defmt::Format)]
 pub enum TcpError {
     /// An error returned by the Embassy's TCP socket.
     TCPError(embassy_net::tcp::Error),

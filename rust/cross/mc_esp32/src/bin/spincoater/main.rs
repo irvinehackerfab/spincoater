@@ -8,6 +8,7 @@
 #![deny(clippy::large_stack_frames)]
 
 use bytes::BytesMut;
+use defmt::info;
 use embassy_executor::Spawner;
 use embassy_net::{StackResources, tcp::TcpSocket};
 use embassy_sync::{
@@ -15,7 +16,6 @@ use embassy_sync::{
     channel::{Receiver, Sender},
 };
 use embedded_hal_bus::spi::ExclusiveDevice;
-use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
     delay::Delay,
@@ -32,7 +32,6 @@ use esp_hal::{
     time::Rate,
     timer::timg::TimerGroup,
 };
-use esp_println::println;
 use esp_radio::wifi::{CountryInfo, OperatingClass};
 use ibm437::IBM437_9X14_REGULAR;
 use mc_esp32::{
@@ -65,7 +64,9 @@ use mc_esp32::{
 };
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
 use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
+use panic_rtt_target as _;
 use ratatui::Terminal;
+use rtt_target::rtt_init_defmt;
 use sc_messages::{Message, STOP_DUTY};
 
 // Wifi requires heap allocation
@@ -93,8 +94,8 @@ esp_bootloader_esp_idf::esp_app_desc!();
     reason = "main is the only place you should be allowed to allocate large buffers."
 )]
 #[esp_rtos::main]
-async fn main(spawner: Spawner) -> ! {
-    esp_println::logger::init_logger_from_env();
+async fn main(spawner: Spawner) {
+    rtt_init_defmt!();
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
@@ -105,7 +106,7 @@ async fn main(spawner: Spawner) -> ! {
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
-    println!("Embassy initialized on the first core!");
+    info!("Embassy initialized on the first core!");
 
     let radio =
         RADIO.init_with(|| esp_radio::init().expect("Failed to initialize Wi-Fi/BLE controller"));
