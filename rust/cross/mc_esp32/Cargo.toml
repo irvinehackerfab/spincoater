@@ -36,15 +36,15 @@ esp-radio = { version = "0.17.0", features = [
 embedded-io = "0.7.1"
 embedded-io-async = "0.7.0"
 embassy-executor = { version = "0.9.1", features = ["log"] }
-embassy-net = { version = "0.8.0", features = [
+embassy-net = { version = "0.9.0", features = [
   "dhcpv4",
   "log",
   "medium-ethernet",
   "tcp",
   "udp",
 ] }
-embassy-time = { version = "0.5.0", features = ["log"] }
-embassy-sync = "0.7.2"
+embassy-time = { version = "0.5.1", features = ["log"] }
+embassy-sync = "0.8.0"
 embassy-futures = "0.1.2"
 smoltcp = { version = "0.12.0", default-features = false, features = [
   "log",
@@ -60,7 +60,7 @@ smoltcp = { version = "0.12.0", default-features = false, features = [
   "socket-udp",
 ] }
 bytes = { version = "1.11.1", default-features = false }
-heapless = "0.8.0"
+heapless = "0.9.2"
 critical-section = "1.2.0"
 static_cell = "2.1.1"
 serde = { version = "1.0.228", default-features = false, features = ["derive"] }
@@ -72,7 +72,7 @@ sc_messages = { path = "../../sc_messages" }
 embedded-hal-bus = "0.3.0"
 embedded-graphics = "0.8.2"
 mipidsi = "0.10.0"
-mousefood = { version = "0.4.0", default-features = false }
+mousefood = { version = "0.5.0", default-features = false }
 ratatui = { version = "0.30.0", default-features = false, features = ["all-widgets"] }
 # Alternate mousefood font with unnecessary characters removed to save binary space
 ibm437 = { version = "0.3.3", default-features = false, features = ["regular9x14"] }
