@@ -25,6 +25,9 @@ ringbuffer = { workspace = true }
 sc_messages = { path = "../sc_messages", features = ["std"] }
 # For async messages from MCU
 tokio = { workspace = true, features = ["full"] }
+# The tick rate should be set to whatever the microcontroller's version of esp-rtos uses.
+# https://github.com/esp-rs/esp-hal/blob/1.0.0/esp-rtos/Cargo.toml#L55
+embassy-time = { workspace = true, features = ["tick-hz-1_000_000"] }
 
 
 [features]

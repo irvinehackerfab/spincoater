@@ -3,12 +3,16 @@
 #[cfg(feature = "std")]
 extern crate std;
 
+pub mod motion_profile;
+
 use core::{
     fmt::{self, Display, Formatter},
     ops::Deref,
     result::Result,
 };
 use serde::{Deserialize, Serialize};
+
+use crate::motion_profile::Setpoint;
 
 /// The value corresponding to 100% of the PWM period.
 /// See [`../cross/mc_esp32/src/pwm/mod.rs`] for an explanation on the choice for this value.
@@ -86,52 +90,47 @@ impl Display for Message {
     }
 }
 
+/// Messages from the host PC to the microcontroller.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Command {
+    /// Add a setpoint to the motion profile.
+    ///
+    /// The MCU will only listen to this while disabled.
+    Add(Setpoint),
+    /// Execute the motion profile.
+    Start,
+    /// Stop the motion profile and discard it.
+    Stop,
+}
+
 #[cfg(test)]
 mod test {
     use std::println;
 
     use super::*;
-    use postcard::{Error, from_bytes, from_bytes_cobs, to_vec, to_vec_cobs};
+    use postcard::{from_bytes_cobs, to_vec_cobs};
 
     /// Keep this up to date with `../cross/mc_esp32/src/wifi/tcp/mod.rs` `BUFFER_SIZE`
     const BUFFER_SIZE: usize = 64;
 
-    /// The correct message must be obtainable from multiple deserialization attempts on the same buffer.
-    ///
-    /// This test guarantees that we can use the [read](https://docs.embassy.dev/embassy-net/git/default/tcp/struct.TcpSocket.html#method.read) method.
-    #[test]
-    fn test_re_deserialize() {
-        for duty in 0..u16::MAX {
-            let duty = DutyCycle(duty);
-            let msg = Message::DutyCycle(duty);
-            let send = to_vec::<Message, BUFFER_SIZE>(&msg).expect("Failed to serialize");
-            for (i, _) in send
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| *i != 0 && *i < send.len())
-            {
-                let send_clone = send.clone();
-                let error = from_bytes::<Message>(&send_clone[..i]);
-                assert!(matches!(error, Err(Error::DeserializeUnexpectedEnd)));
-                let output = from_bytes::<Message>(&send_clone);
-                assert!(matches!(output, Ok(Message::DutyCycle(out_duty)) if out_duty == duty));
-            }
-        }
-    }
-
-    /// Ensures that a COBS encoded message fits in the buffer size used by all spin coater programs.
+    /// Ensures that a COBS encoded command fits in the buffer size used by all spin coater programs.
     ///
     /// This test guarantees that we can use the [read_with](https://docs.embassy.dev/embassy-net/git/default/tcp/struct.TcpSocket.html#method.read_with)
     /// and [write_with](https://docs.embassy.dev/embassy-net/git/default/tcp/struct.TcpSocket.html#method.write_with) methods.
     #[test]
     fn test_fits_in_buffer() {
-        for duty in 0..u16::MAX {
-            let duty = DutyCycle(duty);
-            let msg = Message::DutyCycle(duty);
-            let mut send = to_vec_cobs::<Message, BUFFER_SIZE>(&msg).expect("Failed to serialize");
-            println!("Cobs message is {} bytes long.", send.len());
-            let output = from_bytes_cobs::<Message>(&mut send);
-            assert!(matches!(output, Ok(Message::DutyCycle(out_duty)) if out_duty == duty));
+        for rpm in [0, 10, u16::MAX] {
+            for ticks in [0, 10, u64::MAX] {
+                let setpoint = Setpoint { rpm, after: ticks };
+                let command = Command::Add(setpoint);
+                let mut send =
+                    to_vec_cobs::<Command, BUFFER_SIZE>(&command).expect("Failed to serialize");
+                println!("Cobs message is {} bytes long.", send.len());
+                let output = from_bytes_cobs::<Command>(&mut send);
+                assert!(
+                    matches!(output, Ok(Command::Add(Setpoint { rpm: out_rpm, after: out_ticks })) if out_rpm == rpm && out_ticks == ticks)
+                );
+            }
         }
     }
 }

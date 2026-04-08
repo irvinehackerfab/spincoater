@@ -24,6 +24,10 @@ cfg-if = "1.0.4"
 ringbuffer = "0.16.0"
 thiserror = "2.0.18"
 
+# For non u128 time durations
+embassy-time = { version = "0.5.1" }
+
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
