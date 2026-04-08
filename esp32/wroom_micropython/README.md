@@ -76,11 +76,11 @@ For quick reference, here is the wiring configuration expected by the code:
 * **RST (Reset):** GPIO 4
 
 ### Touch Screen (XPT2046 - SPI 1)
-* **SCK:** GPIO 14
-* **MOSI:** GPIO 13
-* **MISO:** GPIO 12
-* **CS (Chip Select):** GPIO 33
-* **IRQ (Interrupt):** GPIO 25
+* **T_CLK (SCK):** GPIO 14
+* **T_DIN (MOSI):** GPIO 13
+* **T_DO (MISO):** GPIO 12
+* **T_CS (Chip Select):** GPIO 33
+* **T_IRQ (Interrupt):** GPIO 25
 
 ### Motor & Sensors
 * **ESC PWM Signal:** GPIO 26

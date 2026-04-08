@@ -20,6 +20,9 @@ Hardware Setup:
 - Touch: XPT2046 (SPI 1)
 - Motor PWM Pin: GPIO 26
 - Hall Sensor Pin: GPIO 27
+
+TODO:
+ - In the future remap pins 12-15 for debugger chip
 ================================================================================
 """
 
@@ -128,9 +131,9 @@ RPM_UPDATE_MS = 100 # Run PID loop at 10Hz
 smoothed_motor_rpm = 0.0
 
 # PID Tuning Parameters (Set to 0 by default; require manual tuning)
-Kp = 0 # e.g., 0.0100
-Ki = 0 # e.g., 0.0015
-Kd = 0 # e.g., 0.0025
+Kp = 0.0100 # e.g., 0.0100
+Ki = 0.0015 # e.g., 0.0015
+Kd = 0.0025 # e.g., 0.0025
 
 integral_error = 0.0
 prev_error = 0.0
