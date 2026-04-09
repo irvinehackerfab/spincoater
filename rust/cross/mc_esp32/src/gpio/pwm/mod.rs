@@ -1,8 +1,4 @@
 //! This module contains PWM output functionality.
-use embassy_sync::{
-    blocking_mutex::{self, raw::NoopRawMutex},
-    mutex::Mutex,
-};
 use esp_hal::time::Rate;
 use heapless::Deque;
 use sc_messages::motion_profile::{MAX_SETPOINTS, Setpoint};
