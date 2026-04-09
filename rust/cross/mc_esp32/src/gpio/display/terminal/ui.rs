@@ -1,5 +1,7 @@
 //! This module contains the UI description for the terminal.
 
+use core::sync::atomic::Ordering;
+
 use esp_alloc::HEAP;
 use ratatui::{
     Frame,
@@ -8,7 +10,7 @@ use ratatui::{
 };
 use sc_messages::PERIOD;
 
-use crate::gpio::display::terminal::TerminalState;
+use crate::gpio::{display::terminal::TerminalState, encoder::PLATE_RPM};
 
 impl TerminalState {
     /// Draws the current information to the terminal.
@@ -18,6 +20,7 @@ impl TerminalState {
         let heap_stats = HEAP.stats();
 
         let duty_percent = u32::from(*self.duty) * 100 / u32::from(PERIOD);
+        let rpm = PLATE_RPM.load(Ordering::Relaxed);
 
         let paragraph = Paragraph::new(Text::from_iter([
             self.ap_state.to_line(),
@@ -31,16 +34,16 @@ impl TerminalState {
                 duty_percent.to_span(),
                 ")%".to_span(),
             ]),
-            Line::from_iter(["Plate RPM: ".to_span(), self.rpm.to_span()]),
+            Line::from_iter(["Plate RPM: ".to_span(), rpm.to_span()]),
             // Debug info
             Line::raw("\nDebug info:"),
             Line::from_iter([
                 "RECV_MSG_CHANNEL was full: ".to_span(),
-                self.channel_status.recv_msg_channel_was_full.to_span(),
+                self.channel_status.recv_cmd_channel_was_full.to_span(),
             ]),
             Line::from_iter([
                 "SEND_MSG_CHANNEL was full: ".to_span(),
-                self.channel_status.send_msg_channel_was_full.to_span(),
+                self.channel_status.send_info_channel_was_full.to_span(),
             ]),
             Line::from_iter([
                 "TERMINAL_CHANNEL was full: ".to_span(),

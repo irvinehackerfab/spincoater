@@ -13,14 +13,14 @@ use esp_radio::{
     wifi::{AuthMethod, WifiController, WifiDevice, WifiEvent},
 };
 use heapless::Vec;
-use sc_messages::{Message, STOP_DUTY};
+use sc_messages::Command;
 use static_cell::StaticCell;
 
 use crate::{
     gpio::display::terminal::channel::{
         ChannelKind, TERMINAL_CHANNEL_SIZE, TuiEvent, send_event_or_report,
     },
-    wifi::channel::{HANDLER_CHANNEL_SIZE, send_msg_or_report},
+    wifi::channel::{HANDLER_CHANNEL_SIZE, send_cmd_or_report},
 };
 
 /// Keep this up to date with the address listed in `../../host_tui/src/main.rs`
@@ -78,7 +78,7 @@ impl Display for ApState {
 #[embassy_executor::task]
 pub async fn handle_connections(
     mut wifi_controller: WifiController<'static>,
-    to_msg_handler: Sender<'static, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
+    to_msg_handler: Sender<'static, NoopRawMutex, Command, HANDLER_CHANNEL_SIZE>,
     to_terminal: Sender<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 ) -> ! {
     // No need to send [`ApClientDisconnected`] because the terminal starts with that state.
@@ -103,11 +103,11 @@ pub async fn handle_connections(
             .intersection(WifiEvent::ApStaDisconnected | WifiEvent::StaBeaconTimeout)
             .is_empty()
         {
-            send_msg_or_report(
+            send_cmd_or_report(
                 &to_msg_handler,
-                Message::DutyCycle(STOP_DUTY),
+                Command::Stop,
                 &to_terminal,
-                ChannelKind::RecvMsg,
+                ChannelKind::RecvCmd,
             )
             .await;
             send_event_or_report(&to_terminal, TuiEvent::WifiEvent(ApState::Disconnected)).await;

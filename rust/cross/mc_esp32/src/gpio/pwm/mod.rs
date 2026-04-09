@@ -1,5 +1,12 @@
 //! This module contains PWM output functionality.
+use embassy_sync::{
+    blocking_mutex::{self, raw::NoopRawMutex},
+    mutex::Mutex,
+};
 use esp_hal::time::Rate;
+use heapless::Deque;
+use sc_messages::motion_profile::{MAX_SETPOINTS, Setpoint};
+use static_cell::ConstStaticCell;
 
 /// The current motor controller reads PWM at 50 Hz.
 pub const FREQUENCY: Rate = Rate::from_hz(50);
@@ -33,3 +40,7 @@ pub const PERIPHERAL_CLOCK_PRESCALER: u8 = 0;
 ///
 /// This is currently set to the highest possible value that also results in a whole-numbered `timer_prescaler`.
 pub const PERIOD: u16 = sc_messages::PERIOD - 1;
+
+/// The static cell for storing a motion profile.
+pub static SETPOINTS: ConstStaticCell<Deque<Setpoint, MAX_SETPOINTS>> =
+    ConstStaticCell::new(Deque::new());

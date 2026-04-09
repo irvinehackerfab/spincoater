@@ -8,6 +8,7 @@
 )]
 #![warn(clippy::large_stack_frames)]
 
+use embassy_time::Duration;
 use esp_hal::system::Stack;
 use static_cell::ConstStaticCell;
 pub mod gpio;
@@ -15,3 +16,6 @@ pub mod wifi;
 
 /// The static variable that holds the second core stack.
 pub static SECOND_CORE_STACK: ConstStaticCell<Stack<2048>> = ConstStaticCell::new(Stack::new());
+
+/// The period that the main control loop and any other periodic measurement tasks run at.
+pub const APP_PERIOD: Duration = Duration::from_millis(20);

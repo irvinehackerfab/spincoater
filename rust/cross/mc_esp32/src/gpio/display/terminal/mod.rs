@@ -30,8 +30,6 @@ pub struct TerminalState {
     socket_state: SocketState,
     /// The current PWM output duty cycle.
     duty: DutyCycle,
-    /// Plate revolutions per minute.
-    rpm: u16,
     /// Information about the [`embassy_sync::channel::Channel`]s we use.
     channel_status: ChannelStatus,
 }
@@ -51,7 +49,7 @@ pub async fn update_terminal(
             TuiEvent::WifiEvent(wifi_state) => state.ap_state = wifi_state,
             TuiEvent::SocketEvent(socket_state) => state.socket_state = socket_state,
             TuiEvent::DutyChanged(duty) => state.duty = duty,
-            TuiEvent::RpmValue(rpm) => state.rpm = rpm,
+            TuiEvent::RpmValue => {}
             TuiEvent::ChannelFull(channel_kind) => state.channel_status.set_full(channel_kind),
         }
     }

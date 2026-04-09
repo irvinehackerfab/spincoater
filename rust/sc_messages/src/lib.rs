@@ -73,23 +73,6 @@ impl TryFrom<u16> for DutyCycle {
     }
 }
 
-/// Messages between the host PC and the microcontroller.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum Message {
-    /// From PC to MCU: Set a duty cycle.
-    ///
-    /// From MCU to PC: The current duty cycle.
-    DutyCycle(DutyCycle),
-}
-
-impl Display for Message {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Message::DutyCycle(duty) => write!(f, "Set duty cycle to: {}", duty.0),
-        }
-    }
-}
-
 /// Messages from the host PC to the microcontroller.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Command {
@@ -101,6 +84,17 @@ pub enum Command {
     Start,
     /// Stop the motion profile and discard it.
     Stop,
+}
+
+// Messages from the microcontroller to the host PC.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Info {
+    /// The current setpoint of the motion profile.
+    Setpoint(motion_profile::Setpoint),
+    /// The current state of the motion profile.
+    State(motion_profile::State),
+    /// The current duty cycle.
+    DutyCycle(DutyCycle),
 }
 
 #[cfg(test)]
@@ -121,14 +115,14 @@ mod test {
     fn test_fits_in_buffer() {
         for rpm in [0, 10, u16::MAX] {
             for ticks in [0, 10, u64::MAX] {
-                let setpoint = Setpoint { rpm, after: ticks };
+                let setpoint = Setpoint { rpm, time: ticks };
                 let command = Command::Add(setpoint);
                 let mut send =
                     to_vec_cobs::<Command, BUFFER_SIZE>(&command).expect("Failed to serialize");
                 println!("Cobs message is {} bytes long.", send.len());
                 let output = from_bytes_cobs::<Command>(&mut send);
                 assert!(
-                    matches!(output, Ok(Command::Add(Setpoint { rpm: out_rpm, after: out_ticks })) if out_rpm == rpm && out_ticks == ticks)
+                    matches!(output, Ok(Command::Add(Setpoint { rpm: out_rpm, time: out_ticks })) if out_rpm == rpm && out_ticks == ticks)
                 );
             }
         }

@@ -1,5 +1,4 @@
 //! This module decribes events that cause updates to the TUI.
-use crate::app::MessageInfo;
 use bytes::{BufMut, BytesMut};
 use color_eyre::{
     Result,
@@ -8,7 +7,7 @@ use color_eyre::{
 use futures::StreamExt;
 use postcard::from_bytes_cobs;
 use ratatui::crossterm::event::Event as CrosstermEvent;
-use sc_messages::Message;
+use sc_messages::{Command, Info};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{
@@ -29,7 +28,7 @@ pub enum TuiEvent {
     /// These events are emitted by the terminal.
     Crossterm(CrosstermEvent),
     /// Events from the microcontroller connection.
-    Wireless(MessageInfo),
+    Wireless(Info),
 }
 
 /// Terminal event handler.
@@ -78,8 +77,8 @@ impl EventHandler {
     ///
     /// # Errors
     /// Returns an error if deserialization fails, or writing to the TCP socket fails.
-    pub async fn send(&mut self, message: Message) -> Result<()> {
-        let written_chunk = postcard::to_slice_cobs(&message, &mut self.send_buffer)?;
+    pub async fn send(&mut self, command: Command) -> Result<()> {
+        let written_chunk = postcard::to_slice_cobs(&command, &mut self.send_buffer)?;
         self.to_mcu.write_all(written_chunk).await?;
         Ok(())
     }
@@ -135,13 +134,10 @@ async fn await_stream_messages(
                 while let Some(idx) = written_chunk.iter().position(|byte| *byte == 0u8) {
                     let end = idx + 1;
                     let mut msg_chunk = written_chunk.split_to(end);
-                    match from_bytes_cobs::<Message>(&mut msg_chunk) {
-                        Ok(message) => {
+                    match from_bytes_cobs::<Info>(&mut msg_chunk) {
+                        Ok(info) => {
                             // Send message
-                            if to_handler
-                                .send(Ok(TuiEvent::Wireless(MessageInfo::new(message, true))))
-                                .is_err()
-                            {
+                            if to_handler.send(Ok(TuiEvent::Wireless(info))).is_err() {
                                 // If the channel is closed, this task is done.
                                 return;
                             }
@@ -201,7 +197,7 @@ mod test {
     fn test_read_zero() {
         let mut buf = [0u8; BUFFER_SIZE];
 
-        let used: Result<Message> = postcard::from_bytes_cobs(&mut buf[0..1]);
+        let used: Result<Info> = postcard::from_bytes_cobs(&mut buf[0..1]);
         assert!(matches!(
             used,
             Err(postcard::Error::DeserializeUnexpectedEnd)

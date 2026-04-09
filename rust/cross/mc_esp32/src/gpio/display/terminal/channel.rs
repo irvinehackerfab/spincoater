@@ -29,7 +29,7 @@ pub enum TuiEvent {
     /// The PWM output duty cycle changed.
     DutyChanged(DutyCycle),
     /// A value for plate revolutions per minute has been calculated.
-    RpmValue(u16),
+    RpmValue,
     /// A channel was found to be full.
     ChannelFull(ChannelKind),
 }
@@ -37,12 +37,12 @@ pub enum TuiEvent {
 /// Information about the [`Channel`]s.
 #[derive(Debug, Default)]
 pub struct ChannelStatus {
-    /// Whether [`crate::wifi::channel::RECV_MSG_CHANNEL`] was ever full.
+    /// Whether [`crate::wifi::channel::RECV_CMD_CHANNEL`] was ever full.
     /// If ever becomes true, [`crate::wifi::channel::HANDLER_CHANNEL_SIZE`] needs to be increased.
-    pub recv_msg_channel_was_full: bool,
-    /// Whether [`crate::wifi::channel::SEND_MSG_CHANNEL`] was ever full.
+    pub recv_cmd_channel_was_full: bool,
+    /// Whether [`crate::wifi::channel::SEND_INFO_CHANNEL`] was ever full.
     /// If ever becomes true, [`crate::wifi::channel::HANDLER_CHANNEL_SIZE`] needs to be increased.
-    pub send_msg_channel_was_full: bool,
+    pub send_info_channel_was_full: bool,
     /// Whether the [`TERMINAL_CHANNEL`] was ever full.
     /// If this is ever true, [`TERMINAL_CHANNEL_SIZE`] needs to be increased.
     pub terminal_channel_was_full: bool,
@@ -52,8 +52,8 @@ impl ChannelStatus {
     /// Set the requested "channel full" status to `true`.
     pub fn set_full(&mut self, channel_kind: ChannelKind) {
         match channel_kind {
-            ChannelKind::RecvMsg => self.recv_msg_channel_was_full = true,
-            ChannelKind::SendMsg => self.send_msg_channel_was_full = true,
+            ChannelKind::RecvCmd => self.recv_cmd_channel_was_full = true,
+            ChannelKind::SendInfo => self.send_info_channel_was_full = true,
             ChannelKind::Terminal => self.terminal_channel_was_full = true,
         }
     }
@@ -62,10 +62,10 @@ impl ChannelStatus {
 /// All channels we use.
 #[derive(Debug, Clone, Copy)]
 pub enum ChannelKind {
-    /// [`crate::wifi::channel::RECV_MSG_CHANNEL`]
-    RecvMsg,
-    /// [`crate::wifi::channel::SEND_MSG_CHANNEL`]
-    SendMsg,
+    /// [`crate::wifi::channel::RECV_CMD_CHANNEL`]
+    RecvCmd,
+    /// [`crate::wifi::channel::SEND_INFO_CHANNEL`]
+    SendInfo,
     /// [`TERMINAL_CHANNEL`]
     Terminal,
 }
