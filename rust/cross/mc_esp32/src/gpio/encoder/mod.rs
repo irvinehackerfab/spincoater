@@ -48,7 +48,6 @@ pub async fn read_rpm(to_terminal: Sender<'static, NoopRawMutex, TuiEvent, TERMI
             // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(`time` ms) * (6000 ms / 1 min)
             // = (2*motor revolutions) * 30,000 / (37 * `time`)
             // Final units: plate revolutions per minute
-            // We wait to divide until the very end for maximum precision.
             let rpm = motor_revolutions_doubled * 30_000 / (37 * (time_ms));
             let rpm = u16::try_from(rpm).expect("The rpm should never exceed 65535.");
             PLATE_RPM.store(rpm, Ordering::Relaxed);

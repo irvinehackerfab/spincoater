@@ -35,7 +35,7 @@ pub struct App {
     /// The state of the commands section.
     pub commands_state: ListState,
     /// The current plate RPM, as reported by the MCU.
-    pub state_rpm: u16,
+    pub current_rpm: u16,
     /// The current setpoint plate RPM, as reported by the MCU.
     pub setpoint_rpm: u16,
     /// The current duty cycle, as reported by the MCU.
@@ -60,7 +60,7 @@ impl App {
         Ok(Self {
             running: true,
             events: EventHandler::new(stream),
-            state_rpm: 0,
+            current_rpm: 0,
             setpoint_rpm: 0,
             duty_cycle: DutyCycle::try_from(0)?,
             commands_state: ListState::default().with_selected(Some(0)),
@@ -122,9 +122,11 @@ impl App {
                 },
                 TuiEvent::Wireless(info) => {
                     match info {
-                        sc_messages::Info::State(state) => self.state_rpm = state.rpm,
-                        sc_messages::Info::Setpoint(setpoint) => self.setpoint_rpm = setpoint.rpm,
-
+                        sc_messages::Info::State(state) => {
+                            self.current_rpm = state.current_rpm;
+                            self.setpoint_rpm = state.setpoint_rpm;
+                            self.duty_cycle = state.duty_cycle;
+                        }
                         sc_messages::Info::DutyCycle(duty_cycle) => self.duty_cycle = duty_cycle,
                     }
                     self.log_file.serialize(info)?;

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::DutyCycle;
+
 /// The maximum allowed number of setpoints in a single motion profile.
 ///
 /// Any further setpoints will be ignored by the microcontroller.
@@ -12,29 +14,27 @@ pub const MAX_SETPOINTS: usize = 128;
 pub struct Setpoint {
     /// The target plate RPM.
     pub rpm: u16,
-    /// The time (in ticks) that should be taken to reach the rpm.
+    /// The time (in micros) that should be taken to reach the rpm.
     /// The MCU expects this to be time since last setpoint,
-    /// and it internally converts it to time since the start of the motion profile.
-    ///
-    /// The host PC is expected to know the tick rate of the microcontroller.
-    /// See `host_tui`'s Cargo.toml for more info.
+    /// and it sends it back to the host PC as time since the start of the motion profile.
     // I would like to use `embassy_time::duration::Duration`,
     // but it doesn't impl Serialize.
-    #[serde(rename = "time (ticks)")]
+    #[serde(rename = "time (micros)")]
     pub time: u64,
 }
 
-/// A measured plate RPM value with the time it was measured.
+/// The current state of the motion profile.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct State {
+    /// The setpoint plate RPM.
+    pub setpoint_rpm: u16,
     /// The measured plate RPM.
-    pub rpm: u16,
-    /// The time (in ticks) since the motion profile started.
-    ///
-    /// The host PC is expected to know the tick rate of the microcontroller.
-    /// See `host_tui`'s Cargo.toml for more info.
+    pub current_rpm: u16,
+    /// The current duty cycle being set to try and reach the setpoint.
+    pub duty_cycle: DutyCycle,
+    /// The time (in micros) since the motion profile started.
     // I would like to use `embassy_time::duration::Duration`,
     // but it doesn't impl Serialize.
-    #[serde(rename = "time (ticks)")]
+    #[serde(rename = "time (micros)")]
     pub time: u64,
 }

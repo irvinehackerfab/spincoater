@@ -75,7 +75,7 @@ impl App {
             .border_type(BorderType::Rounded);
 
         let paragraph = Paragraph::new(Text::from_iter([
-            Line::raw(format!("Current RPM: {}", self.state_rpm)),
+            Line::raw(format!("Current RPM: {}", self.current_rpm)),
             Line::raw(format!("Current setpoint RPM: {}", self.setpoint_rpm)),
             Line::raw(format!("Duty Cycle (0..{}): {}", PERIOD, self.duty_cycle)),
             Line::raw(format!(

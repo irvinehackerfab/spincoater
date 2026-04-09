@@ -89,8 +89,6 @@ pub enum Command {
 // Messages from the microcontroller to the host PC.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Info {
-    /// The current setpoint of the motion profile.
-    Setpoint(motion_profile::Setpoint),
     /// The current state of the motion profile.
     State(motion_profile::State),
     /// The current duty cycle.

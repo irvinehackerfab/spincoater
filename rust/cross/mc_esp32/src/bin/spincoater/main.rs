@@ -27,6 +27,7 @@ use esp_hal::{
 };
 use esp_println::println;
 use esp_radio::wifi::{CountryInfo, OperatingClass};
+use heapless::Vec;
 use ibm437::IBM437_9X14_REGULAR;
 use mc_esp32::{
     SECOND_CORE_STACK,
@@ -52,7 +53,7 @@ use mc_esp32::{
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
 use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
 use ratatui::Terminal;
-use sc_messages::STOP_DUTY;
+use sc_messages::{STOP_DUTY, motion_profile::Setpoint};
 
 use crate::app::App;
 
@@ -240,7 +241,7 @@ async fn main(spawner: Spawner) -> ! {
     let send_info_channel = SEND_INFO_CHANNEL.take();
     let terminal_channel = TERMINAL_CHANNEL.take();
 
-    let setpoints = SETPOINTS.take();
+    let setpoints = SETPOINTS.init_with(|| Vec::from([Setpoint { rpm: 0, time: 0 }]));
 
     spawner.must_spawn(handle_connections(
         wifi_controller,
