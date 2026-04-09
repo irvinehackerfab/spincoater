@@ -26,10 +26,8 @@ pub enum TuiEvent {
     WifiEvent(ApState),
     /// The socket state changed.
     SocketEvent(SocketState),
-    /// The PWM output duty cycle changed.
-    DutyChanged(DutyCycle),
-    /// A value for plate revolutions per minute has been calculated.
-    RpmValue,
+    /// The motion profile updated.
+    MotionProfileUpdate { duty_cycle: DutyCycle, rpm: u16 },
     /// A channel was found to be full.
     ChannelFull(ChannelKind),
 }

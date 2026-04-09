@@ -4,14 +4,14 @@ use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
     channel::{Receiver, Sender},
 };
-use embassy_time::{Instant, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::Vec;
 use mc_esp32::{
     APP_PERIOD,
     gpio::{
         display::terminal::channel::{TERMINAL_CHANNEL_SIZE, TuiEvent, send_event_or_report},
-        encoder::PLATE_RPM,
+        encoder::MOTOR_REVOLUTIONS_DOUBLED,
         pwm::{THROTTLE_CURVE, THROTTLE_POINTS},
     },
     wifi::channel::{HANDLER_CHANNEL_SIZE, send_info_or_report},
@@ -82,13 +82,17 @@ impl App {
     /// logging info every iteration and checking for a stop command.
     async fn execute_motion_profile(&mut self) {
         let starting_time = Instant::now();
+        let mut previous_iteration = starting_time;
         let mut setpoint_idx = 0;
         'outer: loop {
+            // This could be improved by accounting for the execution time of the loop iteration,
+            // but this is fine for now.
+            Timer::after(APP_PERIOD).await;
             if let Ok(Command::Stop) = self.from_all.try_receive() {
                 break;
             }
-            let elapsed = starting_time.elapsed();
-            let elapsed_micros = elapsed.as_micros();
+            let elapsed_since_start = starting_time.elapsed();
+            let elapsed_since_start_micros = elapsed_since_start.as_micros();
             let (previous_setpoint, current_setpoint) = loop {
                 match (
                     self.setpoints.get(setpoint_idx),
@@ -97,7 +101,7 @@ impl App {
                     (Some(previous_setpoint), Some(current_setpoint)) => {
                         // Only act on setpoints that haven't passed.
                         // The times cannot be equal or else we will divide by zero later.
-                        if elapsed_micros < previous_setpoint.time {
+                        if elapsed_since_start_micros < previous_setpoint.time {
                             break (previous_setpoint, current_setpoint);
                         }
                         setpoint_idx += 1;
@@ -112,7 +116,7 @@ impl App {
             let previous_setpoint_rpm = previous_setpoint.rpm as u64;
             let current_setpoint_rpm = current_setpoint.rpm as u64;
             let delta_rpm = current_setpoint_rpm - previous_setpoint_rpm;
-            let delta_time = elapsed_micros - previous_setpoint.time;
+            let delta_time = elapsed_since_start_micros - previous_setpoint.time;
             let numerator = delta_rpm * delta_time;
             let denominator = current_setpoint.time - previous_setpoint.time;
             let setpoint_rpm = u16::try_from(previous_setpoint_rpm + numerator / denominator)
@@ -122,7 +126,8 @@ impl App {
             self.pwm_pin.set_timestamp(setpoint_duty_cycle);
 
             // todo!("Add feedback")
-            let current_rpm = PLATE_RPM.load(Ordering::Relaxed);
+            let elapsed_since_last_iteration = previous_iteration.elapsed();
+            let current_rpm = self.calculate_rpm(elapsed_since_last_iteration);
 
             // Logging
             let duty_cycle = DutyCycle::try_from(setpoint_duty_cycle)
@@ -131,7 +136,7 @@ impl App {
                 setpoint_rpm,
                 current_rpm,
                 duty_cycle,
-                time: elapsed_micros,
+                time: elapsed_since_start_micros,
             };
             send_info_or_report(
                 &self.to_socket,
@@ -140,11 +145,29 @@ impl App {
                 mc_esp32::gpio::display::terminal::channel::ChannelKind::SendInfo,
             )
             .await;
-            send_event_or_report(&self.to_terminal, TuiEvent::DutyChanged(duty_cycle)).await;
-            // This could be improved by accounting for the execution time of the loop iteration,
-            // but this is fine for now.
-            Timer::after(APP_PERIOD).await;
+            send_event_or_report(
+                &self.to_terminal,
+                TuiEvent::MotionProfileUpdate {
+                    duty_cycle,
+                    rpm: current_rpm,
+                },
+            )
+            .await;
+            previous_iteration += elapsed_since_last_iteration;
         }
+    }
+    /// Calculates the current rpm.
+    fn calculate_rpm(&self, elapsed_since_last_iteration: Duration) -> u16 {
+        // Relaxed ordering because the order of instructions does not matter for the swap.
+        let motor_revolutions_doubled = MOTOR_REVOLUTIONS_DOUBLED.swap(0, Ordering::Relaxed);
+        let time_ms = u32::try_from(elapsed_since_last_iteration.as_millis())
+            .expect("20 milliseconds should fit in a u32.");
+        // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(`time` ms) * (6000 ms / 1 min)
+        // = (2*motor revolutions) * 30,000 / (37 * `time`)
+        // Final units: plate revolutions per minute
+        let rpm = motor_revolutions_doubled * 30_000 / (37 * (time_ms));
+        let rpm = u16::try_from(rpm).expect("The rpm should never exceed 65535.");
+        return rpm;
     }
 }
 

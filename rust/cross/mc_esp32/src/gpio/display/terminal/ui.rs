@@ -10,7 +10,7 @@ use ratatui::{
 };
 use sc_messages::PERIOD;
 
-use crate::gpio::{display::terminal::TerminalState, encoder::PLATE_RPM};
+use crate::gpio::display::terminal::TerminalState;
 
 impl TerminalState {
     /// Draws the current information to the terminal.
@@ -20,7 +20,6 @@ impl TerminalState {
         let heap_stats = HEAP.stats();
 
         let duty_percent = u32::from(*self.duty) * 100 / u32::from(PERIOD);
-        let rpm = PLATE_RPM.load(Ordering::Relaxed);
 
         let paragraph = Paragraph::new(Text::from_iter([
             self.ap_state.to_line(),
@@ -34,7 +33,7 @@ impl TerminalState {
                 duty_percent.to_span(),
                 ")%".to_span(),
             ]),
-            Line::from_iter(["Plate RPM: ".to_span(), rpm.to_span()]),
+            Line::from_iter(["Plate RPM: ".to_span(), self.rpm.to_span()]),
             // Debug info
             Line::raw("\nDebug info:"),
             Line::from_iter([
