@@ -13,7 +13,7 @@ use embassy_sync::{
 };
 use embassy_time::Duration;
 use postcard::from_bytes_cobs;
-use sc_messages::{Message, STOP_DUTY};
+use sc_messages::{Command, Info};
 use static_cell::{ConstStaticCell, StaticCell};
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
     },
     wifi::{
         IP_LISTEN_ENDPOINT,
-        channel::{HANDLER_CHANNEL_SIZE, send_msg_or_report},
+        channel::{HANDLER_CHANNEL_SIZE, send_cmd_or_report},
         tcp::error::TcpError,
     },
 };
@@ -35,10 +35,9 @@ pub const TIMEOUT: Duration = Duration::from_secs(10);
 pub const KEEP_ALIVE: Duration = Duration::from_secs(5);
 
 /// The number of bytes each buffer can hold.
-/// This should be enough bytes to store multiple [`sc_messages::Message`]s.
 ///
 /// Keep this up to date with `../../sc_messages/src/lib.rs` `BUFFER_SIZE`
-pub const BUFFER_SIZE: usize = 64;
+pub const BUFFER_SIZE: usize = 1024;
 /// The static variable for the receive buffer.
 pub static RX_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new([0u8; BUFFER_SIZE]);
 /// The static variable for the transmit buffer.
@@ -81,7 +80,7 @@ impl Display for SocketState {
 ///
 /// # Errors
 /// Returns an error if serialization or writing fails.
-pub async fn send_message(message: Message, writer: &mut TcpWriter<'_>) -> Result<(), TcpError> {
+pub async fn send_info(message: Info, writer: &mut TcpWriter<'_>) -> Result<(), TcpError> {
     loop {
         if writer
             .write_with(
@@ -107,10 +106,10 @@ pub async fn send_message(message: Message, writer: &mut TcpWriter<'_>) -> Resul
 /// Deserialization errors are printed out.
 /// All errors are printed out and cause
 /// [`TuiEvent::SocketEvent`] with [`SocketState::Disconnected`] to be sent to the terminal.
-pub async fn receive_unhandled_messages(
+pub async fn handle_command_receiving(
     reader: &mut TcpReader<'_>,
     buffer: &mut BytesMut,
-    to_msg_handler: &Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
+    to_msg_handler: &Sender<'_, NoopRawMutex, Command, HANDLER_CHANNEL_SIZE>,
     to_terminal: &Sender<'_, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 ) {
     'outer: while let Ok(()) = reader
@@ -125,10 +124,10 @@ pub async fn receive_unhandled_messages(
         while let Some(idx) = written_chunk.iter().position(|byte| *byte == 0u8) {
             let end = idx + 1;
             let mut msg_chunk = written_chunk.split_to(end);
-            match from_bytes_cobs::<Message>(&mut msg_chunk) {
-                Ok(message) => {
+            match from_bytes_cobs::<Command>(&mut msg_chunk) {
+                Ok(command) => {
                     // Return message
-                    send_msg_or_report(to_msg_handler, message, to_terminal, ChannelKind::RecvMsg)
+                    send_cmd_or_report(to_msg_handler, command, to_terminal, ChannelKind::RecvCmd)
                         .await;
                 }
                 Err(error) => {
@@ -156,13 +155,14 @@ pub async fn receive_unhandled_messages(
 /// This loop continues until an error occurs.
 /// # Errors
 /// See [`TcpError`] for all possible errors.
-pub async fn announce_handled_messages(
+pub async fn handle_info_sending(
     writer: &mut TcpWriter<'_>,
-    from_msg_handler: &Receiver<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
+    from_msg_handler: &Receiver<'_, NoopRawMutex, Info, HANDLER_CHANNEL_SIZE>,
 ) {
     loop {
-        let message = from_msg_handler.receive().await;
-        if let Err(err) = send_message(message, writer).await {
+
+        let info = from_msg_handler.receive().await;
+        if let Err(err) = send_info(info, writer).await {
             error!("TX error: {:?}", err);
             break;
         }
@@ -174,25 +174,27 @@ pub async fn announce_handled_messages(
 ///
 /// # Panics
 /// This function panics if it contains a logic error that needs to be fixed.
+#[embassy_executor::task]
 pub async fn handle_socket_connections(
-    mut socket: TcpSocket<'_>,
-    buffer: &mut BytesMut,
-    to_msg_handler: Sender<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
-    from_msg_handler: Receiver<'_, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
-    to_terminal: Sender<'_, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
-) -> ! {
+    mut socket: TcpSocket<'static>,
+    buffer: &'static mut BytesMut,
+    to_app: Sender<'static, NoopRawMutex, Command, HANDLER_CHANNEL_SIZE>,
+    from_app: Receiver<'static, NoopRawMutex, Info, HANDLER_CHANNEL_SIZE>,
+    to_terminal: Sender<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
+) {
     loop {
         socket
             .accept(IP_LISTEN_ENDPOINT)
             .await
             .expect("Failed to listen for socket connections");
+        info!("Host PC connected to socket.");
         send_event_or_report(&to_terminal, TuiEvent::SocketEvent(SocketState::Connected)).await;
         let (mut reader, mut writer) = socket.split();
         // Cancel receiving and transmitting as soon as an error occurs.
         // This gives the socket the opportunity to abort.
         select(
-            receive_unhandled_messages(&mut reader, buffer, &to_msg_handler, &to_terminal),
-            announce_handled_messages(&mut writer, &from_msg_handler),
+            handle_command_receiving(&mut reader, buffer, &to_app, &to_terminal),
+            handle_info_sending(&mut writer, &from_app),
         )
         .await;
         // Clear the buffer of any unprocessed bytes.
@@ -203,6 +205,7 @@ pub async fn handle_socket_connections(
         // Abort the connection.
         socket.abort();
         let _ = socket.flush().await;
+        info!("Host PC disconnected from socket.");
         // Update the TUI
         send_event_or_report(
             &to_terminal,
@@ -210,12 +213,6 @@ pub async fn handle_socket_connections(
         )
         .await;
         // Ensure PWM output is disabled
-        send_msg_or_report(
-            &to_msg_handler,
-            Message::DutyCycle(STOP_DUTY),
-            &to_terminal,
-            ChannelKind::RecvMsg,
-        )
-        .await;
+        send_cmd_or_report(&to_app, Command::Stop, &to_terminal, ChannelKind::RecvCmd).await;
     }
 }

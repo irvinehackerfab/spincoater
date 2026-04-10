@@ -7,54 +7,41 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+pub mod app;
+
 use bytes::BytesMut;
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_net::{StackResources, tcp::TcpSocket};
-use embassy_sync::{
-    blocking_mutex::raw::NoopRawMutex,
-    channel::{Receiver, Sender},
-};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::{
     clock::CpuClock,
     delay::Delay,
     gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
     interrupt::software::SoftwareInterruptControl,
-    mcpwm::{
-        McPwm, PeripheralClockConfig,
-        operator::{PwmPin, PwmPinConfig},
-        timer::PwmWorkingMode,
-    },
-    peripherals::MCPWM0,
+    mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     rng::Rng,
     spi::master::{Config, Spi},
     time::Rate,
     timer::timg::TimerGroup,
 };
 use esp_radio::wifi::{CountryInfo, OperatingClass};
+use heapless::Vec;
 use ibm437::IBM437_9X14_REGULAR;
 use mc_esp32::{
     SECOND_CORE_STACK,
     gpio::{
         display::{
             DISPLAY, ORIENTATION, SPI_BUFFER,
-            terminal::{
-                TERMINAL,
-                channel::{
-                    ChannelKind, TERMINAL_CHANNEL, TERMINAL_CHANNEL_SIZE, TuiEvent,
-                    send_event_or_report,
-                },
-                update_terminal,
-            },
+            terminal::{TERMINAL, channel::TERMINAL_CHANNEL, update_terminal},
         },
-        encoder::{ENCODER, read_rpm},
+        encoder::ENCODER,
         interrupt_handler,
-        pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER},
+        pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
     },
     wifi::{
         AUTH_METHOD, IP_CONFIG, MAX_CONNECTIONS, RADIO, STACK_RESOURCES,
-        channel::{HANDLER_CHANNEL_SIZE, RECV_MSG_CHANNEL, SEND_MSG_CHANNEL, send_msg_or_report},
+        channel::{RECV_CMD_CHANNEL, SEND_INFO_CHANNEL},
         handle_connections, net_task,
         tcp::{
             BUFFER_SIZE, KEEP_ALIVE, RX_BUFFER, RX_BUFFER_2, TIMEOUT, TX_BUFFER,
@@ -67,7 +54,9 @@ use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
 use panic_rtt_target as _;
 use ratatui::Terminal;
 use rtt_target::rtt_init_defmt;
-use sc_messages::{Message, STOP_DUTY};
+use sc_messages::{STOP_DUTY, motion_profile::Setpoint};
+
+use crate::app::App;
 
 // Wifi requires heap allocation
 extern crate alloc;
@@ -249,59 +238,36 @@ async fn main(spawner: Spawner) {
     let _ = Output::new(peripherals.GPIO33, Level::Low, OutputConfig::default());
 
     // Setup communication between tasks
-    let recv_msg_channel = RECV_MSG_CHANNEL.take();
-    let from_wifi = recv_msg_channel.receiver();
-    let send_msg_channel = SEND_MSG_CHANNEL.take();
-    let to_transmitter = send_msg_channel.sender();
-    let from_msg_handler = send_msg_channel.receiver();
+    let recv_cmd_channel = RECV_CMD_CHANNEL.take();
+    let send_info_channel = SEND_INFO_CHANNEL.take();
     let terminal_channel = TERMINAL_CHANNEL.take();
-    let from_all = terminal_channel.receiver();
+
+    let setpoints = SETPOINTS.init_with(|| Vec::from([Setpoint { rpm: 0, time: 0 }]));
 
     spawner.must_spawn(handle_connections(
         wifi_controller,
-        recv_msg_channel.sender(),
+        recv_cmd_channel.sender(),
         terminal_channel.sender(),
     ));
     spawner.must_spawn(net_task(runner));
-    spawner.must_spawn(read_rpm(terminal_channel.sender()));
-    spawner.must_spawn(handle_messages(
-        pwm_pin,
-        from_wifi,
-        to_transmitter,
-        terminal_channel.sender(),
-    ));
-    spawner.must_spawn(update_terminal(terminal, from_all));
+    spawner.must_spawn(update_terminal(terminal, terminal_channel.receiver()));
 
     // Await connections in a loop.
-    handle_socket_connections(
+    spawner.must_spawn(handle_socket_connections(
         socket,
         buffer,
-        recv_msg_channel.sender(),
-        from_msg_handler,
+        recv_cmd_channel.sender(),
+        send_info_channel.receiver(),
+        terminal_channel.sender(),
+    ));
+
+    App::new(
+        setpoints,
+        pwm_pin,
+        recv_cmd_channel.receiver(),
+        send_info_channel.sender(),
         terminal_channel.sender(),
     )
-    .await;
-}
-
-/// Handles all control messages.
-///
-/// This is kept separate from [`mc_esp32::wifi::tcp::receive_unhandled_messages`]
-/// in case we ever decide to add other control methods (like the touchscreen).
-#[embassy_executor::task]
-async fn handle_messages(
-    mut pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
-    from_wifi: Receiver<'static, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
-    to_transmitter: Sender<'static, NoopRawMutex, Message, HANDLER_CHANNEL_SIZE>,
-    to_terminal: Sender<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
-) {
-    loop {
-        let message = from_wifi.receive().await;
-        match message {
-            Message::DutyCycle(duty) => {
-                pwm_pin.set_timestamp(*duty);
-                send_event_or_report(&to_terminal, TuiEvent::DutyChanged(duty)).await;
-            }
-        }
-        send_msg_or_report(&to_transmitter, message, &to_terminal, ChannelKind::SendMsg).await;
-    }
+    .run()
+    .await
 }

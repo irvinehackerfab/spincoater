@@ -12,6 +12,14 @@ The `editor_configurations` folder contains default configurations for various e
 ## __Note__
 [0, RX, TX, EN, 12, 13, 14, 15 and 3V3](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) may be used for the [ESP-PROG-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#header-block) and should not be used for programs.
 
+<<<<<<< HEAD
+=======
+## `pwm`
+This is a basic program that initializes PWM on pin [IO26](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) and sets it to a constant duty cycle of 5% with a frequency of 50hz.
+
+Run with `cargo run --release --bin pwm`
+
+>>>>>>> v3
 ## `spincoater`
 This program does the following:
 - Initializes PWM on pin [IO32](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
@@ -41,5 +49,7 @@ You must set a static IP to connect to the wifi. For example:
 - IP: 192.168.2.2
 - Netmask: 255.255.255.0
 - Gateway: 192.168.2.1
+
+If you're getting random freezes, it's likely due to a socket buffer filling up and you'll want to increase `BUFFER_SIZE`.
 
 If the program crashes with the error message `Detected a write to the stack guard value on AppCpu`, it means a stack overflowed. You'll likely need to increase the second core stack size in [`lib.rs`](src/lib.rs).

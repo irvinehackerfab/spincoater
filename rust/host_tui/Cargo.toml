@@ -16,7 +16,6 @@ color-eyre = { workspace = true }
 # For tui
 ratatui = { workspace = true }
 crossterm = { workspace = true, features = ["event-stream"] }
-tui-input = { workspace = true }
 # For tokio
 futures = { workspace = true }
 postcard = { workspace = true }
@@ -25,6 +24,8 @@ ringbuffer = { workspace = true }
 sc_messages = { path = "../sc_messages", features = ["std"] }
 # For async messages from MCU
 tokio = { workspace = true, features = ["full"] }
+csv = { workspace = true }
+rfd = { workspace = true }
 
 
 [features]

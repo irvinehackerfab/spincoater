@@ -24,12 +24,11 @@ cfg_if! {
             result
         }
 
-        /// Binds a TCP socket to [`DEV_ADDRESS`] and spawns a task to accept and send back all messages.
+        /// Binds a TCP socket to [`DEV_ADDRESS`] and spawns a task to accept all messages.
         fn open_dev_connection() -> Result<()> {
             use crate::DEV_ADDRESS;
             use crate::app::event::BUFFER_SIZE;
             use tokio::io::AsyncReadExt;
-            use tokio::io::AsyncWriteExt;
             use tokio::net::TcpSocket;
 
             let socket = TcpSocket::new_v4()?;
@@ -44,20 +43,10 @@ cfg_if! {
                         .expect("Failed to accept connection")
                         .0;
                     let mut buffer = [1u8; BUFFER_SIZE];
-                    let mut pos = 0;
                     loop {
-                        match stream.read(&mut buffer[pos..]).await {
+                        match stream.read(&mut buffer).await {
                             Ok(0) | Err(_) => continue 'connection,
-                            Ok(len) => {
-                                pos += len;
-                                if buffer.contains(&0u8) {
-                                    stream
-                                        .write_all(&buffer[..pos])
-                                        .await
-                                        .expect("Failed to write to stream");
-                                    buffer[..pos].iter_mut().for_each(|byte| *byte = 1u8);
-                                    pos = 0;
-                                }
+                            Ok(_) => {
                             }
                         }
                     }

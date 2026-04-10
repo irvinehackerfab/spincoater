@@ -1,5 +1,8 @@
 //! This module contains PWM output functionality.
 use esp_hal::time::Rate;
+use heapless::Vec;
+use sc_messages::motion_profile::{MAX_SETPOINTS, Setpoint};
+use static_cell::StaticCell;
 
 /// The current motor controller reads PWM at 50 Hz.
 pub const FREQUENCY: Rate = Rate::from_hz(50);
@@ -33,3 +36,21 @@ pub const PERIPHERAL_CLOCK_PRESCALER: u8 = 0;
 ///
 /// This is currently set to the highest possible value that also results in a whole-numbered `timer_prescaler`.
 pub const PERIOD: u16 = sc_messages::PERIOD - 1;
+
+/// The static cell for storing a motion profile.
+pub static SETPOINTS: StaticCell<Vec<Setpoint, MAX_SETPOINTS>> = StaticCell::new();
+
+/// The number of datapoints for the throttle curve.
+pub const THROTTLE_POINTS: usize = 10;
+
+/// The table of values we got from reading the motor RPM at multiple PWM duty cycles.
+///
+/// Units of `[0]`: Plate RPM (motor RPM * 20/74)
+///
+/// Units of `[1]`: PWM units (microseconds * [`sc_messages::PERIOD`] * [`FREQUENCY`] seconds^-1 / 10^6 microseconds)
+///
+/// See [the graph](https://www.desmos.com/calculator/dtaaxpy72o) for more info.
+pub const THROTTLE_CURVE: [[u16; THROTTLE_POINTS]; 2] = [
+    [0, 2649, 4838, 6730, 7973, 8783, 9324, 10297, 10405, 10405],
+    [4800, 5056, 5120, 5200, 5280, 5360, 5440, 5760, 6080, 6400],
+];

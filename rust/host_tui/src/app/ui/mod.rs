@@ -2,18 +2,15 @@
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Flex, HorizontalAlignment, Layout, Rect},
+    layout::{Constraint, HorizontalAlignment, Layout, Rect},
     style::{Style, Stylize},
     text::{Line, Text},
     widgets::{Block, BorderType, List, ListItem, ListState, Paragraph},
 };
 use ringbuffer::RingBuffer;
-use sc_messages::{MAX_POWER_DUTY, PERIOD, STOP_DUTY};
-use tui_input::Input;
+use sc_messages::PERIOD;
 
 use crate::app::App;
-
-use super::CommandsState;
 
 impl App {
     /// Renders the user interface widgets.
@@ -41,12 +38,7 @@ impl App {
     }
 
     fn render_commands(&mut self, area: Rect, frame: &mut Frame) {
-        match &mut self.commands_state {
-            CommandsState::List(list_state) => Self::render_command_list(list_state, area, frame),
-            CommandsState::Input { input, last_error } => {
-                Self::render_command_prompt(input, last_error.as_ref(), area, frame);
-            }
-        }
+        Self::render_command_list(&mut self.commands_state, area, frame);
     }
 
     fn render_command_list(list_state: &mut ListState, area: Rect, frame: &mut Frame) {
@@ -67,70 +59,13 @@ impl App {
             .border_type(BorderType::Rounded)
             .title_bottom(instructions);
 
-        let items = ["Set Duty Cycle", "Stop Motor"];
+        let items = ["Load motion profile CSV file", "Start", "Stop"];
         let list = List::new(items)
             .block(cmd_block)
             .highlight_symbol("-> ")
             .highlight_style(Style::new().blue());
 
         frame.render_stateful_widget(list, area, list_state);
-    }
-
-    fn render_command_prompt(
-        input: &Input,
-        last_error: Option<&String>,
-        area: Rect,
-        frame: &mut Frame,
-    ) {
-        let layout =
-            Layout::vertical([Constraint::Length(5), Constraint::Length(4)]).flex(Flex::Start);
-        let [top_half, bottom_half] = area.layout(&layout);
-
-        let cmd_block = Block::bordered()
-            .title(" Commands ")
-            .title_alignment(HorizontalAlignment::Center)
-            .border_type(BorderType::Rounded);
-        let paragraph = Paragraph::new(Text::from_iter([
-            format!("Please input a duty cycle in the range of 0..{PERIOD}.",),
-            format!("Duty cycle to stop: {STOP_DUTY}"),
-            format!("Duty cycle for max speed: {MAX_POWER_DUTY}"),
-        ]))
-        .block(cmd_block);
-
-        let instructions = Line::from_iter([
-            " Set: ".into(),
-            "<Enter>".blue().bold(),
-            " Cancel: ".into(),
-            "<Esc> ".blue().bold(),
-        ]);
-        let input_block = Block::bordered()
-            .title(" Input ")
-            .title_alignment(HorizontalAlignment::Center)
-            .title_bottom(instructions);
-        let input_style = Style::new().blue();
-        let text = match last_error {
-            Some(err) => Text::from_iter([
-                Line::styled(input.value(), input_style),
-                Line::styled(err, Style::new().red()),
-            ]),
-            None => Text::styled(input.value(), input_style),
-        };
-        // keep 2 for borders and 1 for cursor
-        let width = bottom_half.width.max(3) - 3;
-        let scroll = input.visual_scroll(usize::from(width));
-        #[allow(clippy::cast_possible_truncation)]
-        let input_paragraph = Paragraph::new(text)
-            .block(input_block)
-            .scroll((0, scroll as u16));
-
-        // Ratatui hides the cursor unless it's explicitly set.
-        // Position the cursor past the end of the input text and one line down from the border to the input line.
-        let x = input.visual_cursor().max(scroll) - scroll + 1;
-        #[allow(clippy::cast_possible_truncation)]
-        frame.set_cursor_position((bottom_half.x + x as u16, bottom_half.y + 1));
-
-        frame.render_widget(paragraph, top_half);
-        frame.render_widget(input_paragraph, bottom_half);
     }
 
     fn render_state(&mut self, area: Rect, frame: &mut Frame) {
@@ -140,6 +75,8 @@ impl App {
             .border_type(BorderType::Rounded);
 
         let paragraph = Paragraph::new(Text::from_iter([
+            Line::raw(format!("Current RPM: {}", self.current_rpm)),
+            Line::raw(format!("Current setpoint RPM: {}", self.setpoint_rpm)),
             Line::raw(format!("Duty Cycle (0..{}): {}", PERIOD, self.duty_cycle)),
             Line::raw(format!(
                 "Duty Cycle (0.0..1.0): {}",
@@ -153,15 +90,15 @@ impl App {
 
     fn render_logs(&mut self, area: Rect, frame: &mut Frame) {
         let info_block = Block::bordered()
-            .title(self.log_file_path.as_str())
+            .title("Previous Commands")
             .title_alignment(HorizontalAlignment::Center)
             .border_type(BorderType::Rounded);
 
         // Todo: Consider replacing with scrolled paragraph to gain wrapping support
         let items = self
-            .messages
+            .previous_commands
             .iter()
-            .map(|msg| ListItem::new(Text::from(msg.to_string())));
+            .map(|command| ListItem::new(Text::from(format!("{command:?}"))));
 
         let list = List::new(items).block(info_block);
         let mut state = ListState::default();
