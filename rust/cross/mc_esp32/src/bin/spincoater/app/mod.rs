@@ -20,7 +20,7 @@ use mc_esp32::{
     wifi::channel::{HANDLER_CHANNEL_SIZE, send_info_or_report},
 };
 use sc_messages::{
-    Command, DutyCycle, Info,
+    Command, DutyCycle, Info, STOP_DUTY,
     motion_profile::{self, MAX_SETPOINTS, Setpoint},
 };
 
@@ -158,6 +158,7 @@ impl App {
             .await;
             previous_iteration += elapsed_since_last_iteration;
         }
+        self.pwm_pin.set_timestamp(*STOP_DUTY);
         info!("Motion profile done.");
     }
 
