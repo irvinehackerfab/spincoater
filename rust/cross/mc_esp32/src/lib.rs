@@ -20,4 +20,4 @@ pub static SECOND_CORE_STACK: ConstStaticCell<Stack<2048>> = ConstStaticCell::ne
 /// The period that the main control loop runs at.
 ///
 /// The fastest it can run is about 3 milliseconds.
-pub const APP_PERIOD: Duration = Duration::from_millis(20);
+pub const LOOP_PERIOD: Duration = Duration::from_millis(20);

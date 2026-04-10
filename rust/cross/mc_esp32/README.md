@@ -47,4 +47,6 @@ You must set a static IP to connect to the wifi. For example:
 - Netmask: 255.255.255.0
 - Gateway: 192.168.2.1
 
+If you're getting random freezes, it's likely due to a socket buffer filling up and you'll want to increase `BUFFER_SIZE`.
+
 If the program crashes with the error message `Detected a write to the stack guard value on AppCpu`, it means a stack overflowed. You'll likely need to increase the second core stack size in [`lib.rs`](src/lib.rs).

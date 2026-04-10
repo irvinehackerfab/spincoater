@@ -186,6 +186,7 @@ pub async fn handle_socket_connections(
             .accept(IP_LISTEN_ENDPOINT)
             .await
             .expect("Failed to listen for socket connections");
+        println!("Host PC connected to socket.");
         send_event_or_report(&to_terminal, TuiEvent::SocketEvent(SocketState::Connected)).await;
         let (mut reader, mut writer) = socket.split();
         // Cancel receiving and transmitting as soon as an error occurs.
@@ -203,6 +204,7 @@ pub async fn handle_socket_connections(
         // Abort the connection.
         socket.abort();
         let _ = socket.flush().await;
+        println!("Host PC disconnected from socket.");
         // Update the TUI
         send_event_or_report(
             &to_terminal,

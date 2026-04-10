@@ -8,6 +8,7 @@ use core::{
 };
 use embassy_net::{IpListenEndpoint, Ipv4Cidr, Runner, StackResources, StaticConfigV4};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Sender};
+use esp_println::println;
 use esp_radio::{
     Controller,
     wifi::{AuthMethod, WifiController, WifiDevice, WifiEvent},
@@ -86,7 +87,7 @@ pub async fn handle_connections(
         let events = wifi_controller
             .wait_for_events(
                 WifiEvent::ApStop
-                    | WifiEvent::ApStaDisconnected
+                    | WifiEvent::ApStaConnected
                     | WifiEvent::ApStaDisconnected
                     | WifiEvent::StaBeaconTimeout,
                 false,
@@ -97,12 +98,14 @@ pub async fn handle_connections(
             "Wifi access point stopped"
         );
         if events.contains(WifiEvent::ApStaConnected) {
+            println!("Host PC connected to wifi.");
             send_event_or_report(&to_terminal, TuiEvent::WifiEvent(ApState::Connected)).await;
         }
         if !events
             .intersection(WifiEvent::ApStaDisconnected | WifiEvent::StaBeaconTimeout)
             .is_empty()
         {
+            println!("Host PC disconnected from wifi.");
             send_cmd_or_report(
                 &to_msg_handler,
                 Command::Stop,

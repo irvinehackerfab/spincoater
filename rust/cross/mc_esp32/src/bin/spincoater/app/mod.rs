@@ -9,7 +9,7 @@ use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use esp_println::println;
 use heapless::Vec;
 use mc_esp32::{
-    APP_PERIOD,
+    LOOP_PERIOD,
     gpio::{
         display::terminal::channel::{
             ChannelKind, TERMINAL_CHANNEL_SIZE, TuiEvent, send_event_or_report,
@@ -90,8 +90,8 @@ impl App {
         let mut previous_iteration = starting_time;
         let mut setpoint_idx = 0;
         'outer: loop {
-            // This could be improved by accounting for the execution time of the loop iteration,
-            // but this is fine for now.
+            // This is prone to accumulating oversleep, but that's not important here.
+            Timer::after(LOOP_PERIOD).await;
             if let Ok(Command::Stop) = self.from_all.try_receive() {
                 break;
             }
