@@ -67,7 +67,7 @@ impl App {
         loop {
             match self.from_all.receive().await {
                 Command::Add(setpoint) => {
-                    self.setpoints.push(setpoint);
+                    let _ = self.setpoints.push(setpoint);
                 }
                 Command::Start => break,
                 Command::Stop => {}
