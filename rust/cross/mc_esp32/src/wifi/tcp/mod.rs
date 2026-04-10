@@ -4,7 +4,7 @@ pub mod error;
 use core::fmt::Display;
 
 use bytes::BytesMut;
-use defmt::error;
+use defmt::{error, info};
 use embassy_futures::select::select;
 use embassy_net::tcp::{TcpReader, TcpSocket, TcpWriter};
 use embassy_sync::{
@@ -160,7 +160,6 @@ pub async fn handle_info_sending(
     from_msg_handler: &Receiver<'_, NoopRawMutex, Info, HANDLER_CHANNEL_SIZE>,
 ) {
     loop {
-
         let info = from_msg_handler.receive().await;
         if let Err(err) = send_info(info, writer).await {
             error!("TX error: {:?}", err);
