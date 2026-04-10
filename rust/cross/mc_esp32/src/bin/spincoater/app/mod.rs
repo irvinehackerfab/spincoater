@@ -6,11 +6,14 @@ use embassy_sync::{
 };
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
+use esp_println::println;
 use heapless::Vec;
 use mc_esp32::{
     APP_PERIOD,
     gpio::{
-        display::terminal::channel::{TERMINAL_CHANNEL_SIZE, TuiEvent, send_event_or_report},
+        display::terminal::channel::{
+            ChannelKind, TERMINAL_CHANNEL_SIZE, TuiEvent, send_event_or_report,
+        },
         encoder::MOTOR_REVOLUTIONS_DOUBLED,
         pwm::{THROTTLE_CURVE, THROTTLE_POINTS},
     },
@@ -52,6 +55,8 @@ impl App {
         loop {
             self.setup().await;
             self.execute_motion_profile().await;
+            // Clear the setpoints list, but keep the 0 rpm 0 time element.
+            self.setpoints.truncate(1);
         }
     }
 
@@ -87,7 +92,6 @@ impl App {
         'outer: loop {
             // This could be improved by accounting for the execution time of the loop iteration,
             // but this is fine for now.
-            Timer::after(APP_PERIOD).await;
             if let Ok(Command::Stop) = self.from_all.try_receive() {
                 break;
             }
@@ -100,8 +104,7 @@ impl App {
                 ) {
                     (Some(previous_setpoint), Some(current_setpoint)) => {
                         // Only act on setpoints that haven't passed.
-                        // The times cannot be equal or else we will divide by zero later.
-                        if elapsed_since_start_micros < previous_setpoint.time {
+                        if elapsed_since_start_micros <= current_setpoint.time {
                             break (previous_setpoint, current_setpoint);
                         }
                         setpoint_idx += 1;
@@ -142,7 +145,7 @@ impl App {
                 &self.to_socket,
                 Info::State(state),
                 &self.to_terminal,
-                mc_esp32::gpio::display::terminal::channel::ChannelKind::SendInfo,
+                ChannelKind::SendInfo,
             )
             .await;
             send_event_or_report(
@@ -155,13 +158,19 @@ impl App {
             .await;
             previous_iteration += elapsed_since_last_iteration;
         }
+        println!("Motion profile done.");
     }
+
     /// Calculates the current rpm.
     fn calculate_rpm(&self, elapsed_since_last_iteration: Duration) -> u16 {
         // Relaxed ordering because the order of instructions does not matter for the swap.
         let motor_revolutions_doubled = MOTOR_REVOLUTIONS_DOUBLED.swap(0, Ordering::Relaxed);
         let time_ms = u32::try_from(elapsed_since_last_iteration.as_millis())
             .expect("20 milliseconds should fit in a u32.");
+        // Avoid dividing by zero
+        if time_ms == 0 {
+            return 0;
+        }
         // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(`time` ms) * (6000 ms / 1 min)
         // = (2*motor revolutions) * 30,000 / (37 * `time`)
         // Final units: plate revolutions per minute
@@ -193,7 +202,13 @@ fn linear_interpolation(setpoint_rpm: u16) -> u16 {
             return *duty_0;
         }
         if setpoint_rpm > *rpm_0 {
-            return duty_0 + ((duty_1 - duty_0) * (setpoint_rpm - rpm_0)) / (rpm_1 - rpm_0);
+            let delta_duty = (duty_1 - duty_0) as u32;
+            let delta_rpm = (setpoint_rpm - rpm_0) as u32;
+            let numerator = delta_duty * delta_rpm;
+            let denominator = (rpm_1 - rpm_0) as u32;
+            let result =
+                u16::try_from(numerator / denominator).expect("The rpm should never exceed 65535.");
+            return duty_0 + result;
         }
     }
     return THROTTLE_CURVE[1][THROTTLE_POINTS - 1];

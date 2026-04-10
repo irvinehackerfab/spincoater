@@ -103,7 +103,7 @@ mod test {
     use postcard::{from_bytes_cobs, to_vec_cobs};
 
     /// Keep this up to date with `../cross/mc_esp32/src/wifi/tcp/mod.rs` `BUFFER_SIZE`
-    const BUFFER_SIZE: usize = 64;
+    const BUFFER_SIZE: usize = 1028;
 
     /// Ensures that a COBS encoded command fits in the buffer size used by all spin coater programs.
     ///

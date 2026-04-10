@@ -1,7 +1,5 @@
 //! This module contains the UI description for the terminal.
 
-use core::sync::atomic::Ordering;
-
 use esp_alloc::HEAP;
 use ratatui::{
     Frame,

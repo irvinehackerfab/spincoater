@@ -120,17 +120,15 @@ impl App {
                     // We're only concerned with key presses right now.
                     _ => {}
                 },
-                TuiEvent::Wireless(info) => {
-                    match info {
-                        sc_messages::Info::State(state) => {
-                            self.current_rpm = state.current_rpm;
-                            self.setpoint_rpm = state.setpoint_rpm;
-                            self.duty_cycle = state.duty_cycle;
-                        }
-                        sc_messages::Info::DutyCycle(duty_cycle) => self.duty_cycle = duty_cycle,
+                TuiEvent::Wireless(info) => match info {
+                    sc_messages::Info::State(state) => {
+                        self.current_rpm = state.current_rpm;
+                        self.setpoint_rpm = state.setpoint_rpm;
+                        self.duty_cycle = state.duty_cycle;
+                        self.log_file.serialize(state)?;
                     }
-                    self.log_file.serialize(info)?;
-                }
+                    sc_messages::Info::DutyCycle(duty_cycle) => self.duty_cycle = duty_cycle,
+                },
             }
         }
         Ok(())

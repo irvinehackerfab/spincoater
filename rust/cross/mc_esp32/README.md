@@ -10,10 +10,10 @@ The `editor_configurations` folder contains default configurations for various e
 
 # Programs
 ## __Note__
-[0, RX, TX, EN, 12, 13, 14, 15 and 3V3](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) may be used for the [ESP-PROG-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#header-block) and should not be used for programs.
+[0, RX, TX, EN, 12, 13, 14, 15 and 3V3](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) may be used for the [ESP-PROG-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#header-block) in the future.
 
 ## `pwm`
-This is a basic program that initializes PWM on pin [IO32](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) and sets it to a constant duty cycle of 5% with a frequency of 50hz.
+This is a basic program that initializes PWM on pin [IO26](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) and sets it to a constant duty cycle of 5% with a frequency of 50hz.
 
 Run with `cargo run --release --bin pwm`
 
@@ -21,7 +21,7 @@ Run with `cargo run --release --bin pwm`
 This program does the following:
 - Initializes PWM on pin [IO32](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
   - Outputs a constant duty cycle of 5% with a frequency of 50hz.
-- Records hall effect sensor input on pin [IO17](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
+- Records hall effect sensor input on pin [IO27](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
   - Prints the plate revolutions per minute every second.
 - Enables a Wifi access point
   - Allows one device to connect at a time
@@ -31,7 +31,7 @@ This program does the following:
   - MISO: GPIO19
   - MOSI: GPIO23
   - SCK: GPIO18
-  - CS: GPIO16
+  - CS: GPIO15
   - DC: GPIO2
   - RESET: GPIO4
   - T_CS (touch chip select, not used yet): GPIO33
