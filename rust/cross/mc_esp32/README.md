@@ -1,9 +1,9 @@
 # Motor Controller: ESP32
-This is a [Rust](https://rust-lang.org/) crate with binaries that you flash onto the [ESP32](https://www.espressif.com/en/products/socs/esp32) with [probe-rs](https://probe.rs/). You must connect an [ESP-PROG](https://docs.espressif.com/projects/esp-iot-solution/en/latest/hw-reference/ESP-Prog_guide.html) to the ESP32-DevKitC in order to flash and debug.
+This is a [Rust](https://rust-lang.org/) crate with binaries that you flash onto the [ESP32](https://www.espressif.com/en/products/socs/esp32) with [probe-rs](https://probe.rs/). You must connect an [ESP-PROG](https://docs.espressif.com/projects/esp-iot-solution/en/latest/hw-reference/ESP-Prog_guide.html) or [ESP-PROG-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/index.html) to the ESP32-DevKitC in order to flash and debug.
 
 The guide for Rust programming on ESP32 can be found [here](https://docs.espressif.com/projects/rust/book/preface.html).
 
-This was generated from [esp-generate](https://docs.espressif.com/projects/rust/book/getting-started/tooling/esp-generate.html).
+The guide for debugging with probe-rs can be found [here](https://probe.rs/docs/tools/debugger/).
 
 # Configuring your editor
 The `editor_configurations` folder contains default configurations for various editors. To avoid conflicting with any configurations you may have, they have no effect until you move them out into the `mc_esp32` folder and add a `.` to the front of the name.
@@ -12,14 +12,6 @@ The `editor_configurations` folder contains default configurations for various e
 ## __Note__
 [0, RX, TX, EN, 12, 13, 14, 15 and 3V3](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) may be used for the [ESP-PROG-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#header-block) and should not be used for programs.
 
-<<<<<<< HEAD
-=======
-## `pwm`
-This is a basic program that initializes PWM on pin [IO26](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) and sets it to a constant duty cycle of 5% with a frequency of 50hz.
-
-Run with `cargo run --release --bin pwm`
-
->>>>>>> v3
 ## `spincoater`
 This program does the following:
 - Initializes PWM on pin [IO32](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
