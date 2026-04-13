@@ -1,6 +1,7 @@
+use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
-use crate::DutyCycle;
+use crate::pwm::DutyCycle;
 
 /// The maximum allowed number of setpoints in a single motion profile.
 ///
@@ -10,7 +11,7 @@ pub const MAX_SETPOINTS: usize = 128;
 /// A single target plate RPM value with the corresponding time taken to reach that RPM.
 ///
 /// These setpoints are combined to create a motion profile.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Schema)]
 pub struct Setpoint {
     /// The target plate RPM.
     pub rpm: u16,
@@ -24,7 +25,7 @@ pub struct Setpoint {
 }
 
 /// The current state of the motion profile.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Schema)]
 pub struct State {
     /// The setpoint plate RPM.
     pub setpoint_rpm: u16,

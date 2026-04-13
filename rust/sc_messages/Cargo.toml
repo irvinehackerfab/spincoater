@@ -7,10 +7,8 @@ license.workspace = true
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true, optional = true }
-
-[dev-dependencies]
-postcard = { workspace = true, features = ["heapless"] }
-sc_messages = { path = ".", features = ["std"] }
+postcard-rpc = { workspace = true }
+postcard-schema = { workspace = true, features = ["derive"] }
 
 [features]
 std = ["dep:thiserror"]

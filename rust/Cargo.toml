@@ -26,6 +26,10 @@ thiserror = "2.0.18"
 csv = "1.4.0"
 # For loading motion profile files
 rfd = "0.17.2"
+# For easier communication between the MCU and PC
+postcard-rpc = "0.12.1"
+# For postcard-rpc
+postcard-schema = "0.2.5"
 
 
 [workspace.lints.rust]
