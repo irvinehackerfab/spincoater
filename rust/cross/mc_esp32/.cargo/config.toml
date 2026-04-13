@@ -1,5 +1,7 @@
 [target.xtensa-esp32-none-elf]
-runner = "probe-rs run --chip=esp32 --preverify --always-print-stacktrace --no-location --catch-hardfault"
+# --connect-under-reset is required because Embassy puts the device in sleep mode, which prevents JTAG connection.
+# For this reason, --preverify will not work.
+runner = "probe-rs run --chip=esp32 --always-print-stacktrace --connect-under-reset"
 
 [env]
 DEFMT_LOG="info"
@@ -14,3 +16,7 @@ target = "xtensa-esp32-none-elf"
 
 [unstable]
 build-std = ["alloc", "core"]
+
+[server]
+port = 50000
+address = "127.0.0.1"
