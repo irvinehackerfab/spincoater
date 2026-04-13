@@ -5,15 +5,12 @@ pub mod ui;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver};
 use mousefood::{EmbeddedBackend, prelude::Rgb565};
 use ratatui::Terminal;
-use sc_messages::DutyCycle;
+use sc_messages::pwm::DutyCycle;
 use static_cell::StaticCell;
 
-use crate::{
-    gpio::display::{
-        DisplayType,
-        terminal::channel::{ChannelStatus, TERMINAL_CHANNEL_SIZE, TuiEvent},
-    },
-    wifi::{ApState, tcp::SocketState},
+use crate::gpio::display::{
+    DisplayType,
+    terminal::channel::{ChannelStatus, TERMINAL_CHANNEL_SIZE, TuiEvent},
 };
 
 /// The static cell for the terminal.
@@ -24,10 +21,6 @@ pub static TERMINAL: StaticCell<Terminal<EmbeddedBackend<DisplayType, Rgb565>>> 
 /// The state of the terminal.
 #[derive(Debug, Default)]
 pub struct TerminalState {
-    /// The current state of the access point.
-    ap_state: ApState,
-    /// The current state of the socket.
-    socket_state: SocketState,
     /// The current PWM output duty cycle.
     duty: DutyCycle,
     /// The current plate RPM.
@@ -48,8 +41,6 @@ pub async fn update_terminal(
             .draw(|frame| state.draw(frame))
             .expect("Failed to draw to terminal");
         match from_all.receive().await {
-            TuiEvent::WifiEvent(wifi_state) => state.ap_state = wifi_state,
-            TuiEvent::SocketEvent(socket_state) => state.socket_state = socket_state,
             TuiEvent::MotionProfileUpdate { duty_cycle, rpm } => {
                 state.duty = duty_cycle;
                 state.rpm = rpm;

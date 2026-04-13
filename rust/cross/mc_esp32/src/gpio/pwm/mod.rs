@@ -35,7 +35,7 @@ pub const PERIPHERAL_CLOCK_PRESCALER: u8 = 0;
 /// resulting in a loss of PWM output accuracy.
 ///
 /// This is currently set to the highest possible value that also results in a whole-numbered `timer_prescaler`.
-pub const PERIOD: u16 = sc_messages::PERIOD - 1;
+pub const PERIOD: u16 = sc_messages::pwm::PERIOD - 1;
 
 /// The static cell for storing a motion profile.
 pub static SETPOINTS: StaticCell<Vec<Setpoint, MAX_SETPOINTS>> = StaticCell::new();

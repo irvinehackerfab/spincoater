@@ -8,6 +8,7 @@ use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use esp_println::println;
 use heapless::Vec;
+use mc_esp32::HANDLER_CHANNEL_SIZE;
 use mc_esp32::{
     LOOP_PERIOD,
     gpio::{
@@ -17,11 +18,11 @@ use mc_esp32::{
         encoder::MOTOR_REVOLUTIONS_DOUBLED,
         pwm::{THROTTLE_CURVE, THROTTLE_POINTS},
     },
-    wifi::channel::{HANDLER_CHANNEL_SIZE, send_info_or_report},
 };
 use sc_messages::{
-    Command, DutyCycle, Info, STOP_DUTY,
+    commands::Command,
     motion_profile::{self, MAX_SETPOINTS, Setpoint},
+    pwm::{DutyCycle, STOP_DUTY},
 };
 
 /// The state of the main control loop.
@@ -29,7 +30,7 @@ pub struct App {
     setpoints: &'static mut Vec<Setpoint, MAX_SETPOINTS>,
     pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
     from_all: Receiver<'static, NoopRawMutex, Command, HANDLER_CHANNEL_SIZE>,
-    to_socket: Sender<'static, NoopRawMutex, Info, HANDLER_CHANNEL_SIZE>,
+    to_socket: Sender<'static, NoopRawMutex, motion_profile::State, HANDLER_CHANNEL_SIZE>,
     to_terminal: Sender<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 }
 
@@ -38,7 +39,7 @@ impl App {
         setpoints: &'static mut Vec<Setpoint, MAX_SETPOINTS>,
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
         from_all: Receiver<'static, NoopRawMutex, Command, HANDLER_CHANNEL_SIZE>,
-        to_socket: Sender<'static, NoopRawMutex, Info, HANDLER_CHANNEL_SIZE>,
+        to_socket: Sender<'static, NoopRawMutex, motion_profile::State, HANDLER_CHANNEL_SIZE>,
         to_terminal: Sender<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
     ) -> Self {
         Self {
@@ -141,13 +142,14 @@ impl App {
                 duty_cycle,
                 time: elapsed_since_start_micros,
             };
-            send_info_or_report(
-                &self.to_socket,
-                Info::State(state),
-                &self.to_terminal,
-                ChannelKind::SendInfo,
-            )
-            .await;
+            // Todo: use rpc
+            // send_info_or_report(
+            //     &self.to_socket,
+            //     Info::State(state),
+            //     &self.to_terminal,
+            //     ChannelKind::SendInfo,
+            // )
+            // .await;
             send_event_or_report(
                 &self.to_terminal,
                 TuiEvent::MotionProfileUpdate {

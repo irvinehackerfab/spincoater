@@ -4,10 +4,8 @@ use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
     channel::{Channel, Sender, TrySendError},
 };
-use sc_messages::DutyCycle;
+use sc_messages::pwm::DutyCycle;
 use static_cell::ConstStaticCell;
-
-use crate::wifi::{ApState, tcp::SocketState};
 
 /// The maximum number of messages allowed at a time in each channel to/from the terminal.
 pub const TERMINAL_CHANNEL_SIZE: usize = 8;
@@ -22,10 +20,6 @@ pub static TERMINAL_CHANNEL: ConstStaticCell<
 /// All possible messages sent to the terminal.
 #[derive(Debug)]
 pub enum TuiEvent {
-    /// The wifi state changed.
-    WifiEvent(ApState),
-    /// The socket state changed.
-    SocketEvent(SocketState),
     /// The motion profile updated.
     MotionProfileUpdate { duty_cycle: DutyCycle, rpm: u16 },
     /// A channel was found to be full.

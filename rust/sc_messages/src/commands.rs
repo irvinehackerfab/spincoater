@@ -25,4 +25,5 @@ pub enum CommandRefused {
     NotRunning,
 }
 
+/// See [this issue](https://github.com/jamesmunns/postcard-rpc/issues/56) for why we need a type alias.
 pub type CommandResult = Result<(), CommandRefused>;

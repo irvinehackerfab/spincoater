@@ -9,9 +9,7 @@
 
 pub mod app;
 
-use bytes::BytesMut;
 use embassy_executor::Spawner;
-use embassy_net::{StackResources, tcp::TcpSocket};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_backtrace as _;
 use esp_hal::{
@@ -20,17 +18,16 @@ use esp_hal::{
     gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
     interrupt::software::SoftwareInterruptControl,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
-    rng::Rng,
     spi::master::{Config, Spi},
     time::Rate,
     timer::timg::TimerGroup,
+    uart::{self, Uart},
 };
 use esp_println::println;
-use esp_radio::wifi::{CountryInfo, OperatingClass};
 use heapless::Vec;
 use ibm437::IBM437_9X14_REGULAR;
 use mc_esp32::{
-    SECOND_CORE_STACK,
+    RECV_CMD_CHANNEL, SECOND_CORE_STACK, SEND_INFO_CHANNEL,
     gpio::{
         display::{
             DISPLAY, ORIENTATION, SPI_BUFFER,
@@ -40,38 +37,13 @@ use mc_esp32::{
         interrupt_handler,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
     },
-    wifi::{
-        AUTH_METHOD, IP_CONFIG, MAX_CONNECTIONS, RADIO, STACK_RESOURCES,
-        channel::{RECV_CMD_CHANNEL, SEND_INFO_CHANNEL},
-        handle_connections, net_task,
-        tcp::{
-            BUFFER_SIZE, KEEP_ALIVE, RX_BUFFER, RX_BUFFER_2, TIMEOUT, TX_BUFFER,
-            handle_socket_connections,
-        },
-    },
 };
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
 use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
 use ratatui::Terminal;
-use sc_messages::{STOP_DUTY, motion_profile::Setpoint};
+use sc_messages::{motion_profile::Setpoint, pwm::STOP_DUTY};
 
 use crate::app::App;
-
-// Wifi requires heap allocation
-extern crate alloc;
-
-// Do not hardcode sensitive information like this.
-// Instead, pass in the variables as environment variables when you compile, like this:
-// SSID=_ PASSWORD=_ cargo run --release
-const SSID: &str = env!(
-    "SSID",
-    "If you see this error in the editor, ignore it. Otherwise, set the environment variable."
-);
-/// Note: Password must be 8-64 characters.
-const PASSWORD: &str = env!(
-    "PASSWORD",
-    "if you see this error in the editor, ignore it. Otherwise, set the environment variable"
-);
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -83,6 +55,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 )]
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
+    // Todo: Replace with defmt
     esp_println::logger::init_logger_from_env();
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
@@ -95,53 +68,6 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
     println!("Embassy initialized on the first core!");
-
-    let radio =
-        RADIO.init_with(|| esp_radio::init().expect("Failed to initialize Wi-Fi/BLE controller"));
-    let wifi_config = esp_radio::wifi::Config::default()
-        .with_country_code(CountryInfo::from(*b"US").with_operating_class(OperatingClass::Indoors));
-    let (mut wifi_controller, interfaces) =
-        esp_radio::wifi::new(radio, peripherals.WIFI, wifi_config)
-            .expect("Failed to initialize Wi-Fi controller");
-    let net_config = embassy_net::Config::ipv4_static(IP_CONFIG);
-    let rng = Rng::new();
-    let seed = u64::from(rng.random()) << 32 | u64::from(rng.random());
-    // Init network stack
-    let (stack, runner) = embassy_net::new(
-        interfaces.ap,
-        net_config,
-        STACK_RESOURCES.init_with(StackResources::new),
-        seed,
-    );
-
-    // Set the wifi config
-    let wifi_config = esp_radio::wifi::ModeConfig::AccessPoint(
-        esp_radio::wifi::AccessPointConfig::default()
-            .with_ssid(SSID.into())
-            .with_auth_method(AUTH_METHOD)
-            .with_password(PASSWORD.into())
-            .with_max_connections(MAX_CONNECTIONS)
-            .with_beacon_timeout(
-                u16::try_from(TIMEOUT.as_secs()).expect("10 should fit in a u16."),
-            ),
-    );
-    wifi_controller
-        .set_config(&wifi_config)
-        .expect("Failed to set Wifi config");
-
-    // Initialize wifi driver
-    wifi_controller
-        .start_async()
-        .await
-        .expect("Failed to start wifi");
-
-    // Initialize TCP socket
-    let rx_buffer = RX_BUFFER.take();
-    let tx_buffer = TX_BUFFER.take();
-    let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer);
-    socket.set_timeout(Some(TIMEOUT));
-    socket.set_keep_alive(Some(KEEP_ALIVE));
-    let buffer = RX_BUFFER_2.init_with(|| BytesMut::with_capacity(BUFFER_SIZE));
 
     // Setup encoder interrupt to run on the second core
     let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
@@ -236,6 +162,10 @@ async fn main(spawner: Spawner) -> ! {
     // Disable touch chip select for now
     let _ = Output::new(peripherals.GPIO33, Level::Low, OutputConfig::default());
 
+    // Setup UART and postcard-rpc
+    let config = uart::Config::default();
+    let uart = Uart::new(peripherals.UART0, config);
+
     // Setup communication between tasks
     let recv_cmd_channel = RECV_CMD_CHANNEL.take();
     let send_info_channel = SEND_INFO_CHANNEL.take();
@@ -243,22 +173,7 @@ async fn main(spawner: Spawner) -> ! {
 
     let setpoints = SETPOINTS.init_with(|| Vec::from([Setpoint { rpm: 0, time: 0 }]));
 
-    spawner.must_spawn(handle_connections(
-        wifi_controller,
-        recv_cmd_channel.sender(),
-        terminal_channel.sender(),
-    ));
-    spawner.must_spawn(net_task(runner));
     spawner.must_spawn(update_terminal(terminal, terminal_channel.receiver()));
-
-    // Await connections in a loop.
-    spawner.must_spawn(handle_socket_connections(
-        socket,
-        buffer,
-        recv_cmd_channel.sender(),
-        send_info_channel.receiver(),
-        terminal_channel.sender(),
-    ));
 
     App::new(
         setpoints,

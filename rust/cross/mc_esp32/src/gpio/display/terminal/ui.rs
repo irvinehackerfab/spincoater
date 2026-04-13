@@ -3,10 +3,10 @@
 use esp_alloc::HEAP;
 use ratatui::{
     Frame,
-    text::{Line, Text, ToLine, ToSpan},
+    text::{Line, Text, ToSpan},
     widgets::{Block, Paragraph, Wrap},
 };
-use sc_messages::PERIOD;
+use sc_messages::pwm::PERIOD;
 
 use crate::gpio::display::terminal::TerminalState;
 
@@ -20,8 +20,6 @@ impl TerminalState {
         let duty_percent = u32::from(*self.duty) * 100 / u32::from(PERIOD);
 
         let paragraph = Paragraph::new(Text::from_iter([
-            self.ap_state.to_line(),
-            self.socket_state.to_line(),
             Line::from_iter([
                 "Duty cycle: ".to_span(),
                 self.duty.to_span(),
