@@ -14,6 +14,7 @@ use esp_hal::system::Stack;
 use sc_messages::{commands::Command, motion_profile};
 use static_cell::ConstStaticCell;
 pub mod gpio;
+pub mod rpc;
 pub mod uart;
 
 /// The static variable that holds the second core stack.

@@ -37,9 +37,16 @@ use mc_esp32::{
         interrupt_handler,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
     },
+    rpc::{Context, Dispatcher, FRAME_BUFFER, WIRE_STORAGE},
+    uart::BAUD_RATE,
 };
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
 use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
+use postcard_rpc::server::{Dispatch, Sender, Server, impls::embedded_io_async_v0_6::EioWireTx};
+use postcard_rpc::{
+    header::VarHeader,
+    server::impls::embedded_io_async_v0_6::{EioWireSpawn, WireStorage},
+};
 use ratatui::Terminal;
 use sc_messages::{motion_profile::Setpoint, pwm::STOP_DUTY};
 
@@ -162,10 +169,6 @@ async fn main(spawner: Spawner) -> ! {
     // Disable touch chip select for now
     let _ = Output::new(peripherals.GPIO33, Level::Low, OutputConfig::default());
 
-    // Setup UART and postcard-rpc
-    let config = uart::Config::default();
-    let uart = Uart::new(peripherals.UART0, config);
-
     // Setup communication between tasks
     let recv_cmd_channel = RECV_CMD_CHANNEL.take();
     let send_info_channel = SEND_INFO_CHANNEL.take();
@@ -174,6 +177,26 @@ async fn main(spawner: Spawner) -> ! {
     let setpoints = SETPOINTS.init_with(|| Vec::from([Setpoint { rpm: 0, time: 0 }]));
 
     spawner.must_spawn(update_terminal(terminal, terminal_channel.receiver()));
+
+    // Setup UART and postcard-rpc after we're done with the spawner
+    let config = uart::Config::default().with_baudrate(BAUD_RATE);
+    let uart = Uart::new(peripherals.UART0, config)
+        .expect("Failed to initialize UART")
+        .into_async();
+    let (rx, tx) = uart.split();
+    let dispatcher = Dispatcher::new(Context {}, EioWireSpawn::from(spawner));
+    let (wire_rx, wire_tx) = WIRE_STORAGE
+        .init(rx, tx)
+        .expect("Failed to create wire RX and TX");
+    let frame_buffer = FRAME_BUFFER.take();
+    let vkk = dispatcher.min_key_len();
+    let server = Server::new(
+        wire_tx,
+        wire_rx,
+        frame_buffer.as_mut_slice(),
+        dispatcher,
+        vkk,
+    );
 
     App::new(
         setpoints,
