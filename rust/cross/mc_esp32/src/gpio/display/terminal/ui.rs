@@ -6,44 +6,28 @@ use ratatui::{
     text::{Line, Text, ToSpan},
     widgets::{Block, Paragraph, Wrap},
 };
-use sc_messages::pwm::PERIOD;
 
 use crate::gpio::display::terminal::TerminalState;
 
 impl TerminalState {
     /// Draws the current information to the terminal.
     pub fn draw(&self, frame: &mut Frame) {
-        let block = Block::new().title("Irvine Hacker Fab: Spincoater");
+        let block = Block::new().title("mc_esp32");
+
+        let optional_error = {
+            match &self.server_error {
+                Some(err) => err.to_span(),
+                None => "None".to_span(),
+            }
+        };
 
         let heap_stats = HEAP.stats();
 
-        let duty_percent = u32::from(*self.duty) * 100 / u32::from(PERIOD);
-
         let paragraph = Paragraph::new(Text::from_iter([
-            Line::from_iter([
-                "Duty cycle: ".to_span(),
-                self.duty.to_span(),
-                " / ".to_span(),
-                PERIOD.to_span(),
-                " (".to_span(),
-                duty_percent.to_span(),
-                ")%".to_span(),
-            ]),
-            Line::from_iter(["Plate RPM: ".to_span(), self.rpm.to_span()]),
             // Debug info
-            Line::raw("\nDebug info:"),
-            Line::from_iter([
-                "RECV_MSG_CHANNEL was full: ".to_span(),
-                self.channel_status.command_channel_was_full.to_span(),
-            ]),
-            Line::from_iter([
-                "SEND_MSG_CHANNEL was full: ".to_span(),
-                self.channel_status.send_info_channel_was_full.to_span(),
-            ]),
-            Line::from_iter([
-                "TERMINAL_CHANNEL was full: ".to_span(),
-                self.channel_status.terminal_channel_was_full.to_span(),
-            ]),
+            Line::raw("Debug info:"),
+            Line::raw("Last Server Error:"),
+            Line::from(optional_error),
             {
                 Line::from_iter([
                     "Heap usage (bytes): ".to_span(),

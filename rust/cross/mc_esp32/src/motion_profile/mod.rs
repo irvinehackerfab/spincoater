@@ -4,15 +4,11 @@ use core::sync::atomic::Ordering;
 use crate::{
     COMMAND_RESPONSE_SIGNAL, LOOP_PERIOD,
     gpio::{
-        display::terminal::channel::{TERMINAL_CHANNEL_SIZE, TuiEvent, send_event_or_report},
         encoder::MOTOR_REVOLUTIONS_DOUBLED,
         pwm::{THROTTLE_CURVE, THROTTLE_POINTS},
     },
 };
-use embassy_sync::{
-    blocking_mutex::raw::NoopRawMutex,
-    zerocopy_channel::{Receiver, Sender},
-};
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, zerocopy_channel::Receiver};
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use esp_println::println;

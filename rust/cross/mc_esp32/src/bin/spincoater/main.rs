@@ -30,7 +30,11 @@ use mc_esp32::{
     gpio::{
         display::{
             DISPLAY, ORIENTATION, SPI_BUFFER,
-            terminal::{TERMINAL, channel::TERMINAL_CHANNEL, update_terminal},
+            terminal::{
+                TERMINAL,
+                channel::{TERMINAL_CHANNEL, TuiEvent},
+                update_terminal,
+            },
         },
         encoder::ENCODER,
         interrupt_handler,
@@ -167,6 +171,7 @@ async fn main(spawner: Spawner) -> ! {
     let command_channel = COMMAND_CHANNEL.init_with(|| Channel::new(COMMAND_CHANNEL_BUFFER.take()));
     let (command_tx, command_rx) = command_channel.split();
     let terminal_channel = TERMINAL_CHANNEL.take();
+    let to_terminal = terminal_channel.sender();
 
     let setpoints = SETPOINTS.init_with(|| Vec::from([Setpoint { rpm: 0, time: 0 }]));
 
@@ -201,7 +206,7 @@ async fn main(spawner: Spawner) -> ! {
     loop {
         // Since we lose access to espflash's RTT output as soon as we take control of the UART pins,
         // The only place we can log the error message is to the terminal.
-        let _ = server.run().await;
-        todo!("Log error message to terminal");
+        let err = server.run().await;
+        to_terminal.send(TuiEvent::ServerError(err)).await;
     }
 }

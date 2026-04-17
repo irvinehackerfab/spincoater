@@ -9,7 +9,7 @@ use esp_hal::{
 use postcard_rpc::{
     define_dispatch,
     header::VarHeader,
-    server::impls::embedded_io_async_v0_6::{EioWireSpawn, EioWireTx, WireStorage},
+    server::impls::embedded_io_async_v0_6::{EioWireRx, EioWireSpawn, EioWireTx, WireStorage},
 };
 use sc_messages::{
     commands::{Command, CommandRefused},
@@ -34,6 +34,10 @@ pub static WIRE_STORAGE: WireStorage<
     BUFFER_SIZE,
     BUFFER_SIZE,
 > = WireStorage::new();
+
+pub type WireTx = EioWireTx<CriticalSectionRawMutex, UartTx<'static, Async>>;
+
+pub type WireRx = EioWireRx<UartRx<'static, Async>>;
 
 /// Information shared to all handlers.
 pub struct Context {

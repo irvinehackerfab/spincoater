@@ -4,13 +4,16 @@ pub mod ui;
 
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver};
 use mousefood::{EmbeddedBackend, prelude::Rgb565};
+use postcard_rpc::server::ServerError;
 use ratatui::Terminal;
-use sc_messages::pwm::DutyCycle;
 use static_cell::StaticCell;
 
-use crate::gpio::display::{
-    DisplayType,
-    terminal::channel::{ChannelStatus, TERMINAL_CHANNEL_SIZE, TuiEvent},
+use crate::{
+    gpio::display::{
+        DisplayType,
+        terminal::channel::{TERMINAL_CHANNEL_SIZE, TuiEvent},
+    },
+    rpc::{WireRx, WireTx},
 };
 
 /// The static cell for the terminal.
@@ -19,14 +22,10 @@ use crate::gpio::display::{
 pub static TERMINAL: StaticCell<Terminal<EmbeddedBackend<DisplayType, Rgb565>>> = StaticCell::new();
 
 /// The state of the terminal.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct TerminalState {
-    /// The current PWM output duty cycle.
-    duty: DutyCycle,
-    /// The current plate RPM.
-    rpm: u16,
-    /// Information about the [`embassy_sync::channel::Channel`]s we use.
-    channel_status: ChannelStatus,
+    /// The last error message reported by the server.
+    server_error: Option<ServerError<WireTx, WireRx>>,
 }
 
 /// This task updates the terminal whenever another task requests it to.
@@ -37,15 +36,12 @@ pub async fn update_terminal(
 ) -> ! {
     let mut state = TerminalState::default();
     loop {
+        // Todo: Use rpc to send error
         terminal
             .draw(|frame| state.draw(frame))
             .expect("Failed to draw to terminal");
         match from_all.receive().await {
-            TuiEvent::MotionProfileUpdate { duty_cycle, rpm } => {
-                state.duty = duty_cycle;
-                state.rpm = rpm;
-            }
-            TuiEvent::ChannelFull(channel_kind) => state.channel_status.set_full(channel_kind),
+            TuiEvent::ServerError(server_error) => state.server_error = Some(server_error),
         }
     }
 }
