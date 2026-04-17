@@ -173,6 +173,7 @@ async fn main(spawner: Spawner) -> ! {
     let terminal_channel = TERMINAL_CHANNEL.take();
     let to_terminal = terminal_channel.sender();
 
+    // Initialize the setpoint list with a starting setpoint of (0, 0).
     let setpoints = SETPOINTS.init_with(|| Vec::from([Setpoint { rpm: 0, time: 0 }]));
 
     spawner.must_spawn(update_terminal(terminal, terminal_channel.receiver()));
@@ -200,7 +201,7 @@ async fn main(spawner: Spawner) -> ! {
         vkk,
     );
 
-    let runner = Runner::new(setpoints, pwm_pin, command_rx);
+    let runner = Runner::new(setpoints, pwm_pin, command_rx, server.sender());
     spawner.must_spawn(run(runner));
 
     loop {

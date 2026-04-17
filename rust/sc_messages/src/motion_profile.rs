@@ -6,7 +6,7 @@ use crate::pwm::DutyCycle;
 /// The maximum allowed number of setpoints in a single motion profile.
 ///
 /// Any further setpoints will be ignored by the microcontroller.
-pub const MAX_SETPOINTS: usize = 128;
+pub const MAX_SETPOINTS: usize = 127;
 
 /// A single target plate RPM value with the corresponding time taken to reach that RPM.
 ///

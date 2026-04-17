@@ -8,7 +8,7 @@ use esp_hal::{
 };
 use postcard_rpc::{
     define_dispatch,
-    header::VarHeader,
+    header::{VarHeader, VarSeq},
     server::impls::embedded_io_async_v0_6::{EioWireRx, EioWireSpawn, EioWireTx, WireStorage},
 };
 use sc_messages::{
@@ -34,6 +34,10 @@ pub static WIRE_STORAGE: WireStorage<
     BUFFER_SIZE,
     BUFFER_SIZE,
 > = WireStorage::new();
+
+/// According to [the example](https://github.com/jamesmunns/postcard-rpc/blob/17dc2360a21c5caad5a20efb6a0a276df29ec945/example/firmware/src/bin/comms-02.rs#L277),
+/// publish requires 0.
+pub const SEQUENCE_NUMBER: VarSeq = VarSeq::Seq1(0);
 
 pub type WireTx = EioWireTx<CriticalSectionRawMutex, UartTx<'static, Async>>;
 

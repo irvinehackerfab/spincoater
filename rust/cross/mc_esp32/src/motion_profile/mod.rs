@@ -5,38 +5,49 @@ use crate::{
     COMMAND_RESPONSE_SIGNAL, LOOP_PERIOD,
     gpio::{
         encoder::MOTOR_REVOLUTIONS_DOUBLED,
-        pwm::{THROTTLE_CURVE, THROTTLE_POINTS},
+        pwm::{SETPOINT_LIST_LENGTH, THROTTLE_CURVE, THROTTLE_POINTS},
     },
+    rpc::{SEQUENCE_NUMBER, WireTx},
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, zerocopy_channel::Receiver};
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use esp_println::println;
 use heapless::Vec;
+use postcard_rpc::server::Sender;
 use sc_messages::{
     commands::{Command, CommandRefused},
-    motion_profile::{self, MAX_SETPOINTS, Setpoint},
+    icd::MotionProfileState,
+    motion_profile::{self, Setpoint},
     pwm::{DutyCycle, STOP_DUTY},
 };
 
 /// The runner that executes motion profiles.
 pub struct Runner {
-    setpoints: &'static mut Vec<Setpoint, MAX_SETPOINTS>,
+    setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
     pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
     from_server: Receiver<'static, NoopRawMutex, Command>,
+    to_server: Sender<WireTx>,
 }
 
 impl Runner {
     pub fn new(
-        setpoints: &'static mut Vec<Setpoint, MAX_SETPOINTS>,
+        setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
         from_server: Receiver<'static, NoopRawMutex, Command>,
+        to_server: Sender<WireTx>,
     ) -> Self {
         Self {
             setpoints,
             pwm_pin,
             from_server,
+            to_server,
         }
+    }
+
+    /// Clears all setpoints except for the 0 rpm 0 time element.
+    fn clear(&mut self) {
+        self.setpoints.truncate(1);
     }
 
     /// Runs the main control loop.
@@ -44,8 +55,7 @@ impl Runner {
         loop {
             self.setup().await;
             self.execute_motion_profile().await;
-            // Clear the setpoints list, but keep the 0 rpm 0 time element.
-            self.setpoints.truncate(1);
+            self.clear();
         }
     }
 
@@ -55,8 +65,12 @@ impl Runner {
     async fn setup(&mut self) {
         loop {
             match self.from_server.receive().await {
-                Command::Add(setpoint) => {
-                    let _ = self.setpoints.push(setpoint.clone());
+                Command::Add(setpoint) => match self.setpoints.push(setpoint.clone()) {
+                    Ok(()) => COMMAND_RESPONSE_SIGNAL.signal(Ok(())),
+                    Err(_) => COMMAND_RESPONSE_SIGNAL.signal(Err(CommandRefused::TooManySetpoints)),
+                },
+                Command::ClearSetpoints => {
+                    self.clear();
                     COMMAND_RESPONSE_SIGNAL.signal(Ok(()));
                 }
                 Command::Start => {
@@ -89,7 +103,7 @@ impl Runner {
             Timer::after(LOOP_PERIOD).await;
             if let Some(command) = self.from_server.try_receive() {
                 match command {
-                    Command::Add(_) | Command::Start => {
+                    Command::Add(_) | Command::ClearSetpoints | Command::Start => {
                         COMMAND_RESPONSE_SIGNAL.signal(Err(CommandRefused::Running));
                     }
                     Command::Stop => {
@@ -144,22 +158,16 @@ impl Runner {
                 duty_cycle,
                 time: elapsed_since_start_micros,
             };
-            // Todo: use rpc
-            // send_info_or_report(
-            //     &self.to_socket,
-            //     Info::State(state),
-            //     &self.to_terminal,
-            //     ChannelKind::SendInfo,
-            // )
-            // .await;
-            // send_event_or_report(
-            //     &self.to_terminal,
-            //     TuiEvent::MotionProfileUpdate {
-            //         duty_cycle,
-            //         rpm: current_rpm,
-            //     },
-            // )
-            // .await;
+            if self
+                .to_server
+                .publish::<MotionProfileState>(SEQUENCE_NUMBER, &state)
+                .await
+                .is_err()
+            {
+                // The host PC disconnected, so we need to stop.
+                break;
+            }
+            // Increment time
             previous_iteration += elapsed_since_last_iteration;
         }
         self.pwm_pin.set_timestamp(*STOP_DUTY);

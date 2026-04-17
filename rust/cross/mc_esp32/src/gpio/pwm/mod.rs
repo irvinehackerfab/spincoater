@@ -37,8 +37,10 @@ pub const PERIPHERAL_CLOCK_PRESCALER: u8 = 0;
 /// This is currently set to the highest possible value that also results in a whole-numbered `timer_prescaler`.
 pub const PERIOD: u16 = sc_messages::pwm::PERIOD - 1;
 
+pub const SETPOINT_LIST_LENGTH: usize = MAX_SETPOINTS + 1;
+
 /// The static cell for storing a motion profile.
-pub static SETPOINTS: StaticCell<Vec<Setpoint, MAX_SETPOINTS>> = StaticCell::new();
+pub static SETPOINTS: StaticCell<Vec<Setpoint, SETPOINT_LIST_LENGTH>> = StaticCell::new();
 
 /// The number of datapoints for the throttle curve.
 pub const THROTTLE_POINTS: usize = 10;

@@ -8,17 +8,27 @@ use crate::motion_profile::Setpoint;
 pub enum Command {
     /// Add a setpoint to the motion profile.
     ///
-    /// The MCU will only listen to this while disabled.
+    /// The MCU will only accept this while disabled.
     Add(Setpoint),
+    /// Clear all setpoints.
+    ///
+    /// The MCU will only accept this while disabled.
+    ClearSetpoints,
     /// Execute the motion profile.
+    ///
+    /// The MCU will only accept this while disabled.
     Start,
     /// Stop the motion profile and discard it.
+    ///
+    /// The MCU will only accept this while enabled.
     Stop,
 }
 
 /// The possible reasons why the MCU might refuse a command.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Schema)]
 pub enum CommandRefused {
+    /// The host PC sent too many setpoints.
+    TooManySetpoints,
     /// A motion profile is running.
     Running,
     /// No motion profile is running.
