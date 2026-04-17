@@ -15,6 +15,8 @@ The `editor_configurations` folder contains default configurations for various e
 ## `pwm`
 This is a basic program that initializes PWM on pin [IO26](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) and sets it to a constant duty cycle of 5% with a frequency of 50hz.
 
+This is useful if you ever need to do a simple check to make sure our current ESC isn't misbehaving.
+
 Run with `cargo run --release --bin pwm`
 
 ## `spincoater`

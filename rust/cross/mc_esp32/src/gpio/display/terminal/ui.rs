@@ -34,7 +34,7 @@ impl TerminalState {
             Line::raw("\nDebug info:"),
             Line::from_iter([
                 "RECV_MSG_CHANNEL was full: ".to_span(),
-                self.channel_status.recv_cmd_channel_was_full.to_span(),
+                self.channel_status.command_channel_was_full.to_span(),
             ]),
             Line::from_iter([
                 "SEND_MSG_CHANNEL was full: ".to_span(),

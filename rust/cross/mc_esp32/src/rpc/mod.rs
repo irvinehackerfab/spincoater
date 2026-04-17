@@ -1,15 +1,23 @@
-use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
-use esp_hal::Async;
-use esp_hal::uart::{UartRx, UartTx};
-use postcard_rpc::define_dispatch;
-use postcard_rpc::header::VarHeader;
-use postcard_rpc::server::Sender;
-use postcard_rpc::server::impls::embedded_io_async_v0_6::WireStorage;
-use postcard_rpc::server::impls::embedded_io_async_v0_6::{EioWireSpawn, EioWireTx};
-use sc_messages::commands::{Command, CommandRefused};
-use sc_messages::icd::{CommandEndpoint, ENDPOINTS_LIST, MotionProfileState, TOPICS_LIST};
-use sc_messages::motion_profile;
+use embassy_sync::{
+    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
+    zerocopy_channel::Sender,
+};
+use esp_hal::{
+    Async,
+    uart::{UartRx, UartTx},
+};
+use postcard_rpc::{
+    define_dispatch,
+    header::VarHeader,
+    server::impls::embedded_io_async_v0_6::{EioWireSpawn, EioWireTx, WireStorage},
+};
+use sc_messages::{
+    commands::{Command, CommandRefused},
+    icd::{CommandEndpoint, ENDPOINTS_LIST, TOPICS_LIST},
+};
 use static_cell::ConstStaticCell;
+
+use crate::COMMAND_RESPONSE_SIGNAL;
 
 /// The size of the buffers used by postcard-rpc.
 pub const BUFFER_SIZE: usize = 1024;
@@ -28,23 +36,31 @@ pub static WIRE_STORAGE: WireStorage<
 > = WireStorage::new();
 
 /// Information shared to all handlers.
-pub struct Context {}
+pub struct Context {
+    /// Used to pass the commands to the runner.
+    to_runner: Sender<'static, NoopRawMutex, Command>,
+}
 
+impl Context {
+    /// Initializes the context.
+    #[must_use]
+    pub fn new(to_runner: Sender<'static, NoopRawMutex, Command>) -> Self {
+        Self { to_runner }
+    }
+}
+
+/// Handles receiving commands from the host PC,
+/// forwarding them to the motion profile runner,
+/// and returning the command reponse.
 async fn command_handler(
     context: &mut Context,
     _: VarHeader,
     command: Command,
 ) -> Result<(), CommandRefused> {
-    todo!()
-}
-
-async fn motion_profile_state(
-    context: &mut Context,
-    _: VarHeader,
-    state: motion_profile::State,
-    sender: &Sender<EioWireTx<CriticalSectionRawMutex, UartTx<'static, Async>>>,
-) {
-    todo!()
+    let buf = context.to_runner.send().await;
+    *buf = command;
+    context.to_runner.send_done();
+    COMMAND_RESPONSE_SIGNAL.wait().await
 }
 
 define_dispatch! {
@@ -67,7 +83,6 @@ define_dispatch! {
 
         | TopicTy            | kind  | handler              |
         |--------------------|-------|----------------------|
-        | MotionProfileState | async | motion_profile_state |
     };
 
     topics_out: {

@@ -1,53 +1,45 @@
+//! This module contains the functionality for running motion profiles sent by the host PC.
 use core::sync::atomic::Ordering;
 
+use crate::{
+    COMMAND_RESPONSE_SIGNAL, LOOP_PERIOD,
+    gpio::{
+        display::terminal::channel::{TERMINAL_CHANNEL_SIZE, TuiEvent, send_event_or_report},
+        encoder::MOTOR_REVOLUTIONS_DOUBLED,
+        pwm::{THROTTLE_CURVE, THROTTLE_POINTS},
+    },
+};
 use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
-    channel::{Receiver, Sender},
+    zerocopy_channel::{Receiver, Sender},
 };
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use esp_println::println;
 use heapless::Vec;
-use mc_esp32::HANDLER_CHANNEL_SIZE;
-use mc_esp32::{
-    LOOP_PERIOD,
-    gpio::{
-        display::terminal::channel::{
-            ChannelKind, TERMINAL_CHANNEL_SIZE, TuiEvent, send_event_or_report,
-        },
-        encoder::MOTOR_REVOLUTIONS_DOUBLED,
-        pwm::{THROTTLE_CURVE, THROTTLE_POINTS},
-    },
-};
 use sc_messages::{
-    commands::Command,
+    commands::{Command, CommandRefused},
     motion_profile::{self, MAX_SETPOINTS, Setpoint},
     pwm::{DutyCycle, STOP_DUTY},
 };
 
-/// The state of the main control loop.
-pub struct App {
+/// The runner that executes motion profiles.
+pub struct Runner {
     setpoints: &'static mut Vec<Setpoint, MAX_SETPOINTS>,
     pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
-    from_all: Receiver<'static, NoopRawMutex, Command, HANDLER_CHANNEL_SIZE>,
-    to_socket: Sender<'static, NoopRawMutex, motion_profile::State, HANDLER_CHANNEL_SIZE>,
-    to_terminal: Sender<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
+    from_server: Receiver<'static, NoopRawMutex, Command>,
 }
 
-impl App {
+impl Runner {
     pub fn new(
         setpoints: &'static mut Vec<Setpoint, MAX_SETPOINTS>,
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
-        from_all: Receiver<'static, NoopRawMutex, Command, HANDLER_CHANNEL_SIZE>,
-        to_socket: Sender<'static, NoopRawMutex, motion_profile::State, HANDLER_CHANNEL_SIZE>,
-        to_terminal: Sender<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
+        from_server: Receiver<'static, NoopRawMutex, Command>,
     ) -> Self {
         Self {
             setpoints,
             pwm_pin,
-            from_all,
-            to_socket,
-            to_terminal,
+            from_server,
         }
     }
 
@@ -66,12 +58,18 @@ impl App {
     /// Repeatedly waits for setpoints until a start message is received.
     async fn setup(&mut self) {
         loop {
-            match self.from_all.receive().await {
+            match self.from_server.receive().await {
                 Command::Add(setpoint) => {
-                    let _ = self.setpoints.push(setpoint);
+                    let _ = self.setpoints.push(setpoint.clone());
+                    COMMAND_RESPONSE_SIGNAL.signal(Ok(()));
                 }
-                Command::Start => break,
-                Command::Stop => {}
+                Command::Start => {
+                    COMMAND_RESPONSE_SIGNAL.signal(Ok(()));
+                    break;
+                }
+                Command::Stop => {
+                    COMMAND_RESPONSE_SIGNAL.signal(Err(CommandRefused::NotRunning));
+                }
             }
         }
         // Change the setpoints from time since last setpoint to time since the start of the motion profile.
@@ -93,8 +91,16 @@ impl App {
         'outer: loop {
             // This is prone to accumulating oversleep, but that's not important here.
             Timer::after(LOOP_PERIOD).await;
-            if let Ok(Command::Stop) = self.from_all.try_receive() {
-                break;
+            if let Some(command) = self.from_server.try_receive() {
+                match command {
+                    Command::Add(_) | Command::Start => {
+                        COMMAND_RESPONSE_SIGNAL.signal(Err(CommandRefused::Running));
+                    }
+                    Command::Stop => {
+                        COMMAND_RESPONSE_SIGNAL.signal(Ok(()));
+                        break;
+                    }
+                }
             }
             let elapsed_since_start = starting_time.elapsed();
             let elapsed_since_start_micros = elapsed_since_start.as_micros();
@@ -112,13 +118,13 @@ impl App {
                     }
                     // The motion profile is done.
                     (_, None) | (None, _) => break 'outer,
-                };
+                }
             };
             // First, we need the setpoint rpm value corresponding to the current time.
             // We need to increase the size of some numbers to prevent overflow.
             // [Wikipedia explanation](https://en.wikipedia.org/wiki/Linear_interpolation#Linear_interpolation_as_an_approximation)
-            let previous_setpoint_rpm = previous_setpoint.rpm as u64;
-            let current_setpoint_rpm = current_setpoint.rpm as u64;
+            let previous_setpoint_rpm = u64::from(previous_setpoint.rpm);
+            let current_setpoint_rpm = u64::from(current_setpoint.rpm);
             let delta_rpm = current_setpoint_rpm - previous_setpoint_rpm;
             let delta_time = elapsed_since_start_micros - previous_setpoint.time;
             let numerator = delta_rpm * delta_time;
@@ -131,7 +137,7 @@ impl App {
 
             // todo!("Add feedback")
             let elapsed_since_last_iteration = previous_iteration.elapsed();
-            let current_rpm = self.calculate_rpm(elapsed_since_last_iteration);
+            let current_rpm = Runner::calculate_rpm(elapsed_since_last_iteration);
 
             // Logging
             let duty_cycle = DutyCycle::try_from(setpoint_duty_cycle)
@@ -150,14 +156,14 @@ impl App {
             //     ChannelKind::SendInfo,
             // )
             // .await;
-            send_event_or_report(
-                &self.to_terminal,
-                TuiEvent::MotionProfileUpdate {
-                    duty_cycle,
-                    rpm: current_rpm,
-                },
-            )
-            .await;
+            // send_event_or_report(
+            //     &self.to_terminal,
+            //     TuiEvent::MotionProfileUpdate {
+            //         duty_cycle,
+            //         rpm: current_rpm,
+            //     },
+            // )
+            // .await;
             previous_iteration += elapsed_since_last_iteration;
         }
         self.pwm_pin.set_timestamp(*STOP_DUTY);
@@ -165,7 +171,7 @@ impl App {
     }
 
     /// Calculates the current rpm.
-    fn calculate_rpm(&self, elapsed_since_last_iteration: Duration) -> u16 {
+    fn calculate_rpm(elapsed_since_last_iteration: Duration) -> u16 {
         // Relaxed ordering because the order of instructions does not matter for the swap.
         let motor_revolutions_doubled = MOTOR_REVOLUTIONS_DOUBLED.swap(0, Ordering::Relaxed);
         let time_ms = u32::try_from(elapsed_since_last_iteration.as_millis())
@@ -178,8 +184,7 @@ impl App {
         // = (2*motor revolutions) * 30,000 / (37 * `time`)
         // Final units: plate revolutions per minute
         let rpm = motor_revolutions_doubled * 30_000 / (37 * (time_ms));
-        let rpm = u16::try_from(rpm).expect("The rpm should never exceed 65535.");
-        return rpm;
+        u16::try_from(rpm).expect("The rpm should never exceed 65535.")
     }
 }
 
@@ -205,14 +210,20 @@ fn linear_interpolation(setpoint_rpm: u16) -> u16 {
             return *duty_0;
         }
         if setpoint_rpm > *rpm_0 {
-            let delta_duty = (duty_1 - duty_0) as u32;
-            let delta_rpm = (setpoint_rpm - rpm_0) as u32;
+            let delta_duty = u32::from(duty_1 - duty_0);
+            let delta_rpm = u32::from(setpoint_rpm - rpm_0);
             let numerator = delta_duty * delta_rpm;
-            let denominator = (rpm_1 - rpm_0) as u32;
+            let denominator = u32::from(rpm_1 - rpm_0);
             let result =
                 u16::try_from(numerator / denominator).expect("The rpm should never exceed 65535.");
             return duty_0 + result;
         }
     }
-    return THROTTLE_CURVE[1][THROTTLE_POINTS - 1];
+    THROTTLE_CURVE[1][THROTTLE_POINTS - 1]
+}
+
+/// Runs the [`Runner`] forever.
+#[embassy_executor::task]
+pub async fn run(runner: Runner) {
+    runner.run().await;
 }

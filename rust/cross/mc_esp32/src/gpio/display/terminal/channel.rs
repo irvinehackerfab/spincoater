@@ -12,7 +12,7 @@ pub const TERMINAL_CHANNEL_SIZE: usize = 8;
 /// Used for passing messages from the wifi and socket handler to the terminal.
 ///
 /// This uses `NoopRawMutex` because data is only shared in one executor.
-/// This does not use a zerocopy channel because [`TuiEvent`] is currently the same size as a reference.
+/// This does not use a zerocopy channel because [`TuiEvent`] is cheap to copy.
 pub static TERMINAL_CHANNEL: ConstStaticCell<
     Channel<NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 > = ConstStaticCell::new(Channel::new());
@@ -29,9 +29,9 @@ pub enum TuiEvent {
 /// Information about the [`Channel`]s.
 #[derive(Debug, Default)]
 pub struct ChannelStatus {
-    /// Whether [`crate::wifi::channel::RECV_CMD_CHANNEL`] was ever full.
+    /// Whether [`crate::wifi::channel::COMMAND_CHANNEL`] was ever full.
     /// If ever becomes true, [`crate::wifi::channel::HANDLER_CHANNEL_SIZE`] needs to be increased.
-    pub recv_cmd_channel_was_full: bool,
+    pub command_channel_was_full: bool,
     /// Whether [`crate::wifi::channel::SEND_INFO_CHANNEL`] was ever full.
     /// If ever becomes true, [`crate::wifi::channel::HANDLER_CHANNEL_SIZE`] needs to be increased.
     pub send_info_channel_was_full: bool,
@@ -44,7 +44,7 @@ impl ChannelStatus {
     /// Set the requested "channel full" status to `true`.
     pub fn set_full(&mut self, channel_kind: ChannelKind) {
         match channel_kind {
-            ChannelKind::RecvCmd => self.recv_cmd_channel_was_full = true,
+            ChannelKind::RecvCmd => self.command_channel_was_full = true,
             ChannelKind::SendInfo => self.send_info_channel_was_full = true,
             ChannelKind::Terminal => self.terminal_channel_was_full = true,
         }
@@ -54,7 +54,7 @@ impl ChannelStatus {
 /// All channels we use.
 #[derive(Debug, Clone, Copy)]
 pub enum ChannelKind {
-    /// [`crate::wifi::channel::RECV_CMD_CHANNEL`]
+    /// [`crate::wifi::channel::COMMAND_CHANNEL`]
     RecvCmd,
     /// [`crate::wifi::channel::SEND_INFO_CHANNEL`]
     SendInfo,

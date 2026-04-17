@@ -7,9 +7,8 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-pub mod app;
-
 use embassy_executor::Spawner;
+use embassy_sync::zerocopy_channel::Channel;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_backtrace as _;
 use esp_hal::{
@@ -27,7 +26,7 @@ use esp_println::println;
 use heapless::Vec;
 use ibm437::IBM437_9X14_REGULAR;
 use mc_esp32::{
-    RECV_CMD_CHANNEL, SECOND_CORE_STACK, SEND_INFO_CHANNEL,
+    COMMAND_CHANNEL, COMMAND_CHANNEL_BUFFER, SECOND_CORE_STACK,
     gpio::{
         display::{
             DISPLAY, ORIENTATION, SPI_BUFFER,
@@ -37,20 +36,15 @@ use mc_esp32::{
         interrupt_handler,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
     },
+    motion_profile::{Runner, run},
     rpc::{Context, Dispatcher, FRAME_BUFFER, WIRE_STORAGE},
     uart::BAUD_RATE,
 };
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
 use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
-use postcard_rpc::server::{Dispatch, Sender, Server, impls::embedded_io_async_v0_6::EioWireTx};
-use postcard_rpc::{
-    header::VarHeader,
-    server::impls::embedded_io_async_v0_6::{EioWireSpawn, WireStorage},
-};
+use postcard_rpc::server::{Dispatch, Server, impls::embedded_io_async_v0_6::EioWireSpawn};
 use ratatui::Terminal;
 use sc_messages::{motion_profile::Setpoint, pwm::STOP_DUTY};
-
-use crate::app::App;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -170,13 +164,16 @@ async fn main(spawner: Spawner) -> ! {
     let _ = Output::new(peripherals.GPIO33, Level::Low, OutputConfig::default());
 
     // Setup communication between tasks
-    let recv_cmd_channel = RECV_CMD_CHANNEL.take();
-    let send_info_channel = SEND_INFO_CHANNEL.take();
+    let command_channel = COMMAND_CHANNEL.init_with(|| Channel::new(COMMAND_CHANNEL_BUFFER.take()));
+    let (command_tx, command_rx) = command_channel.split();
     let terminal_channel = TERMINAL_CHANNEL.take();
 
     let setpoints = SETPOINTS.init_with(|| Vec::from([Setpoint { rpm: 0, time: 0 }]));
 
     spawner.must_spawn(update_terminal(terminal, terminal_channel.receiver()));
+
+    // Setup context
+    let context = Context::new(command_tx);
 
     // Setup UART and postcard-rpc after we're done with the spawner
     let config = uart::Config::default().with_baudrate(BAUD_RATE);
@@ -184,13 +181,13 @@ async fn main(spawner: Spawner) -> ! {
         .expect("Failed to initialize UART")
         .into_async();
     let (rx, tx) = uart.split();
-    let dispatcher = Dispatcher::new(Context {}, EioWireSpawn::from(spawner));
+    let dispatcher = Dispatcher::new(context, EioWireSpawn::from(spawner));
     let (wire_rx, wire_tx) = WIRE_STORAGE
         .init(rx, tx)
         .expect("Failed to create wire RX and TX");
     let frame_buffer = FRAME_BUFFER.take();
     let vkk = dispatcher.min_key_len();
-    let server = Server::new(
+    let mut server = Server::new(
         wire_tx,
         wire_rx,
         frame_buffer.as_mut_slice(),
@@ -198,13 +195,13 @@ async fn main(spawner: Spawner) -> ! {
         vkk,
     );
 
-    App::new(
-        setpoints,
-        pwm_pin,
-        recv_cmd_channel.receiver(),
-        send_info_channel.sender(),
-        terminal_channel.sender(),
-    )
-    .run()
-    .await
+    let runner = Runner::new(setpoints, pwm_pin, command_rx);
+    spawner.must_spawn(run(runner));
+
+    loop {
+        // Since we lose access to espflash's RTT output as soon as we take control of the UART pins,
+        // The only place we can log the error message is to the terminal.
+        let _ = server.run().await;
+        todo!("Log error message to terminal");
+    }
 }
