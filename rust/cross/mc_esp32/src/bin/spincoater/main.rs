@@ -8,7 +8,6 @@
 #![deny(clippy::large_stack_frames)]
 
 use embassy_executor::Spawner;
-use embassy_sync::zerocopy_channel::Channel;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_backtrace as _;
 use esp_hal::{
@@ -26,7 +25,7 @@ use esp_println::println;
 use heapless::Vec;
 use ibm437::IBM437_9X14_REGULAR;
 use mc_esp32::{
-    COMMAND_CHANNEL, COMMAND_CHANNEL_BUFFER, SECOND_CORE_STACK,
+    COMMAND_CHANNEL, SECOND_CORE_STACK,
     gpio::{
         display::{
             DISPLAY, ORIENTATION, SPI_BUFFER,
@@ -42,13 +41,12 @@ use mc_esp32::{
     },
     motion_profile::{Runner, run},
     rpc::{Context, Dispatcher, FRAME_BUFFER, WIRE_STORAGE},
-    uart::BAUD_RATE,
 };
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
 use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
 use postcard_rpc::server::{Dispatch, Server, impls::embedded_io_async_v0_6::EioWireSpawn};
 use ratatui::Terminal;
-use sc_messages::{motion_profile::Setpoint, pwm::STOP_DUTY};
+use sc_messages::{icd::BAUD_RATE, motion_profile::Setpoint, pwm::STOP_DUTY};
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -168,8 +166,7 @@ async fn main(spawner: Spawner) -> ! {
     let _ = Output::new(peripherals.GPIO33, Level::Low, OutputConfig::default());
 
     // Setup communication between tasks
-    let command_channel = COMMAND_CHANNEL.init_with(|| Channel::new(COMMAND_CHANNEL_BUFFER.take()));
-    let (command_tx, command_rx) = command_channel.split();
+    let command_channel = COMMAND_CHANNEL.take();
     let terminal_channel = TERMINAL_CHANNEL.take();
     let to_terminal = terminal_channel.sender();
 
@@ -179,12 +176,14 @@ async fn main(spawner: Spawner) -> ! {
     spawner.must_spawn(update_terminal(terminal, terminal_channel.receiver()));
 
     // Setup context
-    let context = Context::new(command_tx);
+    let context = Context::new(command_channel.sender());
 
     // Setup UART and postcard-rpc after we're done with the spawner
     let config = uart::Config::default().with_baudrate(BAUD_RATE);
     let uart = Uart::new(peripherals.UART0, config)
         .expect("Failed to initialize UART")
+        .with_tx(peripherals.GPIO1)
+        .with_rx(peripherals.GPIO3)
         .into_async();
     let (rx, tx) = uart.split();
     let dispatcher = Dispatcher::new(context, EioWireSpawn::from(spawner));
@@ -201,7 +200,12 @@ async fn main(spawner: Spawner) -> ! {
         vkk,
     );
 
-    let runner = Runner::new(setpoints, pwm_pin, command_rx, server.sender());
+    let runner = Runner::new(
+        setpoints,
+        pwm_pin,
+        command_channel.receiver(),
+        server.sender(),
+    );
     spawner.must_spawn(run(runner));
 
     loop {

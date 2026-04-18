@@ -2,14 +2,14 @@
 use core::sync::atomic::Ordering;
 
 use crate::{
-    COMMAND_RESPONSE_SIGNAL, LOOP_PERIOD,
+    COMMAND_CHANNEL_LENGTH, COMMAND_RESPONSE_SIGNAL, LOOP_PERIOD,
     gpio::{
         encoder::MOTOR_REVOLUTIONS_DOUBLED,
         pwm::{SETPOINT_LIST_LENGTH, THROTTLE_CURVE, THROTTLE_POINTS},
     },
     rpc::{SEQUENCE_NUMBER, WireTx},
 };
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, zerocopy_channel::Receiver};
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver};
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use esp_println::println;
@@ -17,7 +17,7 @@ use heapless::Vec;
 use postcard_rpc::server::Sender;
 use sc_messages::{
     commands::{Command, CommandRefused},
-    icd::MotionProfileState,
+    icd::MotionProfileStateTopic,
     motion_profile::{self, Setpoint},
     pwm::{DutyCycle, STOP_DUTY},
 };
@@ -26,7 +26,7 @@ use sc_messages::{
 pub struct Runner {
     setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
     pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
-    from_server: Receiver<'static, NoopRawMutex, Command>,
+    from_server: Receiver<'static, NoopRawMutex, Command, COMMAND_CHANNEL_LENGTH>,
     to_server: Sender<WireTx>,
 }
 
@@ -34,7 +34,7 @@ impl Runner {
     pub fn new(
         setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
-        from_server: Receiver<'static, NoopRawMutex, Command>,
+        from_server: Receiver<'static, NoopRawMutex, Command, COMMAND_CHANNEL_LENGTH>,
         to_server: Sender<WireTx>,
     ) -> Self {
         Self {
@@ -101,7 +101,7 @@ impl Runner {
         'outer: loop {
             // This is prone to accumulating oversleep, but that's not important here.
             Timer::after(LOOP_PERIOD).await;
-            if let Some(command) = self.from_server.try_receive() {
+            if let Ok(command) = self.from_server.try_receive() {
                 match command {
                     Command::Add(_) | Command::ClearSetpoints | Command::Start => {
                         COMMAND_RESPONSE_SIGNAL.signal(Err(CommandRefused::Running));
@@ -160,7 +160,7 @@ impl Runner {
             };
             if self
                 .to_server
-                .publish::<MotionProfileState>(SEQUENCE_NUMBER, &state)
+                .publish::<MotionProfileStateTopic>(SEQUENCE_NUMBER, &state)
                 .await
                 .is_err()
             {

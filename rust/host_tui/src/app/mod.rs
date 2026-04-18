@@ -7,71 +7,78 @@ use std::io::{self};
 use std::path::PathBuf;
 use std::{env, fs::File};
 
-use crate::app::event::{EventHandler, TuiEvent};
+use crate::app::event::{EventHandler, TuiEvent, UsbEvent};
 use chrono::Local;
 use color_eyre::{Result, eyre::OptionExt};
 use crossterm::event::Event;
 use csv::{Writer, WriterBuilder};
+use postcard_rpc::host_client::HostClient;
+use postcard_rpc::standard_icd::WireError;
 use ratatui::{
     DefaultTerminal,
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
     widgets::ListState,
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
+use sc_messages::commands::Command;
+use sc_messages::icd::CommandEndpoint;
 use sc_messages::motion_profile::Setpoint;
-use sc_messages::{Command, DutyCycle};
-use tokio::net::TcpStream;
+use sc_messages::pwm::DutyCycle;
 
-/// The maximum number of commands kept in the TUI at a time.
-const COMMAND_CAPACITY: usize = 100;
+/// The maximum number of MCU logs kept in the TUI at a time.
+pub const MCU_LOG_CAPACITY: usize = 128;
 
 /// Application.
 #[derive(Debug)]
 pub struct App {
-    /// Is the application running?
-    pub running: bool,
+    /// This boolean provides an easy way for methods to end the program.
+    running: bool,
+    /// The client allows for sending requests to the MCU.
+    client: HostClient<WireError>,
     /// Event handler.
-    pub events: EventHandler,
+    events: EventHandler,
     /// The state of the commands section.
-    pub commands_state: ListState,
+    commands_state: ListState,
     /// The current plate RPM, as reported by the MCU.
-    pub current_rpm: u16,
+    current_rpm: u16,
     /// The current setpoint plate RPM, as reported by the MCU.
-    pub setpoint_rpm: u16,
+    setpoint_rpm: u16,
     /// The current duty cycle, as reported by the MCU.
-    pub duty_cycle: DutyCycle,
-    /// The last [`COMMAND_CAPACITY`] commands sent to the MCU since the app started.
+    duty_cycle: DutyCycle,
+    /// The last [`MCU_LOG_CAPACITY`] commands received from the MCU since the app started.
     ///
     /// When max capacity is reached, the oldest messages are overridden.
-    pub previous_commands: AllocRingBuffer<Command>,
-    /// The log file.
-    pub log_file: Writer<File>,
+    mcu_logs: AllocRingBuffer<String>,
+    /// The motor data file.
+    motor_data_file: Writer<File>,
 }
 
 impl App {
     /// Constructs a new instance of [`App`].
     ///
     /// # Errors
-    /// Returns an error if opening the stream fails or opening the log file fails.
-    pub fn new(stream: TcpStream) -> Result<Self> {
+    /// Returns an error if opening the log file fails.
+    pub async fn new(client: HostClient<WireError>) -> Result<Self> {
+        let events = EventHandler::new(client.clone()).await?;
         let date = Local::now().date_naive().to_string();
-        let log_file = Self::open_log_file(&date)?;
+        let motor_data_file = Self::open_log_file(&date)?;
 
         Ok(Self {
             running: true,
-            events: EventHandler::new(stream),
+            client,
+            events,
             current_rpm: 0,
             setpoint_rpm: 0,
             duty_cycle: DutyCycle::try_from(0)?,
             commands_state: ListState::default().with_selected(Some(0)),
-            previous_commands: AllocRingBuffer::new(COMMAND_CAPACITY),
-            log_file,
+            mcu_logs: AllocRingBuffer::new(MCU_LOG_CAPACITY),
+            motor_data_file,
         })
     }
 
-    /// Opens the log file.
+    /// Opens the motor data log file.
     fn open_log_file(date: &str) -> Result<Writer<File>> {
-        const LOG_DIR: &str = "sc_logs";
+        const LOG_DIR: &str = "motor_data";
 
         let mut dir = env::current_dir()?;
         dir.push(LOG_DIR);
@@ -115,27 +122,19 @@ impl App {
                     Event::Key(key_event)
                         if key_event.kind == crossterm::event::KeyEventKind::Press =>
                     {
-                        self.handle_key_events(key_event).await?;
+                        self.handle_key_event(key_event).await?;
                     }
                     // We're only concerned with key presses right now.
                     _ => {}
                 },
-                TuiEvent::Wireless(info) => match info {
-                    sc_messages::Info::State(state) => {
-                        self.current_rpm = state.current_rpm;
-                        self.setpoint_rpm = state.setpoint_rpm;
-                        self.duty_cycle = state.duty_cycle;
-                        self.log_file.serialize(state)?;
-                    }
-                    sc_messages::Info::DutyCycle(duty_cycle) => self.duty_cycle = duty_cycle,
-                },
+                TuiEvent::Usb(usb_event) => self.handle_usb_event(usb_event)?,
             }
         }
         Ok(())
     }
 
     /// Handles the key events and updates the state of [`App`].
-    async fn handle_key_events(&mut self, key_event: KeyEvent) -> Result<()> {
+    async fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
         match key_event.code {
             KeyCode::Esc | KeyCode::Char('q') => self.running = false,
             KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
@@ -159,10 +158,12 @@ impl App {
                         self.send_motion_profile(path).await?;
                     }
                 }
+                // Clear all setpoints.
+                1 => self.send_command(&Command::ClearSetpoints).await?,
                 // Start the motion profile.
-                1 => self.send_command(Command::Start).await?,
+                2 => self.send_command(&Command::Start).await?,
                 // Stop the motion profile.
-                2 => self.send_command(Command::Stop).await?,
+                3 => self.send_command(&Command::Stop).await?,
                 _ => {}
             },
             // Other handlers you could add here.
@@ -171,10 +172,18 @@ impl App {
         Ok(())
     }
 
-    /// A reusable method for sending a command and logging it.
-    async fn send_command(&mut self, command: Command) -> Result<()> {
-        self.events.send(command).await?;
-        let _ = self.previous_commands.enqueue(command);
+    fn handle_usb_event(&mut self, usb_event: UsbEvent) -> Result<()> {
+        match usb_event {
+            UsbEvent::Log(msg) => {
+                let _ = self.mcu_logs.enqueue(msg);
+            }
+            UsbEvent::State(state) => {
+                self.current_rpm = state.current_rpm;
+                self.setpoint_rpm = state.setpoint_rpm;
+                self.duty_cycle = state.duty_cycle;
+                self.motor_data_file.serialize(state)?;
+            }
+        }
         Ok(())
     }
 
@@ -184,8 +193,18 @@ impl App {
         for result in file.into_deserialize() {
             let setpoint: Setpoint = result?;
             let command = Command::Add(setpoint);
-            self.events.send(command).await?;
-            let _ = self.previous_commands.enqueue(command);
+            self.send_command(&command).await?;
+        }
+        Ok(())
+    }
+
+    /// A reusable method for sending commands to the MCU and logging any bad responses.
+    async fn send_command(&mut self, command: &Command) -> Result<()> {
+        match self.client.send_resp::<CommandEndpoint>(command).await? {
+            Ok(()) => {}
+            Err(err) => {
+                let _ = self.mcu_logs.enqueue(format!("Host TUI warning: {err:?}"));
+            }
         }
         Ok(())
     }

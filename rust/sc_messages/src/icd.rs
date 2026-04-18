@@ -6,6 +6,12 @@ use crate::{
     motion_profile::State,
 };
 
+/// The baud rate for UART communication.
+///
+/// This value was taken from [`esp_hal::uart::Config::default`]
+/// and is placed here so [`esp_hal::uart::Config::default`] doesn't change it under our feet.
+pub const BAUD_RATE: u32 = 115_200;
+
 endpoints! {
     list = ENDPOINTS_LIST;
     | EndpointTy      | RequestTy | ResponseTy    | Path                |
@@ -16,7 +22,7 @@ endpoints! {
 topics! {
    list = TOPICS_LIST;
    direction = TopicDirection::ToClient;
-   | TopicTy            | MessageTy | Path                          |
-   |--------------------|-----------|-------------------------------|
-   | MotionProfileState | State     | "topics/motion_profile/state" |
+   | TopicTy                 | MessageTy | Path                          |
+   |-------------------------|-----------|-------------------------------|
+   | MotionProfileStateTopic | State     | "topics/motion_profile/state" |
 }

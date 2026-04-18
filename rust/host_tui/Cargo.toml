@@ -5,10 +5,6 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-# For simplifying TCP socket send/recv
-bytes = { workspace = true }
-# For simplifying dev and release specific 'use' and 'const' statements
-cfg-if = { workspace = true }
 # To get the local date and time
 chrono = { workspace = true }
 # For pretty tui errors
@@ -26,6 +22,8 @@ sc_messages = { path = "../sc_messages", features = ["std"] }
 tokio = { workspace = true, features = ["full"] }
 csv = { workspace = true }
 rfd = { workspace = true }
+# For UART communication with the MCU
+postcard-rpc = { workspace = true, features = ["cobs-serial", "use-std"] }
 
 
 [features]

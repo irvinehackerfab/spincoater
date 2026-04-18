@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, BorderType, List, ListItem, ListState, Paragraph},
 };
 use ringbuffer::RingBuffer;
-use sc_messages::PERIOD;
+use sc_messages::pwm::PERIOD;
 
 use crate::app::App;
 
@@ -59,7 +59,12 @@ impl App {
             .border_type(BorderType::Rounded)
             .title_bottom(instructions);
 
-        let items = ["Load motion profile CSV file", "Start", "Stop"];
+        let items = [
+            "Load motion profile CSV file",
+            "Clear all setpoints",
+            "Start",
+            "Stop",
+        ];
         let list = List::new(items)
             .block(cmd_block)
             .highlight_symbol("-> ")
@@ -76,7 +81,7 @@ impl App {
 
         let paragraph = Paragraph::new(Text::from_iter([
             Line::raw(format!("Current RPM: {}", self.current_rpm)),
-            Line::raw(format!("Current setpoint RPM: {}", self.setpoint_rpm)),
+            Line::raw(format!("Setpoint RPM: {}", self.setpoint_rpm)),
             Line::raw(format!("Duty Cycle (0..{}): {}", PERIOD, self.duty_cycle)),
             Line::raw(format!(
                 "Duty Cycle (0.0..1.0): {}",
@@ -90,15 +95,15 @@ impl App {
 
     fn render_logs(&mut self, area: Rect, frame: &mut Frame) {
         let info_block = Block::bordered()
-            .title("Previous Commands")
+            .title("MCU Logs")
             .title_alignment(HorizontalAlignment::Center)
             .border_type(BorderType::Rounded);
 
         // Todo: Consider replacing with scrolled paragraph to gain wrapping support
         let items = self
-            .previous_commands
+            .mcu_logs
             .iter()
-            .map(|command| ListItem::new(Text::from(format!("{command:?}"))));
+            .map(|msg| ListItem::new(Text::from(format!("{msg:?}"))));
 
         let list = List::new(items).block(info_block);
         let mut state = ListState::default();

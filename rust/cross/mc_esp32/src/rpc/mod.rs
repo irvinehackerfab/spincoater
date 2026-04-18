@@ -1,6 +1,6 @@
 use embassy_sync::{
     blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
-    zerocopy_channel::Sender,
+    channel::Sender,
 };
 use esp_hal::{
     Async,
@@ -17,7 +17,7 @@ use sc_messages::{
 };
 use static_cell::ConstStaticCell;
 
-use crate::COMMAND_RESPONSE_SIGNAL;
+use crate::{COMMAND_CHANNEL_LENGTH, COMMAND_RESPONSE_SIGNAL};
 
 /// The size of the buffers used by postcard-rpc.
 pub const BUFFER_SIZE: usize = 1024;
@@ -46,13 +46,13 @@ pub type WireRx = EioWireRx<UartRx<'static, Async>>;
 /// Information shared to all handlers.
 pub struct Context {
     /// Used to pass the commands to the runner.
-    to_runner: Sender<'static, NoopRawMutex, Command>,
+    to_runner: Sender<'static, NoopRawMutex, Command, COMMAND_CHANNEL_LENGTH>,
 }
 
 impl Context {
     /// Initializes the context.
     #[must_use]
-    pub fn new(to_runner: Sender<'static, NoopRawMutex, Command>) -> Self {
+    pub fn new(to_runner: Sender<'static, NoopRawMutex, Command, COMMAND_CHANNEL_LENGTH>) -> Self {
         Self { to_runner }
     }
 }
@@ -65,9 +65,7 @@ async fn command_handler(
     _: VarHeader,
     command: Command,
 ) -> Result<(), CommandRefused> {
-    let buf = context.to_runner.send().await;
-    *buf = command;
-    context.to_runner.send_done();
+    context.to_runner.send(command).await;
     COMMAND_RESPONSE_SIGNAL.wait().await
 }
 

@@ -64,10 +64,6 @@ lto = 'fat'
 opt-level = 's'
 overflow-checks = false
 
-# https://docs.espressif.com/projects/rust/esp-radio/0.17.0/esp32/esp_radio/index.html#optimization-level
-[profile.dev.package.esp-radio]
-opt-level = 3
-
 [lib]
 test = false
 bench = false

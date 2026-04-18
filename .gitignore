@@ -25,4 +25,6 @@ target/
 # Ignore .DS_Store file in mac
 **/.DS_Store
 
-sc_logs
+sc_logs/
+
+motor_data/

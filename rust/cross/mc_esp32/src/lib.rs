@@ -10,18 +10,19 @@
 
 use embassy_sync::{
     blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
+    channel::Channel,
     signal::Signal,
-    zerocopy_channel::Channel,
 };
 use embassy_time::Duration;
 use esp_hal::system::Stack;
 use sc_messages::commands::{Command, CommandRefused};
-use static_cell::{ConstStaticCell, StaticCell};
+use static_cell::ConstStaticCell;
+
+use crate::gpio::pwm::SETPOINT_LIST_LENGTH;
 
 pub mod gpio;
 pub mod motion_profile;
 pub mod rpc;
-pub mod uart;
 
 /// The static variable that holds the second core stack.
 pub static SECOND_CORE_STACK: ConstStaticCell<Stack<2048>> = ConstStaticCell::new(Stack::new());
@@ -31,18 +32,17 @@ pub static SECOND_CORE_STACK: ConstStaticCell<Stack<2048>> = ConstStaticCell::ne
 /// The fastest it can run is about 3 milliseconds.
 pub const LOOP_PERIOD: Duration = Duration::from_millis(20);
 
-/// The buffer used by [`COMMAND_CHANNEL`].
-///
-/// The buffer's starting values are irrelevant.
-pub static COMMAND_CHANNEL_BUFFER: ConstStaticCell<[Command; 4]> =
-    ConstStaticCell::new([Command::Stop, Command::Stop, Command::Stop, Command::Stop]);
+/// The length of the buffer used by [`COMMAND_CHANNEL`].
+pub const COMMAND_CHANNEL_LENGTH: usize = SETPOINT_LIST_LENGTH;
 
 /// Used for passing commands from the server to the command handler.
 ///
 /// This uses [`NoopRawMutex`] because data is only shared in one executor.
 ///
 /// This uses a zerocopy channel because [`Command`]s are expensive to copy.
-pub static COMMAND_CHANNEL: StaticCell<Channel<NoopRawMutex, Command>> = StaticCell::new();
+pub static COMMAND_CHANNEL: ConstStaticCell<
+    Channel<NoopRawMutex, Command, COMMAND_CHANNEL_LENGTH>,
+> = ConstStaticCell::new(Channel::new());
 
 /// Used for passing command responses from the command handler to the server.
 ///
