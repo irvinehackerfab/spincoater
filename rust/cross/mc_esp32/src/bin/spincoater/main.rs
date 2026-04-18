@@ -25,7 +25,7 @@ use esp_println::println;
 use heapless::Vec;
 use ibm437::IBM437_9X14_REGULAR;
 use mc_esp32::{
-    COMMAND_CHANNEL, SECOND_CORE_STACK,
+    REQUEST_CHANNEL, SECOND_CORE_STACK,
     gpio::{
         display::{
             DISPLAY, ORIENTATION, SPI_BUFFER,
@@ -71,6 +71,7 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
     println!("Embassy initialized on the first core!");
+    println!("Taking control of the UART port. Please close RTT and open the host PC program.");
 
     // Setup encoder interrupt to run on the second core
     let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
@@ -165,8 +166,11 @@ async fn main(spawner: Spawner) -> ! {
     // Disable touch chip select for now
     let _ = Output::new(peripherals.GPIO33, Level::Low, OutputConfig::default());
 
+    // Initialize vacuum pump pin
+    let vacuum_pump_pin = Output::new(peripherals.GPIO17, Level::Low, OutputConfig::default());
+
     // Setup communication between tasks
-    let command_channel = COMMAND_CHANNEL.take();
+    let request_channel = REQUEST_CHANNEL.take();
     let terminal_channel = TERMINAL_CHANNEL.take();
     let to_terminal = terminal_channel.sender();
 
@@ -176,7 +180,7 @@ async fn main(spawner: Spawner) -> ! {
     spawner.must_spawn(update_terminal(terminal, terminal_channel.receiver()));
 
     // Setup context
-    let context = Context::new(command_channel.sender());
+    let context = Context::new(request_channel.sender(), vacuum_pump_pin);
 
     // Setup UART and postcard-rpc after we're done with the spawner
     let config = uart::Config::default().with_baudrate(BAUD_RATE);
@@ -203,7 +207,7 @@ async fn main(spawner: Spawner) -> ! {
     let runner = Runner::new(
         setpoints,
         pwm_pin,
-        command_channel.receiver(),
+        request_channel.receiver(),
         server.sender(),
     );
     spawner.must_spawn(run(runner));

@@ -64,6 +64,8 @@ impl App {
             "Clear all setpoints",
             "Start",
             "Stop",
+            "Enable vacuum pump",
+            "Disable vacuum pump",
         ];
         let list = List::new(items)
             .block(cmd_block)

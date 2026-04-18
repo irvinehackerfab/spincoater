@@ -2,8 +2,8 @@
 use postcard_rpc::{TopicDirection, endpoints, topics};
 
 use crate::{
-    commands::{Command, CommandResult},
-    motion_profile::State,
+    motion_profile::{Request as MotionProfileRequest, RequestResult, State},
+    vacuum_pump::Request as VacuumPumpRequest,
 };
 
 /// The baud rate for UART communication.
@@ -14,9 +14,10 @@ pub const BAUD_RATE: u32 = 115_200;
 
 endpoints! {
     list = ENDPOINTS_LIST;
-    | EndpointTy      | RequestTy | ResponseTy    | Path                |
-    |-----------------|-----------|---------------|---------------------|
-    | CommandEndpoint | Command   | CommandResult | "endpoints/command" |
+    | EndpointTy      | RequestTy     | ResponseTy    | Path                |
+    |-----------------|---------------|---------------|---------------------|
+    | MotionRequestEndpoint | MotionProfileRequest | RequestResult | "endpoints/motion_profile/Request" |
+    | VacuumPumpRequestEndpoint | VacuumPumpRequest | () | "endpoints/vacuum_pump/Request" |
 }
 
 topics! {

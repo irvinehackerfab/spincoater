@@ -20,10 +20,9 @@ use ratatui::{
     widgets::ListState,
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
-use sc_messages::commands::Command;
-use sc_messages::icd::CommandEndpoint;
-use sc_messages::motion_profile::Setpoint;
+use sc_messages::motion_profile::{self, Setpoint};
 use sc_messages::pwm::DutyCycle;
+use sc_messages::vacuum_pump;
 
 /// The maximum number of MCU logs kept in the TUI at a time.
 pub const MCU_LOG_CAPACITY: usize = 128;
@@ -33,8 +32,6 @@ pub const MCU_LOG_CAPACITY: usize = 128;
 pub struct App {
     /// This boolean provides an easy way for methods to end the program.
     running: bool,
-    /// The client allows for sending requests to the MCU.
-    client: HostClient<WireError>,
     /// Event handler.
     events: EventHandler,
     /// The state of the commands section.
@@ -59,13 +56,12 @@ impl App {
     /// # Errors
     /// Returns an error if opening the log file fails.
     pub async fn new(client: HostClient<WireError>) -> Result<Self> {
-        let events = EventHandler::new(client.clone()).await?;
+        let events = EventHandler::new(client).await?;
         let date = Local::now().date_naive().to_string();
         let motor_data_file = Self::open_log_file(&date)?;
 
         Ok(Self {
             running: true,
-            client,
             events,
             current_rpm: 0,
             setpoint_rpm: 0,
@@ -122,7 +118,7 @@ impl App {
                     Event::Key(key_event)
                         if key_event.kind == crossterm::event::KeyEventKind::Press =>
                     {
-                        self.handle_key_event(key_event).await?;
+                        self.handle_key_event(key_event)?;
                     }
                     // We're only concerned with key presses right now.
                     _ => {}
@@ -134,7 +130,7 @@ impl App {
     }
 
     /// Handles the key events and updates the state of [`App`].
-    async fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
+    fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
         match key_event.code {
             KeyCode::Esc | KeyCode::Char('q') => self.running = false,
             KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
@@ -155,15 +151,29 @@ impl App {
                         .set_title("Please choose a motion profile CSV file.")
                         .pick_file();
                     if let Some(path) = path {
-                        self.send_motion_profile(path).await?;
+                        self.send_motion_profile(path)?;
                     }
                 }
                 // Clear all setpoints.
-                1 => self.send_command(&Command::ClearSetpoints).await?,
+                1 => self
+                    .events
+                    .send_motion_profile_request(motion_profile::Request::ClearSetpoints),
                 // Start the motion profile.
-                2 => self.send_command(&Command::Start).await?,
+                2 => self
+                    .events
+                    .send_motion_profile_request(motion_profile::Request::Start),
                 // Stop the motion profile.
-                3 => self.send_command(&Command::Stop).await?,
+                3 => self
+                    .events
+                    .send_motion_profile_request(motion_profile::Request::Stop),
+                // Enable the vacuum pump.
+                4 => self
+                    .events
+                    .send_vacuum_pump_request(vacuum_pump::Request::Enable),
+                // Disable the vacuum pump.
+                5 => self
+                    .events
+                    .send_vacuum_pump_request(vacuum_pump::Request::Disable),
                 _ => {}
             },
             // Other handlers you could add here.
@@ -175,7 +185,7 @@ impl App {
     fn handle_usb_event(&mut self, usb_event: UsbEvent) -> Result<()> {
         match usb_event {
             UsbEvent::Log(msg) => {
-                let _ = self.mcu_logs.enqueue(msg);
+                let _ = self.mcu_logs.enqueue(format!("[Log]: {msg}"));
             }
             UsbEvent::State(state) => {
                 self.current_rpm = state.current_rpm;
@@ -183,28 +193,23 @@ impl App {
                 self.duty_cycle = state.duty_cycle;
                 self.motor_data_file.serialize(state)?;
             }
+            UsbEvent::MotionProfileRequestResponse(response) => {
+                let _ = self.mcu_logs.enqueue(format!("{response}"));
+            }
+            UsbEvent::VacuumPumpRequestResponse => {
+                let _ = self.mcu_logs.enqueue("[Vacuum Pump]: Ok".to_string());
+            }
         }
         Ok(())
     }
 
     /// Loads a motion profile from a CSV [`PathBuf`] and sends it.
-    async fn send_motion_profile(&mut self, path: PathBuf) -> Result<()> {
+    fn send_motion_profile(&mut self, path: PathBuf) -> Result<()> {
         let file = csv::Reader::from_path(path)?;
         for result in file.into_deserialize() {
             let setpoint: Setpoint = result?;
-            let command = Command::Add(setpoint);
-            self.send_command(&command).await?;
-        }
-        Ok(())
-    }
-
-    /// A reusable method for sending commands to the MCU and logging any bad responses.
-    async fn send_command(&mut self, command: &Command) -> Result<()> {
-        match self.client.send_resp::<CommandEndpoint>(command).await? {
-            Ok(()) => {}
-            Err(err) => {
-                let _ = self.mcu_logs.enqueue(format!("Host TUI warning: {err:?}"));
-            }
+            let command = motion_profile::Request::Add(setpoint);
+            self.events.send_motion_profile_request(command);
         }
         Ok(())
     }

@@ -4,6 +4,7 @@ use embassy_sync::{
 };
 use esp_hal::{
     Async,
+    gpio::Output,
     uart::{UartRx, UartTx},
 };
 use postcard_rpc::{
@@ -12,12 +13,13 @@ use postcard_rpc::{
     server::impls::embedded_io_async_v0_6::{EioWireRx, EioWireSpawn, EioWireTx, WireStorage},
 };
 use sc_messages::{
-    commands::{Command, CommandRefused},
-    icd::{CommandEndpoint, ENDPOINTS_LIST, TOPICS_LIST},
+    icd::{ENDPOINTS_LIST, MotionRequestEndpoint, TOPICS_LIST, VacuumPumpRequestEndpoint},
+    motion_profile::{self, RequestRefused},
+    vacuum_pump,
 };
 use static_cell::ConstStaticCell;
 
-use crate::{COMMAND_CHANNEL_LENGTH, COMMAND_RESPONSE_SIGNAL};
+use crate::{REQUEST_CHANNEL_LENGTH, REQUEST_RESPONSE_SIGNAL};
 
 /// The size of the buffers used by postcard-rpc.
 pub const BUFFER_SIZE: usize = 1024;
@@ -46,27 +48,47 @@ pub type WireRx = EioWireRx<UartRx<'static, Async>>;
 /// Information shared to all handlers.
 pub struct Context {
     /// Used to pass the commands to the runner.
-    to_runner: Sender<'static, NoopRawMutex, Command, COMMAND_CHANNEL_LENGTH>,
+    to_runner: Sender<'static, NoopRawMutex, motion_profile::Request, REQUEST_CHANNEL_LENGTH>,
+    /// Used to control the vacuum pump.
+    vacuum_pump_pin: Output<'static>,
 }
 
 impl Context {
     /// Initializes the context.
     #[must_use]
-    pub fn new(to_runner: Sender<'static, NoopRawMutex, Command, COMMAND_CHANNEL_LENGTH>) -> Self {
-        Self { to_runner }
+    pub fn new(
+        to_runner: Sender<'static, NoopRawMutex, motion_profile::Request, REQUEST_CHANNEL_LENGTH>,
+        vacuum_pump_pin: Output<'static>,
+    ) -> Self {
+        Self {
+            to_runner,
+            vacuum_pump_pin,
+        }
     }
 }
 
-/// Handles receiving commands from the host PC,
+/// Handles receiving requests from the host PC,
 /// forwarding them to the motion profile runner,
 /// and returning the command reponse.
-async fn command_handler(
+async fn handle_motion_profile_request(
     context: &mut Context,
     _: VarHeader,
-    command: Command,
-) -> Result<(), CommandRefused> {
-    context.to_runner.send(command).await;
-    COMMAND_RESPONSE_SIGNAL.wait().await
+    request: motion_profile::Request,
+) -> Result<(), RequestRefused> {
+    context.to_runner.send(request).await;
+    REQUEST_RESPONSE_SIGNAL.wait().await
+}
+
+/// Handles vacuum pump requests immediately.
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "define_dispatch doesn't let us pass by reference."
+)]
+fn handle_vacuum_pump_request(context: &mut Context, _: VarHeader, request: vacuum_pump::Request) {
+    match request {
+        vacuum_pump::Request::Enable => context.vacuum_pump_pin.set_high(),
+        vacuum_pump::Request::Disable => context.vacuum_pump_pin.set_low(),
+    }
 }
 
 define_dispatch! {
@@ -81,7 +103,8 @@ define_dispatch! {
 
         | EndpointTy      | kind  | handler         |
         |-----------------|-------|-----------------|
-        | CommandEndpoint | async | command_handler |
+        | MotionRequestEndpoint | async | handle_motion_profile_request |
+        | VacuumPumpRequestEndpoint | blocking | handle_vacuum_pump_request |
     };
 
     topics_in: {

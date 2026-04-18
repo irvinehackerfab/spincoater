@@ -850,6 +850,7 @@ dependencies = [
  "ringbuffer",
  "sc_messages",
  "tokio",
+ "tokio-serial",
 ]
 
 [[package]]

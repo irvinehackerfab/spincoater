@@ -39,3 +39,38 @@ pub struct State {
     #[serde(rename = "time (micros)")]
     pub time: u64,
 }
+
+/// Motion profile messages from the host PC to the microcontroller.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Schema)]
+pub enum Request {
+    /// Add a setpoint to the motion profile.
+    ///
+    /// The MCU will only accept this while disabled.
+    Add(Setpoint),
+    /// Clear all setpoints.
+    ///
+    /// The MCU will only accept this while disabled.
+    ClearSetpoints,
+    /// Execute the motion profile.
+    ///
+    /// The MCU will only accept this while disabled.
+    Start,
+    /// Stop the motion profile and discard it.
+    ///
+    /// The MCU will only accept this while enabled.
+    Stop,
+}
+
+/// The possible reasons why the MCU might refuse a command.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Schema)]
+pub enum RequestRefused {
+    /// The host PC sent too many setpoints.
+    TooManySetpoints,
+    /// A motion profile is running.
+    Running,
+    /// No motion profile is running.
+    NotRunning,
+}
+
+/// See [this issue](https://github.com/jamesmunns/postcard-rpc/issues/56) for why we need a type alias.
+pub type RequestResult = Result<(), RequestRefused>;

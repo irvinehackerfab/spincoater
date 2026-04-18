@@ -1,8 +1,8 @@
 //! This module contains the functionality for running motion profiles sent by the host PC.
-use core::sync::atomic::Ordering;
+use core::{num::TryFromIntError, sync::atomic::Ordering};
 
 use crate::{
-    COMMAND_CHANNEL_LENGTH, COMMAND_RESPONSE_SIGNAL, LOOP_PERIOD,
+    LOOP_PERIOD, REQUEST_CHANNEL_LENGTH, REQUEST_RESPONSE_SIGNAL,
     gpio::{
         encoder::MOTOR_REVOLUTIONS_DOUBLED,
         pwm::{SETPOINT_LIST_LENGTH, THROTTLE_CURVE, THROTTLE_POINTS},
@@ -12,13 +12,11 @@ use crate::{
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver};
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
-use esp_println::println;
 use heapless::Vec;
 use postcard_rpc::server::Sender;
 use sc_messages::{
-    commands::{Command, CommandRefused},
     icd::MotionProfileStateTopic,
-    motion_profile::{self, Setpoint},
+    motion_profile::{self, Request, RequestRefused, Setpoint},
     pwm::{DutyCycle, STOP_DUTY},
 };
 
@@ -26,7 +24,7 @@ use sc_messages::{
 pub struct Runner {
     setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
     pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
-    from_server: Receiver<'static, NoopRawMutex, Command, COMMAND_CHANNEL_LENGTH>,
+    from_server: Receiver<'static, NoopRawMutex, Request, REQUEST_CHANNEL_LENGTH>,
     to_server: Sender<WireTx>,
 }
 
@@ -34,7 +32,7 @@ impl Runner {
     pub fn new(
         setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
-        from_server: Receiver<'static, NoopRawMutex, Command, COMMAND_CHANNEL_LENGTH>,
+        from_server: Receiver<'static, NoopRawMutex, Request, REQUEST_CHANNEL_LENGTH>,
         to_server: Sender<WireTx>,
     ) -> Self {
         Self {
@@ -65,20 +63,20 @@ impl Runner {
     async fn setup(&mut self) {
         loop {
             match self.from_server.receive().await {
-                Command::Add(setpoint) => match self.setpoints.push(setpoint.clone()) {
-                    Ok(()) => COMMAND_RESPONSE_SIGNAL.signal(Ok(())),
-                    Err(_) => COMMAND_RESPONSE_SIGNAL.signal(Err(CommandRefused::TooManySetpoints)),
+                Request::Add(setpoint) => match self.setpoints.push(setpoint.clone()) {
+                    Ok(()) => REQUEST_RESPONSE_SIGNAL.signal(Ok(())),
+                    Err(_) => REQUEST_RESPONSE_SIGNAL.signal(Err(RequestRefused::TooManySetpoints)),
                 },
-                Command::ClearSetpoints => {
+                Request::ClearSetpoints => {
                     self.clear();
-                    COMMAND_RESPONSE_SIGNAL.signal(Ok(()));
+                    REQUEST_RESPONSE_SIGNAL.signal(Ok(()));
                 }
-                Command::Start => {
-                    COMMAND_RESPONSE_SIGNAL.signal(Ok(()));
+                Request::Start => {
+                    REQUEST_RESPONSE_SIGNAL.signal(Ok(()));
                     break;
                 }
-                Command::Stop => {
-                    COMMAND_RESPONSE_SIGNAL.signal(Err(CommandRefused::NotRunning));
+                Request::Stop => {
+                    REQUEST_RESPONSE_SIGNAL.signal(Err(RequestRefused::NotRunning));
                 }
             }
         }
@@ -97,17 +95,19 @@ impl Runner {
     async fn execute_motion_profile(&mut self) {
         let starting_time = Instant::now();
         let mut previous_iteration = starting_time;
+        // Since we reset the time, we must reset the motor revolutions counter as well.
+        MOTOR_REVOLUTIONS_DOUBLED.store(0, Ordering::Relaxed);
         let mut setpoint_idx = 0;
         'outer: loop {
             // This is prone to accumulating oversleep, but that's not important here.
             Timer::after(LOOP_PERIOD).await;
             if let Ok(command) = self.from_server.try_receive() {
                 match command {
-                    Command::Add(_) | Command::ClearSetpoints | Command::Start => {
-                        COMMAND_RESPONSE_SIGNAL.signal(Err(CommandRefused::Running));
+                    Request::Add(_) | Request::ClearSetpoints | Request::Start => {
+                        REQUEST_RESPONSE_SIGNAL.signal(Err(RequestRefused::Running));
                     }
-                    Command::Stop => {
-                        COMMAND_RESPONSE_SIGNAL.signal(Ok(()));
+                    Request::Stop => {
+                        REQUEST_RESPONSE_SIGNAL.signal(Ok(()));
                         break;
                     }
                 }
@@ -139,19 +139,49 @@ impl Runner {
             let delta_time = elapsed_since_start_micros - previous_setpoint.time;
             let numerator = delta_rpm * delta_time;
             let denominator = current_setpoint.time - previous_setpoint.time;
-            let setpoint_rpm = u16::try_from(previous_setpoint_rpm + numerator / denominator)
-                .expect("RPM should not exceed u16::MAX.");
+            let setpoint_rpm = match u16::try_from(previous_setpoint_rpm + numerator / denominator)
+            {
+                Ok(rpm) => rpm,
+                Err(err) => {
+                    let _ = self
+                        .to_server
+                        .log_fmt(format_args!(
+                            "Failed to calculate setpoint RPM: {err}. Stopping!"
+                        ))
+                        .await;
+                    break;
+                }
+            };
             // Then we need to linearly interpolate to find the required duty cycle.
             let setpoint_duty_cycle = linear_interpolation(setpoint_rpm);
             self.pwm_pin.set_timestamp(setpoint_duty_cycle);
 
             // todo!("Add feedback")
             let elapsed_since_last_iteration = previous_iteration.elapsed();
-            let current_rpm = Runner::calculate_rpm(elapsed_since_last_iteration);
+            let current_rpm = match Runner::calculate_rpm(elapsed_since_last_iteration) {
+                Ok(rpm) => rpm,
+                Err(err) => {
+                    let _ = self
+                        .to_server
+                        .log_fmt(format_args!("Failed to calculate rpm: {err}. Stopping!"))
+                        .await;
+                    break;
+                }
+            };
 
             // Logging
-            let duty_cycle = DutyCycle::try_from(setpoint_duty_cycle)
-                .expect("Duty cycle should be less than PERIOD.");
+            let duty_cycle = match DutyCycle::try_from(setpoint_duty_cycle) {
+                Ok(duty_cycle) => duty_cycle,
+                Err(err) => {
+                    let _ = self
+                        .to_server
+                        .log_fmt(format_args!(
+                            "Failed to create duty cycle: {err}. Stopping!"
+                        ))
+                        .await;
+                    break;
+                }
+            };
             let state = motion_profile::State {
                 setpoint_rpm,
                 current_rpm,
@@ -171,24 +201,27 @@ impl Runner {
             previous_iteration += elapsed_since_last_iteration;
         }
         self.pwm_pin.set_timestamp(*STOP_DUTY);
-        println!("Motion profile done.");
+        let _ = self.to_server.log_str("Motion profile done.").await;
     }
 
     /// Calculates the current rpm.
-    fn calculate_rpm(elapsed_since_last_iteration: Duration) -> u16 {
+    ///
+    /// # Errors
+    /// Returns an error if time can't fit in a [`u32`],
+    /// or RPM can't fit in a [`u16`].
+    fn calculate_rpm(elapsed_since_last_iteration: Duration) -> Result<u16, TryFromIntError> {
         // Relaxed ordering because the order of instructions does not matter for the swap.
         let motor_revolutions_doubled = MOTOR_REVOLUTIONS_DOUBLED.swap(0, Ordering::Relaxed);
-        let time_ms = u32::try_from(elapsed_since_last_iteration.as_millis())
-            .expect("20 milliseconds should fit in a u32.");
+        let time_ms = u32::try_from(elapsed_since_last_iteration.as_millis())?;
         // Avoid dividing by zero
         if time_ms == 0 {
-            return 0;
+            return Ok(0);
         }
         // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(`time` ms) * (6000 ms / 1 min)
         // = (2*motor revolutions) * 30,000 / (37 * `time`)
         // Final units: plate revolutions per minute
         let rpm = motor_revolutions_doubled * 30_000 / (37 * (time_ms));
-        u16::try_from(rpm).expect("The rpm should never exceed 65535.")
+        u16::try_from(rpm)
     }
 }
 

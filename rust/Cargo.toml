@@ -28,6 +28,8 @@ rfd = "0.17.2"
 postcard-rpc = "0.12.1"
 # For postcard-rpc
 postcard-schema = "0.2.5"
+# For querying the available ports
+tokio-serial = "5.4.5"
 
 
 [workspace.lints.rust]
