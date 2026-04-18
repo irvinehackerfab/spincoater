@@ -58,7 +58,6 @@ esp_bootloader_esp_idf::esp_app_desc!();
 )]
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
-    // Todo: Replace with defmt
     esp_println::logger::init_logger_from_env();
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
@@ -177,8 +176,6 @@ async fn main(spawner: Spawner) -> ! {
     // Initialize the setpoint list with a starting setpoint of (0, 0).
     let setpoints = SETPOINTS.init_with(|| Vec::from([Setpoint { rpm: 0, time: 0 }]));
 
-    spawner.must_spawn(update_terminal(terminal, terminal_channel.receiver()));
-
     // Setup context
     let context = Context::new(request_channel.sender(), vacuum_pump_pin);
 
@@ -203,6 +200,12 @@ async fn main(spawner: Spawner) -> ! {
         dispatcher,
         vkk,
     );
+
+    spawner.must_spawn(update_terminal(
+        terminal,
+        server.sender(),
+        terminal_channel.receiver(),
+    ));
 
     let runner = Runner::new(
         setpoints,

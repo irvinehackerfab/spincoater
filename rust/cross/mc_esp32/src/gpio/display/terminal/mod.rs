@@ -4,7 +4,7 @@ pub mod ui;
 
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver};
 use mousefood::{EmbeddedBackend, prelude::Rgb565};
-use postcard_rpc::server::ServerError;
+use postcard_rpc::server::{Sender, ServerError};
 use ratatui::Terminal;
 use static_cell::StaticCell;
 
@@ -32,14 +32,16 @@ pub struct TerminalState {
 #[embassy_executor::task]
 pub async fn update_terminal(
     terminal: &'static mut Terminal<EmbeddedBackend<'static, DisplayType, Rgb565>>,
+    to_server: Sender<WireTx>,
     from_all: Receiver<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
 ) -> ! {
     let mut state = TerminalState::default();
     loop {
-        // Todo: Use rpc to send error
-        terminal
-            .draw(|frame| state.draw(frame))
-            .expect("Failed to draw to terminal");
+        if let Err(err) = terminal.draw(|frame| state.draw(frame)) {
+            let _ = to_server
+                .log_fmt(format_args!("Display error: {err}"))
+                .await;
+        }
         match from_all.receive().await {
             TuiEvent::ServerError(server_error) => state.server_error = Some(server_error),
         }
