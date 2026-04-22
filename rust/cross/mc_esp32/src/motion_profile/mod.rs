@@ -98,9 +98,10 @@ impl Runner {
         // Since we reset the time, we must reset the motor revolutions counter as well.
         MOTOR_REVOLUTIONS_DOUBLED.store(0, Ordering::Relaxed);
         let mut setpoint_idx = 0;
-        'outer: loop {
+        loop {
             // This is prone to accumulating oversleep, but that's not important here.
             Timer::after(LOOP_PERIOD).await;
+            // Check for stop requests.
             if let Ok(command) = self.from_server.try_receive() {
                 match command {
                     Request::Add(_) | Request::ClearSetpoints | Request::Start => {
@@ -108,64 +109,36 @@ impl Runner {
                     }
                     Request::Stop => {
                         REQUEST_RESPONSE_SIGNAL.signal(Ok(()));
-                        break;
+                        self.pwm_pin.set_timestamp(*STOP_DUTY);
+                        let _ = self
+                            .to_server
+                            .log_str("Motion profile stopped early.")
+                            .await;
+                        return;
                     }
                 }
             }
-            let elapsed_since_start = starting_time.elapsed();
-            let elapsed_since_start_micros = elapsed_since_start.as_micros();
-            let (previous_setpoint, current_setpoint) = loop {
-                match (
-                    self.setpoints.get(setpoint_idx),
-                    self.setpoints.get(setpoint_idx + 1),
-                ) {
-                    (Some(previous_setpoint), Some(current_setpoint)) => {
-                        // Only act on setpoints that haven't passed.
-                        if elapsed_since_start_micros <= current_setpoint.time {
-                            break (previous_setpoint, current_setpoint);
-                        }
-                        setpoint_idx += 1;
-                    }
-                    // The motion profile is done.
-                    (_, None) | (None, _) => break 'outer,
-                }
+            let elapsed_since_start_micros = starting_time.elapsed().as_micros();
+            let Some((setpoint_rpm, setpoint_duty_cycle)) = self
+                .feedforward(&mut setpoint_idx, elapsed_since_start_micros)
+                .await
+            else {
+                return;
             };
-            // First, we need the setpoint rpm value corresponding to the current time.
-            // We need to increase the size of some numbers to prevent overflow.
-            // [Wikipedia explanation](https://en.wikipedia.org/wiki/Linear_interpolation#Linear_interpolation_as_an_approximation)
-            let previous_setpoint_rpm = u64::from(previous_setpoint.rpm);
-            let current_setpoint_rpm = u64::from(current_setpoint.rpm);
-            let delta_rpm = current_setpoint_rpm - previous_setpoint_rpm;
-            let delta_time = elapsed_since_start_micros - previous_setpoint.time;
-            let numerator = delta_rpm * delta_time;
-            let denominator = current_setpoint.time - previous_setpoint.time;
-            let setpoint_rpm = match u16::try_from(previous_setpoint_rpm + numerator / denominator)
-            {
-                Ok(rpm) => rpm,
-                Err(err) => {
-                    let _ = self
-                        .to_server
-                        .log_fmt(format_args!(
-                            "Failed to calculate setpoint RPM: {err}. Stopping!"
-                        ))
-                        .await;
-                    break;
-                }
-            };
-            // Then we need to linearly interpolate to find the required duty cycle.
-            let setpoint_duty_cycle = linear_interpolation(setpoint_rpm);
             self.pwm_pin.set_timestamp(setpoint_duty_cycle);
 
             // todo!("Add feedback")
+            // This is where we would add feedback.
             let elapsed_since_last_iteration = previous_iteration.elapsed();
-            let current_rpm = match Runner::calculate_rpm(elapsed_since_last_iteration) {
+            let current_rpm = match Self::calculate_rpm(elapsed_since_last_iteration) {
                 Ok(rpm) => rpm,
                 Err(err) => {
+                    self.pwm_pin.set_timestamp(*STOP_DUTY);
                     let _ = self
                         .to_server
                         .log_fmt(format_args!("Failed to calculate rpm: {err}. Stopping!"))
                         .await;
-                    break;
+                    return;
                 }
             };
 
@@ -173,13 +146,14 @@ impl Runner {
             let duty_cycle = match DutyCycle::try_from(setpoint_duty_cycle) {
                 Ok(duty_cycle) => duty_cycle,
                 Err(err) => {
+                    self.pwm_pin.set_timestamp(*STOP_DUTY);
                     let _ = self
                         .to_server
                         .log_fmt(format_args!(
                             "Failed to create duty cycle: {err}. Stopping!"
                         ))
                         .await;
-                    break;
+                    return;
                 }
             };
             let state = motion_profile::State {
@@ -195,13 +169,99 @@ impl Runner {
                 .is_err()
             {
                 // The host PC disconnected, so we need to stop.
-                break;
+                self.pwm_pin.set_timestamp(*STOP_DUTY);
+                return;
             }
             // Increment time
             previous_iteration += elapsed_since_last_iteration;
         }
-        self.pwm_pin.set_timestamp(*STOP_DUTY);
-        let _ = self.to_server.log_str("Motion profile done.").await;
+    }
+
+    /// Calculates the setpoint rpm and duty cycle for this timestep.
+    ///
+    /// If there are no more setpoints to use, the method will disable PWM, log that the motion profile finished, and return [`None`].
+    ///
+    /// If the rpm doesn't fit in a [`u16`], the method will disable PWM, log the error, and then return [`None`].
+    async fn feedforward(
+        &mut self,
+        setpoint_idx: &mut usize,
+        elapsed_since_start_micros: u64,
+    ) -> Option<(u16, u16)> {
+        // Get next pair of setpoints.
+        let Some((previous_setpoint, current_setpoint)) =
+            self.next_setpoint_pair(setpoint_idx, elapsed_since_start_micros)
+        else {
+            self.pwm_pin.set_timestamp(*STOP_DUTY);
+            let _ = self.to_server.log_str("Motion profile done.").await;
+            return None;
+        };
+        // Get setpoint rpm.
+        let setpoint_rpm = match Self::next_setpoint_rpm(
+            previous_setpoint,
+            current_setpoint,
+            elapsed_since_start_micros,
+        ) {
+            Ok(rpm) => rpm,
+            Err(err) => {
+                self.pwm_pin.set_timestamp(*STOP_DUTY);
+                let _ = self
+                    .to_server
+                    .log_fmt(format_args!(
+                        "Failed to calculate setpoint RPM: {err}. Stopping!"
+                    ))
+                    .await;
+                return None;
+            }
+        };
+        // Then we need to linearly interpolate to find the required duty cycle.
+        Some((setpoint_rpm, linear_interpolation(setpoint_rpm)))
+    }
+
+    /// Gets the next pair of setpoints.
+    ///
+    /// Returns [`None`] if there are no more pairs of setpoints to act on.
+    fn next_setpoint_pair(
+        &self,
+        setpoint_idx: &mut usize,
+        elapsed_since_start_micros: u64,
+    ) -> Option<(&Setpoint, &Setpoint)> {
+        loop {
+            match (
+                self.setpoints.get(*setpoint_idx),
+                self.setpoints.get(*setpoint_idx + 1),
+            ) {
+                (Some(previous_setpoint), Some(current_setpoint)) => {
+                    // Only act on setpoints that haven't passed.
+                    if elapsed_since_start_micros <= current_setpoint.time {
+                        return Some((previous_setpoint, current_setpoint));
+                    }
+                    *setpoint_idx += 1;
+                }
+                // The motion profile is done.
+                (_, None) | (None, _) => return None,
+            }
+        }
+    }
+
+    /// Gets the next setpoint rpm.
+    ///
+    /// See [Wikipedia's explanation for linear approximation](https://en.wikipedia.org/wiki/Linear_interpolation#Linear_interpolation_as_an_approximation).
+    ///
+    /// # Errors
+    /// Returns an error if the rpm cannot fit in a [`u16`].
+    fn next_setpoint_rpm(
+        previous_setpoint: &Setpoint,
+        current_setpoint: &Setpoint,
+        elapsed_since_start_micros: u64,
+    ) -> Result<u16, TryFromIntError> {
+        // We need to increase the size of some numbers to prevent overflow.
+        let previous_setpoint_rpm = u64::from(previous_setpoint.rpm);
+        let current_setpoint_rpm = u64::from(current_setpoint.rpm);
+        let delta_rpm = current_setpoint_rpm - previous_setpoint_rpm;
+        let delta_time = elapsed_since_start_micros - previous_setpoint.time;
+        let numerator = delta_rpm * delta_time;
+        let denominator = current_setpoint.time - previous_setpoint.time;
+        u16::try_from(previous_setpoint_rpm + numerator / denominator)
     }
 
     /// Calculates the current rpm.
