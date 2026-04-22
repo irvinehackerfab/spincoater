@@ -9,7 +9,7 @@ version = "0.1.0"
 license = "MIT"
 
 [dependencies]
-esp-hal = { version = "~1.0", features = ["esp32", "log-04", "unstable"] }
+esp-hal = { version = "1.0", features = ["esp32", "log-04", "unstable"] }
 esp-rtos = { version = "0.2.0", features = [
   "embassy",
   "esp-alloc",
