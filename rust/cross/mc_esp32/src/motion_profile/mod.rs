@@ -10,7 +10,7 @@ use crate::{
     rpc::{SEQUENCE_NUMBER, WireTx},
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver};
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{Instant, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::Vec;
 use postcard_rpc::server::Sender;
@@ -94,13 +94,14 @@ impl Runner {
     /// logging info every iteration and checking for a stop command.
     async fn execute_motion_profile(&mut self) {
         let starting_time = Instant::now();
-        let mut previous_iteration = starting_time;
+        let mut previous_sleep_end = starting_time;
         // Since we reset the time, we must reset the motor revolutions counter as well.
         MOTOR_REVOLUTIONS_DOUBLED.store(0, Ordering::Relaxed);
         let mut setpoint_idx = 0;
         loop {
-            // This is prone to accumulating oversleep, but that's not important here.
-            Timer::after(LOOP_PERIOD).await;
+            // Sleep must be called at the start so LOOP_PERIOD time can pass before the current rpm is calculated.
+            previous_sleep_end = Self::sleep(previous_sleep_end).await;
+
             // Check for stop requests.
             if let Ok(command) = self.from_server.try_receive() {
                 match command {
@@ -129,8 +130,7 @@ impl Runner {
 
             // todo!("Add feedback")
             // This is where we would add feedback.
-            let elapsed_since_last_iteration = previous_iteration.elapsed();
-            let current_rpm = match Self::calculate_rpm(elapsed_since_last_iteration) {
+            let current_rpm = match Self::calculate_rpm() {
                 Ok(rpm) => rpm,
                 Err(err) => {
                     self.pwm_pin.set_timestamp(*STOP_DUTY);
@@ -172,8 +172,24 @@ impl Runner {
                 self.pwm_pin.set_timestamp(*STOP_DUTY);
                 return;
             }
-            // Increment time
-            previous_iteration += elapsed_since_last_iteration;
+        }
+    }
+
+    /// Sleeps if less than [`LOOP_PERIOD`] time has passed since the last end of this function.
+    ///
+    /// Returns the instant at the end of this function call.
+    /// This value should be passed to the next call to this method.
+    async fn sleep(previous_sleep_end: Instant) -> Instant {
+        let elapsed_since_previous_sleep_end = previous_sleep_end.elapsed();
+        // Only sleep if less than LOOP_PERIOD time has passed since the previous loop start.
+        match LOOP_PERIOD.checked_sub(elapsed_since_previous_sleep_end) {
+            Some(time_to_sleep) => {
+                let before_sleep = Instant::now();
+                Timer::after(time_to_sleep).await;
+                // Manually calculating the end of the function makes this function immune to oversleep from the timer.
+                before_sleep + time_to_sleep
+            }
+            None => Instant::now(),
         }
     }
 
@@ -182,6 +198,9 @@ impl Runner {
     /// If there are no more setpoints to use, the method will disable PWM, log that the motion profile finished, and return [`None`].
     ///
     /// If the rpm doesn't fit in a [`u16`], the method will disable PWM, log the error, and then return [`None`].
+    ///
+    /// It must disable PWM itself because it awaits upon failure,
+    /// and we don't want to wait on some other task before disabling PWM.
     async fn feedforward(
         &mut self,
         setpoint_idx: &mut usize,
@@ -264,15 +283,15 @@ impl Runner {
         u16::try_from(previous_setpoint_rpm + numerator / denominator)
     }
 
-    /// Calculates the current rpm.
+    /// Calculates the current rpm using [`LOOP_PERIOD`] as the amount of time that has passed.
     ///
     /// # Errors
     /// Returns an error if time can't fit in a [`u32`],
     /// or RPM can't fit in a [`u16`].
-    fn calculate_rpm(elapsed_since_last_iteration: Duration) -> Result<u16, TryFromIntError> {
+    fn calculate_rpm() -> Result<u16, TryFromIntError> {
         // Relaxed ordering because the order of instructions does not matter for the swap.
         let motor_revolutions_doubled = MOTOR_REVOLUTIONS_DOUBLED.swap(0, Ordering::Relaxed);
-        let time_ms = u32::try_from(elapsed_since_last_iteration.as_millis())?;
+        let time_ms = u32::try_from(LOOP_PERIOD.as_millis())?;
         // Avoid dividing by zero
         if time_ms == 0 {
             return Ok(0);
