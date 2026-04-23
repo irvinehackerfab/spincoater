@@ -308,7 +308,8 @@ impl Runner {
 ///
 /// [`THROTTLE_CURVE`] must be nonzero and [`THROTTLE_CURVE`]`[0]` must have increasing values.
 ///
-/// [Wikipedia explanation](https://en.wikipedia.org/wiki/Linear_interpolation#Linear_interpolation_as_an_approximation)
+/// # Implementation
+/// See [Wikipedia](https://en.wikipedia.org/wiki/Linear_interpolation#Linear_interpolation_as_an_approximation) for more info.
 fn linear_interpolation(setpoint_rpm: u16) -> u16 {
     if setpoint_rpm <= THROTTLE_CURVE[0][0] {
         return THROTTLE_CURVE[1][0];
@@ -335,6 +336,7 @@ fn linear_interpolation(setpoint_rpm: u16) -> u16 {
             return duty_0 + result;
         }
     }
+    // The setpoint rpm is higher than any known rpm, so just return the highest rpm.
     THROTTLE_CURVE[1][THROTTLE_POINTS - 1]
 }
 

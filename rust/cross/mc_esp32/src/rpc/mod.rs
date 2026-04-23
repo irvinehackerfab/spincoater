@@ -82,7 +82,7 @@ async fn handle_motion_profile_request(
 /// Handles vacuum pump requests immediately.
 #[allow(
     clippy::needless_pass_by_value,
-    reason = "define_dispatch doesn't let us pass by reference."
+    reason = "request is cheaper to pass by value than by reference."
 )]
 fn handle_vacuum_pump_request(context: &mut Context, _: VarHeader, request: vacuum_pump::Request) {
     match request {
