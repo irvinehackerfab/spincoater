@@ -28,8 +28,6 @@ pub mod rpc;
 pub static SECOND_CORE_STACK: ConstStaticCell<Stack<2048>> = ConstStaticCell::new(Stack::new());
 
 /// The period that the main control loop runs at.
-///
-/// The fastest it can run is about 3 milliseconds.
 pub const LOOP_PERIOD: Duration = Duration::from_millis(20);
 
 /// The length of the buffer used by [`REQUEST_CHANNEL`].
