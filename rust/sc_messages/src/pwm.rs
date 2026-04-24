@@ -16,8 +16,10 @@ pub const PERIOD: u16 = u16::MAX - 1_535;
 /// The current motor controller reads 10% of [`PERIOD`] as 100% power.
 pub const MAX_POWER_DUTY: DutyCycle = DutyCycle(PERIOD / 10);
 
-/// The current motor controller reads 5% of [`PERIOD`] as 0% power.
-pub const STOP_DUTY: DutyCycle = DutyCycle(PERIOD / 20);
+/// The current motor controller reads 7.5% of [`PERIOD`] as 0% power.
+///
+/// 0% power means neutral.
+pub const STOP_DUTY: DutyCycle = DutyCycle(PERIOD / 40 * 3);
 
 /// A duty cycle.
 /// 0-100% is encoded as 0..[`PERIOD`].
