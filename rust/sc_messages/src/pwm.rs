@@ -1,3 +1,4 @@
+//! See [this Desmos page](https://www.desmos.com/calculator/rtwkr7v4ko) for more information on pulse width conversions.
 #[cfg(feature = "std")]
 extern crate std;
 
@@ -11,15 +12,16 @@ use serde::{Deserialize, Serialize};
 
 /// The value corresponding to 100% of the PWM period.
 /// See [`../cross/mc_esp32/src/pwm/mod.rs`] for an explanation on the choice for this value.
-pub const PERIOD: u16 = u16::MAX - 1_535;
+pub const PERIOD: u16 = u16::MAX - 229;
 
-/// The current motor controller reads 10% of [`PERIOD`] as 100% power.
-pub const MAX_POWER_DUTY: DutyCycle = DutyCycle(PERIOD / 10);
+/// The current motor controller reads `1_860` microseconds (`59_520` internal PWM units) as max speed (9558 motor RPM).
+pub const MAX_POWER_DUTY: DutyCycle = DutyCycle(59_520);
 
-/// The current motor controller reads 7.5% of [`PERIOD`] as 0% power.
-///
-/// 0% power means neutral.
-pub const STOP_DUTY: DutyCycle = DutyCycle(PERIOD / 40 * 3);
+/// The current motor controller reads `1_060` microseconds (`33_920` internal PWM units) as 0 RPM, or brake.
+pub const BRAKE_DUTY: DutyCycle = DutyCycle(33_920);
+
+/// The current motor controller reads anything less than `1_060` microseconds (`33_920` internal PWM units) as neutral/coast.
+pub const STOP_DUTY: DutyCycle = DutyCycle(25_600);
 
 /// A duty cycle.
 /// 0-100% is encoded as 0..[`PERIOD`].
@@ -34,18 +36,12 @@ impl Deref for DutyCycle {
     }
 }
 
-impl TryFrom<u16> for DutyCycle {
-    type Error = OutOfRange;
-
-    /// Attempt to wrap a [`u16`] in [`DutyCycle`].
+impl From<u16> for DutyCycle {
+    /// Wraps a [`u16`] in [`DutyCycle`].
     ///
-    /// This fails if the value is greater than [`PERIOD`].
-    fn try_from(value: u16) -> Result<DutyCycle, OutOfRange> {
-        if value <= PERIOD {
-            Ok(Self(value))
-        } else {
-            Err(OutOfRange(value))
-        }
+    /// Truncates to [`MAX_POWER_DUTY`] if the value is greater than that.
+    fn from(value: u16) -> Self {
+        Self(value.min(*MAX_POWER_DUTY))
     }
 }
 

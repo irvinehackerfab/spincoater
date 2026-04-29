@@ -1,11 +1,17 @@
 //! This module contains PWM output functionality.
+//!
+//! See [this Desmos graph](https://www.desmos.com/calculator/rtwkr7v4ko) for more information about PWM conversions.
 use esp_hal::time::Rate;
 use heapless::Vec;
-use sc_messages::motion_profile::{MAX_SETPOINTS, Setpoint};
+use muldiv::MulDiv;
+use sc_messages::{
+    motion_profile::{MAX_SETPOINTS, Setpoint},
+    pwm::{DutyCycle, MAX_POWER_DUTY},
+};
 use static_cell::StaticCell;
 
-/// The current motor controller reads PWM at 50 Hz.
-pub const FREQUENCY: Rate = Rate::from_hz(50);
+/// The current motor controller reads PWM at 490 Hz.
+pub const FREQUENCY: Rate = Rate::from_hz(490);
 
 /// This prescaler is what lowers the peripheral clock frequency down to a level that is usable by the timer.
 ///
@@ -34,7 +40,8 @@ pub const PERIPHERAL_CLOCK_PRESCALER: u8 = 0;
 /// results in a decimal value, [`esp_hal`](esp_hal::mcpwm::PeripheralClockConfig::timer_clock_with_frequency) will round it,
 /// resulting in a loss of PWM output accuracy.
 ///
-/// This is currently set to the highest possible value that also results in a whole-numbered `timer_prescaler`.
+/// This is currently set to the highest possible value that results in a `timer_prescaler` that is as close to a whole number as possible.
+/// Right now, `timer_prescaler` is 4 (rounded down from 4.00000937502).
 pub const PERIOD: u16 = sc_messages::pwm::PERIOD - 1;
 
 pub const SETPOINT_LIST_LENGTH: usize = MAX_SETPOINTS + 1;
@@ -42,17 +49,19 @@ pub const SETPOINT_LIST_LENGTH: usize = MAX_SETPOINTS + 1;
 /// The static cell for storing a motion profile.
 pub static SETPOINTS: StaticCell<Vec<Setpoint, SETPOINT_LIST_LENGTH>> = StaticCell::new();
 
-/// The number of datapoints for the throttle curve.
-pub const THROTTLE_POINTS: usize = 10;
+/// The slope numerator for the conversion from plate RPM to internal pulse width.
+pub const CONVERSION_NUMERATOR: u16 = 991;
 
-/// The table of values we got from reading the motor RPM at multiple PWM duty cycles.
-///
-/// Units of `[0]`: Plate RPM (motor RPM * 20/74)
-///
-/// Units of `[1]`: PWM units (microseconds * [`sc_messages::PERIOD`] * [`FREQUENCY`] seconds^-1 / 10^6 microseconds)
-///
-/// See [the graph](https://www.desmos.com/calculator/dtaaxpy72o) for more info.
-pub const THROTTLE_CURVE: [[u16; THROTTLE_POINTS]; 2] = [
-    [0, 2649, 4838, 6730, 7973, 8783, 9324, 10297, 10405, 10405],
-    [4800, 5056, 5120, 5200, 5280, 5360, 5440, 5760, 6080, 6400],
-];
+/// The slope denominator for the conversion from plate RPM to internal pulse width.
+pub const CONVERSION_DENOMINATOR: u16 = 100;
+
+/// The intercept for the conversion from plate RPM to internal pulse width.
+pub const CONVERSION_INTERCEPT: u16 = 33_920;
+
+#[must_use]
+pub fn plate_rpm_to_pulse_width(rpm: u16) -> DutyCycle {
+    match rpm.mul_div_round(CONVERSION_NUMERATOR, CONVERSION_DENOMINATOR) {
+        Some(value) => value.saturating_add(CONVERSION_INTERCEPT).into(),
+        None => MAX_POWER_DUTY,
+    }
+}

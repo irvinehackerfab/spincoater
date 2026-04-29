@@ -65,7 +65,7 @@ impl App {
             events,
             current_rpm: 0,
             setpoint_rpm: 0,
-            duty_cycle: DutyCycle::try_from(0)?,
+            duty_cycle: DutyCycle::from(0),
             commands_state: ListState::default().with_selected(Some(0)),
             mcu_logs: AllocRingBuffer::new(MCU_LOG_CAPACITY),
             motor_data_file,

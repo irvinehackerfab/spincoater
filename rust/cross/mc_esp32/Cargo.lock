@@ -1212,6 +1212,7 @@ dependencies = [
  "ibm437",
  "mipidsi",
  "mousefood",
+ "muldiv",
  "postcard",
  "postcard-rpc",
  "ratatui",
@@ -1253,6 +1254,12 @@ dependencies = [
  "ratatui-core",
  "thiserror",
 ]
+
+[[package]]
+name = "muldiv"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "956787520e75e9bd233246045d19f42fb73242759cc57fba9611d940ae96d4b0"
 
 [[package]]
 name = "nb"

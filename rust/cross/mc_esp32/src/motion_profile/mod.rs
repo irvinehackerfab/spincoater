@@ -5,7 +5,7 @@ use crate::{
     LOOP_PERIOD, REQUEST_CHANNEL_LENGTH, REQUEST_RESPONSE_SIGNAL,
     gpio::{
         encoder::MOTOR_REVOLUTIONS_DOUBLED,
-        pwm::{SETPOINT_LIST_LENGTH, THROTTLE_CURVE, THROTTLE_POINTS},
+        pwm::{SETPOINT_LIST_LENGTH, plate_rpm_to_pulse_width},
     },
     rpc::{SEQUENCE_NUMBER, WireTx},
 };
@@ -17,7 +17,7 @@ use postcard_rpc::server::Sender;
 use sc_messages::{
     icd::MotionProfileStateTopic,
     motion_profile::{self, Request, RequestRefused, Setpoint},
-    pwm::{DutyCycle, STOP_DUTY},
+    pwm::STOP_DUTY,
 };
 
 /// The runner that executes motion profiles.
@@ -120,46 +120,23 @@ impl Runner {
                 }
             }
             let elapsed_since_start_micros = starting_time.elapsed().as_micros();
-            let Some((setpoint_rpm, setpoint_duty_cycle)) = self
+            let Some(setpoint_rpm) = self
                 .feedforward(&mut setpoint_idx, elapsed_since_start_micros)
                 .await
             else {
                 return;
             };
-            self.pwm_pin.set_timestamp(setpoint_duty_cycle);
+            let setpoint_pulse_width = plate_rpm_to_pulse_width(setpoint_rpm);
+            self.pwm_pin.set_timestamp(*setpoint_pulse_width);
 
             // todo!("Add feedback")
             // This is where we would add feedback.
-            let current_rpm = match Self::calculate_rpm() {
-                Ok(rpm) => rpm,
-                Err(err) => {
-                    self.pwm_pin.set_timestamp(*STOP_DUTY);
-                    let _ = self
-                        .to_server
-                        .log_fmt(format_args!("Failed to calculate rpm: {err}. Stopping!"))
-                        .await;
-                    return;
-                }
-            };
 
             // Logging
-            let duty_cycle = match DutyCycle::try_from(setpoint_duty_cycle) {
-                Ok(duty_cycle) => duty_cycle,
-                Err(err) => {
-                    self.pwm_pin.set_timestamp(*STOP_DUTY);
-                    let _ = self
-                        .to_server
-                        .log_fmt(format_args!(
-                            "Failed to create duty cycle: {err}. Stopping!"
-                        ))
-                        .await;
-                    return;
-                }
-            };
             let state = motion_profile::State {
                 setpoint_rpm,
-                current_rpm,
-                duty_cycle,
+                current_rpm: 0,
+                duty_cycle: setpoint_pulse_width,
                 time: elapsed_since_start_micros,
             };
             if self
@@ -193,7 +170,7 @@ impl Runner {
         }
     }
 
-    /// Calculates the setpoint rpm and duty cycle for this timestep.
+    /// Calculates the setpoint rpm for this timestep.
     ///
     /// If there are no more setpoints to use, the method will disable PWM, log that the motion profile finished, and return [`None`].
     ///
@@ -205,7 +182,7 @@ impl Runner {
         &mut self,
         setpoint_idx: &mut usize,
         elapsed_since_start_micros: u64,
-    ) -> Option<(u16, u16)> {
+    ) -> Option<u16> {
         // Get next pair of setpoints.
         let Some((previous_setpoint, current_setpoint)) =
             self.next_setpoint_pair(setpoint_idx, elapsed_since_start_micros)
@@ -233,7 +210,7 @@ impl Runner {
             }
         };
         // Then we need to linearly interpolate to find the required duty cycle.
-        Some((setpoint_rpm, linear_interpolation(setpoint_rpm)))
+        Some(setpoint_rpm)
     }
 
     /// Gets the next pair of setpoints.
@@ -282,62 +259,6 @@ impl Runner {
         let denominator = current_setpoint.time - previous_setpoint.time;
         u16::try_from(previous_setpoint_rpm + numerator / denominator)
     }
-
-    /// Calculates the current rpm using [`LOOP_PERIOD`] as the amount of time that has passed.
-    ///
-    /// # Errors
-    /// Returns an error if time can't fit in a [`u32`],
-    /// or RPM can't fit in a [`u16`].
-    fn calculate_rpm() -> Result<u16, TryFromIntError> {
-        // Relaxed ordering because the order of instructions does not matter for the swap.
-        let motor_revolutions_doubled = MOTOR_REVOLUTIONS_DOUBLED.swap(0, Ordering::Relaxed);
-        let time_ms = u32::try_from(LOOP_PERIOD.as_millis())?;
-        // Avoid dividing by zero
-        if time_ms == 0 {
-            return Ok(0);
-        }
-        // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(`time` ms) * (6000 ms / 1 min)
-        // = (2*motor revolutions) * 30,000 / (37 * `time`)
-        // Final units: plate revolutions per minute
-        let rpm = motor_revolutions_doubled * 30_000 / (37 * (time_ms));
-        u16::try_from(rpm)
-    }
-}
-
-/// Performs linear interpolation on [`THROTTLE_CURVE`] to find the setpoint duty cycle.
-///
-/// [`THROTTLE_CURVE`] must be nonzero and [`THROTTLE_CURVE`]`[0]` must have increasing values.
-///
-/// # Implementation
-/// See [Wikipedia](https://en.wikipedia.org/wiki/Linear_interpolation#Linear_interpolation_as_an_approximation) for more info.
-fn linear_interpolation(setpoint_rpm: u16) -> u16 {
-    if setpoint_rpm <= THROTTLE_CURVE[0][0] {
-        return THROTTLE_CURVE[1][0];
-    }
-    for ((rpm_0, rpm_1), (duty_0, duty_1)) in THROTTLE_CURVE[0]
-        .iter()
-        .zip(&THROTTLE_CURVE[0][1..THROTTLE_POINTS])
-        .zip(
-            THROTTLE_CURVE[1]
-                .iter()
-                .zip(&THROTTLE_CURVE[1][1..THROTTLE_POINTS]),
-        )
-    {
-        if setpoint_rpm == *rpm_0 {
-            return *duty_0;
-        }
-        if setpoint_rpm > *rpm_0 {
-            let delta_duty = u32::from(duty_1 - duty_0);
-            let delta_rpm = u32::from(setpoint_rpm - rpm_0);
-            let numerator = delta_duty * delta_rpm;
-            let denominator = u32::from(rpm_1 - rpm_0);
-            let result =
-                u16::try_from(numerator / denominator).expect("The rpm should never exceed 65535.");
-            return duty_0 + result;
-        }
-    }
-    // The setpoint rpm is higher than any known rpm, so just return the highest rpm.
-    THROTTLE_CURVE[1][THROTTLE_POINTS - 1]
 }
 
 /// Runs the [`Runner`] forever.
