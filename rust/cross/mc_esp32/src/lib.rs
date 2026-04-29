@@ -14,7 +14,6 @@ use embassy_sync::{
     signal::Signal,
 };
 use embassy_time::Duration;
-use esp_hal::system::Stack;
 use sc_messages::motion_profile::{Request, RequestRefused};
 use static_cell::ConstStaticCell;
 
@@ -23,9 +22,6 @@ use crate::gpio::pwm::SETPOINT_LIST_LENGTH;
 pub mod gpio;
 pub mod motion_profile;
 pub mod rpc;
-
-/// The static variable that holds the second core stack.
-pub static SECOND_CORE_STACK: ConstStaticCell<Stack<2048>> = ConstStaticCell::new(Stack::new());
 
 /// The period that the main control loop runs at.
 pub const LOOP_PERIOD: Duration = Duration::from_millis(20);

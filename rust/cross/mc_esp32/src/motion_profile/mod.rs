@@ -1,12 +1,9 @@
 //! This module contains the functionality for running motion profiles sent by the host PC.
-use core::{num::TryFromIntError, sync::atomic::Ordering};
+use core::num::TryFromIntError;
 
 use crate::{
     LOOP_PERIOD, REQUEST_CHANNEL_LENGTH, REQUEST_RESPONSE_SIGNAL,
-    gpio::{
-        encoder::MOTOR_REVOLUTIONS_DOUBLED,
-        pwm::{SETPOINT_LIST_LENGTH, plate_rpm_to_pulse_width},
-    },
+    gpio::pwm::{SETPOINT_LIST_LENGTH, plate_rpm_to_pulse_width},
     rpc::{SEQUENCE_NUMBER, WireTx},
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver};
@@ -95,8 +92,6 @@ impl Runner {
     async fn execute_motion_profile(&mut self) {
         let starting_time = Instant::now();
         let mut previous_sleep_end = starting_time;
-        // Since we reset the time, we must reset the motor revolutions counter as well.
-        MOTOR_REVOLUTIONS_DOUBLED.store(0, Ordering::Relaxed);
         let mut setpoint_idx = 0;
         loop {
             // Sleep must be called at the start so LOOP_PERIOD time can pass before the current rpm is calculated.

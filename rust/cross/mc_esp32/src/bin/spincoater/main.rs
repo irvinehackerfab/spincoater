@@ -13,8 +13,7 @@ use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
     delay::Delay,
-    gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
-    interrupt::software::SoftwareInterruptControl,
+    gpio::{Level, Output, OutputConfig},
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     spi::master::{Config, Spi},
     time::Rate,
@@ -25,7 +24,7 @@ use esp_println::println;
 use heapless::Vec;
 use ibm437::IBM437_9X14_REGULAR;
 use mc_esp32::{
-    REQUEST_CHANNEL, SECOND_CORE_STACK,
+    REQUEST_CHANNEL,
     gpio::{
         display::{
             DISPLAY, ORIENTATION, SPI_BUFFER,
@@ -35,8 +34,6 @@ use mc_esp32::{
                 update_terminal,
             },
         },
-        encoder::ENCODER,
-        interrupt_handler,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
     },
     motion_profile::{Runner, run},
@@ -71,32 +68,6 @@ async fn main(spawner: Spawner) -> ! {
     esp_rtos::start(timg0.timer0);
     println!("Embassy initialized on the first core!");
     println!("Taking control of the UART port. Please close RTT and open the host PC program.");
-
-    // Setup encoder interrupt to run on the second core
-    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
-    esp_rtos::start_second_core(
-        peripherals.CPU_CTRL,
-        software_interrupts.software_interrupt0,
-        software_interrupts.software_interrupt1,
-        SECOND_CORE_STACK.take(),
-        || {
-            // Set the interrupt handler for GPIO.
-            // This allows for a slightly lower latency compared to waiting asynchronously.
-            let mut io = Io::new(peripherals.IO_MUX);
-            io.set_interrupt_handler(interrupt_handler);
-
-            // Initialize encoder pin
-            let mut encoder = Input::new(
-                peripherals.GPIO27,
-                InputConfig::default().with_pull(Pull::Up),
-            );
-            // Start listening for rising edges
-            critical_section::with(|cs| {
-                encoder.listen(Event::RisingEdge);
-                ENCODER.borrow_ref_mut(cs).replace(encoder);
-            });
-        },
-    );
 
     // Initialize PWM
     let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
