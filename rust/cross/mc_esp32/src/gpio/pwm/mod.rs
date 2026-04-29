@@ -58,6 +58,9 @@ pub const CONVERSION_DENOMINATOR: u16 = 100;
 /// The intercept for the conversion from plate RPM to internal pulse width.
 pub const CONVERSION_INTERCEPT: u16 = 33_920;
 
+/// Converts plate RPM to pulse width.
+///
+/// The value has a maximum of [`MAX_POWER_DUTY`].
 #[must_use]
 pub fn plate_rpm_to_pulse_width(rpm: u16) -> DutyCycle {
     match rpm.mul_div_round(CONVERSION_NUMERATOR, CONVERSION_DENOMINATOR) {
