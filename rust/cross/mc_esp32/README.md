@@ -25,7 +25,6 @@ This program does the following:
   - Programs must use [postcard-rpc](https://github.com/jamesmunns/postcard-rpc) and the protocol defined in `sc_messages` (in the workspace above this one) to successfully communicate with the MCU.
 - Initializes PWM on pin [IO26](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
   - Starts with a constant duty cycle of 5% at a frequency of 50hz.
-- Records hall effect sensor input on pin [IO27](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
 - Initializes the [TFT display](https://protosupplies.com/product/tft-lcd-2-8-240x320-rgb-spi-display-with-touchscreen/) with the following pins:
   - MISO: GPIO19
   - MOSI: GPIO23
