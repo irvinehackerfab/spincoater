@@ -25,7 +25,7 @@ pub mod motion_profile;
 pub mod rpc;
 
 /// The static variable that holds the second core stack.
-pub static SECOND_CORE_STACK: ConstStaticCell<Stack<2048>> = ConstStaticCell::new(Stack::new());
+pub static SECOND_CORE_STACK: ConstStaticCell<Stack<4096>> = ConstStaticCell::new(Stack::new());
 
 /// The period that the main control loop runs at.
 pub const LOOP_PERIOD: Duration = Duration::from_millis(20);

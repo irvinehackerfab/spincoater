@@ -22,7 +22,7 @@ use static_cell::ConstStaticCell;
 use crate::{REQUEST_CHANNEL_LENGTH, REQUEST_RESPONSE_SIGNAL};
 
 /// The size of the buffers used by postcard-rpc.
-pub const BUFFER_SIZE: usize = 1024;
+pub const BUFFER_SIZE: usize = 2048;
 
 /// The buffer used for receiving frames.
 pub static FRAME_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> =
