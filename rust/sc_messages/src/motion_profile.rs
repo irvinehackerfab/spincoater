@@ -65,6 +65,8 @@ pub enum Request {
 pub enum RequestRefused {
     /// The host PC sent too many setpoints.
     TooManySetpoints,
+    /// The host PC sent a setpoint with a time that is less than the last one that was sent.
+    IncorrectSetpointOrder,
     /// A motion profile is running.
     Running,
     /// No motion profile is running.

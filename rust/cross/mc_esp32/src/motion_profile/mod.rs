@@ -63,10 +63,23 @@ impl Runner {
     async fn setup(&mut self) {
         loop {
             match self.from_server.receive().await {
-                Request::Add(setpoint) => match self.setpoints.push(setpoint.clone()) {
-                    Ok(()) => REQUEST_RESPONSE_SIGNAL.signal(Ok(())),
-                    Err(_) => REQUEST_RESPONSE_SIGNAL.signal(Err(RequestRefused::TooManySetpoints)),
-                },
+                Request::Add(setpoint) => {
+                    if self
+                        .setpoints
+                        .last()
+                        .expect("At least one element is always present")
+                        .time
+                        > setpoint.time
+                    {
+                        REQUEST_RESPONSE_SIGNAL.signal(Err(RequestRefused::IncorrectSetpointOrder));
+                    } else {
+                        match self.setpoints.push(setpoint.clone()) {
+                            Ok(()) => REQUEST_RESPONSE_SIGNAL.signal(Ok(())),
+                            Err(_) => REQUEST_RESPONSE_SIGNAL
+                                .signal(Err(RequestRefused::TooManySetpoints)),
+                        }
+                    }
+                }
                 Request::ClearSetpoints => {
                     self.clear();
                     REQUEST_RESPONSE_SIGNAL.signal(Ok(()));
@@ -256,16 +269,24 @@ impl Runner {
         current_setpoint: &Setpoint,
         elapsed_since_start_micros: u64,
     ) -> Option<u16> {
+        // Avoid division by zero
+        if previous_setpoint.time == current_setpoint.time {
+            return Some(previous_setpoint.rpm);
+        }
+
         // We need to increase the size of some numbers to prevent overflow.
         let previous_setpoint_rpm = u64::from(previous_setpoint.rpm);
         let current_setpoint_rpm = u64::from(current_setpoint.rpm);
         let Some(delta_rpm) = current_setpoint_rpm.checked_sub(previous_setpoint_rpm) else {
-            let _ = self.to_server.log_str("RPM subtraction overflowed!").await;
+            let _ = self.to_server.log_str("RPM subtraction underflowed!").await;
             return None;
         };
         let Some(delta_time) = elapsed_since_start_micros.checked_sub(previous_setpoint.time)
         else {
-            let _ = self.to_server.log_str("Time subtraction overflowed!").await;
+            let _ = self
+                .to_server
+                .log_str("Time subtraction underflowed!")
+                .await;
             return None;
         };
         let Some(numerator) = delta_rpm.checked_mul(delta_time) else {

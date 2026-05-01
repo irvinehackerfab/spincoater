@@ -21,7 +21,6 @@ use esp_hal::{
     timer::timg::TimerGroup,
     uart::{self, Uart},
 };
-use esp_println::println;
 use esp_rtos::embassy::InterruptExecutor;
 use heapless::Vec;
 use ibm437::IBM437_9X14_REGULAR;
@@ -68,7 +67,7 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
 
-    println!("Taking control of the UART port. Please close RTT and open the host PC program.");
+    // println!("Taking control of the UART port. Please close RTT and open the host PC program.");
 
     // Initialize encoder pin
     let encoder = Input::new(

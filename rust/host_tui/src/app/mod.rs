@@ -20,7 +20,7 @@ use ratatui::{
     widgets::ListState,
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
-use sc_messages::motion_profile::{self, Setpoint};
+use sc_messages::motion_profile::{self, RequestRefused, Setpoint};
 use sc_messages::pwm::DutyCycle;
 use sc_messages::vacuum_pump;
 
@@ -195,6 +195,14 @@ impl App {
             }
             UsbEvent::MotionProfileRequestResponse(response) => {
                 let _ = self.mcu_logs.enqueue(format!("{response}"));
+                if response
+                    .response()
+                    .is_err_and(|reason| reason == RequestRefused::IncorrectSetpointOrder)
+                {
+                    self.mcu_logs.enqueue(String::from(
+                        "Your motion profile contains a time that is less than the previous one.",
+                    ));
+                }
             }
             UsbEvent::VacuumPumpRequestResponse => {
                 let _ = self.mcu_logs.enqueue("[Vacuum Pump]: Ok".to_string());

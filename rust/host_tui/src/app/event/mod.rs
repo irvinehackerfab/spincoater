@@ -56,6 +56,14 @@ impl Response {
     fn new(response: core::result::Result<(), RequestRefused>, time: NaiveTime) -> Self {
         Self { response, time }
     }
+
+    /// Returns the response.
+    ///
+    /// # Errors
+    /// Returns an error if the request was refused.
+    pub fn response(&self) -> core::result::Result<(), RequestRefused> {
+        self.response
+    }
 }
 
 impl Display for Response {
