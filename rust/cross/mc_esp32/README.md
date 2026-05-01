@@ -14,14 +14,11 @@ The `editor_configurations` folder contains default configurations for various e
 
 ## `spincoater`
 This program does the following:
-- Initializes PWM on pin [IO32](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
-  - Outputs a constant duty cycle of 5% with a frequency of 50hz.
-- Records hall effect sensor input on pin [IO17](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
-  - Prints the plate revolutions per minute every second.
-- Enables a Wifi access point
-  - Allows one device to connect at a time
-  - Listens on a TCP socket on port 8080
-  - Send and receives messages defined in `sc_messages` (in the workspace above this one).
+- Takes control of the USB port to establish UART communication.
+  - Programs must use [postcard-rpc](https://github.com/jamesmunns/postcard-rpc) and the protocol defined in `sc_messages` (in the workspace above this one) to successfully communicate with the MCU.
+- Initializes PWM on pin [IO26](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
+  - Starts with a constant duty cycle of 5% at a frequency of 50hz.
+- Records hall effect sensor input on pin [IO27](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
 - Initializes the [TFT display](https://protosupplies.com/product/tft-lcd-2-8-240x320-rgb-spi-display-with-touchscreen/) with the following pins:
   - MISO: GPIO19
   - MOSI: GPIO23
@@ -29,19 +26,14 @@ This program does the following:
   - CS: GPIO16
   - DC: GPIO2
   - RESET: GPIO4
-  - T_CS (touch chip select, not used yet): GPIO33
+  - T_CS (touch chip select, permanently low for now): GPIO33
   - LED: GPIO22
   - 5V is used to power the LCD.
+- Controls the vacuum pump on pin [IO17](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block).
+  - Active high
 
-When flashing the program, you must specify the Wifi's SSID and password through environment variables. One way to do this is by running the program with `SSID=_ PASSWORD=_ cargo run --bin spincoater`.
+The display is used to report errors with the UART communication.
 
-The password must be 8-64 characters or else the radio will panic during initialization.
-
-You must set a static IP to connect to the wifi. For example:
-- IP: 192.168.2.2
-- Netmask: 255.255.255.0
-- Gateway: 192.168.2.1
-
-If you're getting random freezes, it's likely due to a socket buffer filling up and you'll want to increase `BUFFER_SIZE`.
+Run with `cargo run --bin spincoater`.
 
 If the program crashes with the error message `Detected a write to the stack guard value on AppCpu`, it means a stack overflowed. You'll likely need to increase the second core stack size in [`lib.rs`](src/lib.rs).

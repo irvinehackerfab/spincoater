@@ -1,24 +1,25 @@
 //! This module decribes events that cause updates to the TUI.
-use bytes::{BufMut, BytesMut};
+use std::fmt::Display;
+
+use chrono::{Local, NaiveTime};
 use color_eyre::{
     Result,
     eyre::{OptionExt, eyre},
 };
 use futures::StreamExt;
-use postcard::from_bytes_cobs;
-use ratatui::crossterm::event::Event as CrosstermEvent;
-use sc_messages::{Command, Info};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{
-        TcpStream,
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-    },
-    sync::mpsc::{self, UnboundedSender},
+use postcard_rpc::{
+    host_client::{HostClient, Subscription},
+    standard_icd::{LoggingTopic, WireError},
 };
+use ratatui::crossterm::event::Event as CrosstermEvent;
+use sc_messages::{
+    icd::{MotionProfileStateTopic, MotionRequestEndpoint, VacuumPumpRequestEndpoint},
+    motion_profile::{self, RequestRefused, State},
+    vacuum_pump,
+};
+use tokio::sync::mpsc::{self, UnboundedSender};
 
-/// Keep this up to date with `../cross/mc_esp32/src/wifi/tcp/mod.rs` `BUFFER_SIZE`
-pub const BUFFER_SIZE: usize = 64;
+use crate::app::MCU_LOG_CAPACITY;
 
 /// All possible TUI events.
 #[derive(Clone, Debug)]
@@ -27,34 +28,81 @@ pub enum TuiEvent {
     ///
     /// These events are emitted by the terminal.
     Crossterm(CrosstermEvent),
-    /// Events from the microcontroller connection.
-    Wireless(Info),
+    /// Events from the MCU connection.
+    Usb(UsbEvent),
+}
+
+/// All possible USB events.
+#[derive(Debug, Clone)]
+pub enum UsbEvent {
+    /// The MCU responded to a motion profile request.
+    MotionProfileRequestResponse(Response),
+    /// The MCU responded to a vacuum pump request.
+    VacuumPumpRequestResponse,
+    /// The MCU logged a message.
+    Log(String),
+    /// The MCU sent the motion profile state.
+    State(State),
+}
+
+/// A motion profile response + the time it was received.
+#[derive(Debug, Clone)]
+pub struct Response {
+    response: core::result::Result<(), RequestRefused>,
+    time: NaiveTime,
+}
+
+impl Response {
+    fn new(response: core::result::Result<(), RequestRefused>, time: NaiveTime) -> Self {
+        Self { response, time }
+    }
+}
+
+impl Display for Response {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[Motion Profile] [{}]: {:?}", self.time, self.response)
+    }
 }
 
 /// Terminal event handler.
 #[derive(Debug)]
 pub struct EventHandler {
     /// Event receiver channel.
+    ///
+    /// The tasks themselves hold the senders.
     from_tasks: mpsc::UnboundedReceiver<Result<TuiEvent>>,
-    to_mcu: OwnedWriteHalf,
-    send_buffer: [u8; BUFFER_SIZE],
+    /// The client allows for sending requests to the MCU.
+    client: HostClient<WireError>,
+    /// A sender for cloning and using in future tasks.
+    to_handler: mpsc::UnboundedSender<Result<TuiEvent>>,
 }
 
 impl EventHandler {
-    /// Constructs a new instance of [`EventHandler`] and spawns a new thread to handle events.
-    pub fn new(stream: TcpStream) -> Self {
-        let (from_mcu, to_mcu) = stream.into_split();
+    /// Constructs a new instance of [`EventHandler`] and spawns tasks to handle events.
+    ///
+    /// # Errors
+    /// Returns an error if subscribing to the necessary topics fails.
+    pub async fn new(client: HostClient<WireError>) -> Result<Self> {
         let (to_handler, from_tasks) = mpsc::unbounded_channel();
-        let to_handler_2 = to_handler.clone();
-        // Spawn crossterm event handler.
-        tokio::spawn(await_crossterm_events(to_handler));
-        // Spawn stream message handler.
-        tokio::spawn(await_stream_messages(from_mcu, to_handler_2));
-        Self {
+        // Subscribe to the MCU's logs.
+        let log_stream = client
+            .subscribe_exclusive::<LoggingTopic>(MCU_LOG_CAPACITY)
+            .await?;
+        // Subscribe to the MCU's motion profile state.
+        let state_stream = client
+            .subscribe_exclusive::<MotionProfileStateTopic>(MCU_LOG_CAPACITY)
+            .await?;
+
+        // Spawn event handler tasks.
+        tokio::spawn(await_crossterm_events(to_handler.clone()));
+        tokio::spawn(await_log_messages(log_stream, to_handler.clone()));
+        tokio::spawn(await_state_messages(state_stream, to_handler.clone()));
+
+        Ok(Self {
             from_tasks,
-            to_mcu,
-            send_buffer: [0u8; BUFFER_SIZE],
-        }
+            client,
+            to_handler,
+        })
     }
 
     /// Receives an event from the sender.
@@ -73,14 +121,45 @@ impl EventHandler {
             .ok_or_eyre("Failed to receive event")
     }
 
-    /// Sends a message to the MCU, and returns the message along with the time at which it finished sending.
+    /// Spawns a task to send a motion profile request.
     ///
-    /// # Errors
-    /// Returns an error if deserialization fails, or writing to the TCP socket fails.
-    pub async fn send(&mut self, command: Command) -> Result<()> {
-        let written_chunk = postcard::to_slice_cobs(&command, &mut self.send_buffer)?;
-        self.to_mcu.write_all(written_chunk).await?;
-        Ok(())
+    /// The response will eventually arrive in [`EventHandler::next`].
+    pub fn send_motion_profile_request(&mut self, request: motion_profile::Request) {
+        let client = self.client.clone();
+        let to_handler = self.to_handler.clone();
+
+        tokio::spawn(async move {
+            match client.send_resp::<MotionRequestEndpoint>(&request).await {
+                Ok(response) => {
+                    to_handler.send(Ok(TuiEvent::Usb(UsbEvent::MotionProfileRequestResponse(
+                        Response::new(response, Local::now().time()),
+                    ))))
+                }
+                Err(wire_err) => {
+                    to_handler.send(Err(eyre!("Failed to send command: {}", wire_err)))
+                }
+            }
+        });
+    }
+
+    /// Spawns a task to send a vacuum pump request.
+    ///
+    /// The response will eventually arrive in [`EventHandler::next`].
+    pub fn send_vacuum_pump_request(&mut self, request: vacuum_pump::Request) {
+        let client = self.client.clone();
+        let to_handler = self.to_handler.clone();
+
+        tokio::spawn(async move {
+            match client
+                .send_resp::<VacuumPumpRequestEndpoint>(&request)
+                .await
+            {
+                Ok(()) => to_handler.send(Ok(TuiEvent::Usb(UsbEvent::VacuumPumpRequestResponse))),
+                Err(wire_err) => {
+                    to_handler.send(Err(eyre!("Failed to send command: {}", wire_err)))
+                }
+            }
+        });
     }
 }
 
@@ -110,97 +189,36 @@ async fn await_crossterm_events(to_handler: UnboundedSender<Result<TuiEvent>>) {
     }
 }
 
-/// Reads bytes into a buffer until a complete message is received and sends the message to the handler (and repeats forever).
-///
-/// The message must be [COBS encoded](https://docs.rs/postcard/latest/postcard/ser_flavors/struct.Cobs.html)
-/// and must fit in [`BUFFER_SIZE`] bytes.
-async fn await_stream_messages(
-    mut from_mcu: OwnedReadHalf,
+/// Sends the MCU's logs to the terminal whenever they occur.
+async fn await_log_messages(
+    mut subscription: Subscription<String>,
     to_handler: UnboundedSender<Result<TuiEvent>>,
 ) {
-    let mut buffer = BytesMut::with_capacity(BUFFER_SIZE);
-    loop {
-        // BUFFER_SIZE is too small if we're filling up the buffer.
-        assert!(buffer.has_remaining_mut());
-        match from_mcu.read_buf(&mut buffer).await {
-            Ok(0) => {
-                // If the socket closes, the task is done.
-                let _ = to_handler.send(Err(eyre!("Connection reset by peer")));
-                return;
-            }
-            Ok(_) => {
-                let mut written_chunk = buffer.split();
-                // We must search for 0 before deserializing because from_bytes_cobs mutates the slice regardless of success.
-                while let Some(idx) = written_chunk.iter().position(|byte| *byte == 0u8) {
-                    let end = idx + 1;
-                    let mut msg_chunk = written_chunk.split_to(end);
-                    match from_bytes_cobs::<Info>(&mut msg_chunk) {
-                        Ok(info) => {
-                            // Send message
-                            if to_handler.send(Ok(TuiEvent::Wireless(info))).is_err() {
-                                // If the channel is closed, this task is done.
-                                return;
-                            }
-                        }
-                        Err(error) => {
-                            // If deserialization fails, the task is done.
-                            let _ = to_handler.send(Err(error.into()));
-                            return;
-                        }
-                    }
-                    // Clear the written data so the buffer can be reused.
-                    msg_chunk.clear();
-                    written_chunk.unsplit(msg_chunk);
-                }
-                buffer.unsplit(written_chunk);
-            }
-            Err(error) => {
-                // If reading fails, the task is done.
-                let _ = to_handler.send(Err(error.into()));
-                return;
-            }
+    // As soon as the stream closes, the terminal must close as well.
+    while let Some(msg) = subscription.recv().await {
+        if to_handler
+            .send(Ok(TuiEvent::Usb(UsbEvent::Log(msg))))
+            .is_err()
+        {
+            break;
         }
     }
+    let _ = to_handler.send(Err(eyre!("postcard_rpc closed the MCU log stream")));
 }
 
-#[cfg(test)]
-mod test {
-    use postcard::Result;
-
-    use super::*;
-
-    /// Incremental writes like those in a TCP stream must work properly.
-    #[test]
-    fn test_incremental_writes() {
-        let mut buf = BytesMut::with_capacity(BUFFER_SIZE);
-        buf.put(&b"abc"[..]);
-        let written_chunk = buf.split();
-        assert!(buf.is_empty());
-        assert_eq!(written_chunk, b"abc"[..]);
-        buf.unsplit(written_chunk);
-        buf.put(&b"def"[..]);
-        let written_chunk = buf.split();
-        assert_eq!(written_chunk, b"abcdef"[..]);
+/// Sends the MCU's motion profile state to the terminal.
+async fn await_state_messages(
+    mut subscription: Subscription<State>,
+    to_handler: UnboundedSender<Result<TuiEvent>>,
+) {
+    // As soon as the stream closes, the terminal must close as well.
+    while let Some(state) = subscription.recv().await {
+        if to_handler
+            .send(Ok(TuiEvent::Usb(UsbEvent::State(state))))
+            .is_err()
+        {
+            break;
+        }
     }
-
-    #[test]
-    fn test_to_slice() {
-        let mut buf = [0u8; BUFFER_SIZE];
-
-        let used = postcard::to_slice(&true, &mut buf).expect("Failed to serialize");
-        assert_eq!(used, &[0x01]);
-    }
-
-    /// Postcard returns [`postcard::Error::DeserializeUnexpectedEnd`]
-    /// when it reads a single 0.
-    #[test]
-    fn test_read_zero() {
-        let mut buf = [0u8; BUFFER_SIZE];
-
-        let used: Result<Info> = postcard::from_bytes_cobs(&mut buf[0..1]);
-        assert!(matches!(
-            used,
-            Err(postcard::Error::DeserializeUnexpectedEnd)
-        ));
-    }
+    let _ = to_handler.send(Err(eyre!("postcard_rpc closed the MCU log stream")));
 }

@@ -7,72 +7,45 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-pub mod app;
-
-use bytes::BytesMut;
 use defmt::info;
 use embassy_executor::Spawner;
-use embassy_net::{StackResources, tcp::TcpSocket};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::{
     clock::CpuClock,
     delay::Delay,
-    gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
-    interrupt::software::SoftwareInterruptControl,
+    gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
-    rng::Rng,
     spi::master::{Config, Spi},
     time::Rate,
     timer::timg::TimerGroup,
+    uart::{self, Uart},
 };
-use esp_radio::wifi::{CountryInfo, OperatingClass};
 use heapless::Vec;
 use ibm437::IBM437_9X14_REGULAR;
 use mc_esp32::{
-    SECOND_CORE_STACK,
+    REQUEST_CHANNEL,
     gpio::{
         display::{
             DISPLAY, ORIENTATION, SPI_BUFFER,
-            terminal::{TERMINAL, channel::TERMINAL_CHANNEL, update_terminal},
+            terminal::{
+                TERMINAL,
+                channel::{TERMINAL_CHANNEL, TuiEvent},
+                update_terminal,
+            },
         },
-        encoder::ENCODER,
-        interrupt_handler,
+        encoder::handle_encoder,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
     },
-    wifi::{
-        AUTH_METHOD, IP_CONFIG, MAX_CONNECTIONS, RADIO, STACK_RESOURCES,
-        channel::{RECV_CMD_CHANNEL, SEND_INFO_CHANNEL},
-        handle_connections, net_task,
-        tcp::{
-            BUFFER_SIZE, KEEP_ALIVE, RX_BUFFER, RX_BUFFER_2, TIMEOUT, TX_BUFFER,
-            handle_socket_connections,
-        },
-    },
+    motion_profile::{Runner, run},
+    rpc::{Context, Dispatcher, FRAME_BUFFER, WIRE_STORAGE},
 };
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
 use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
 use panic_rtt_target as _;
+use postcard_rpc::server::{Dispatch, Server, impls::embedded_io_async_v0_6::EioWireSpawn};
 use ratatui::Terminal;
 use rtt_target::rtt_init_defmt;
-use sc_messages::{STOP_DUTY, motion_profile::Setpoint};
-
-use crate::app::App;
-
-// Wifi requires heap allocation
-extern crate alloc;
-
-// Do not hardcode sensitive information like this.
-// Instead, pass in the variables as environment variables when you compile, like this:
-// SSID=_ PASSWORD=_ cargo run --release
-const SSID: &str = env!(
-    "SSID",
-    "If you see this error in the editor, ignore it. Otherwise, set the environment variable."
-);
-/// Note: Password must be 8-64 characters.
-const PASSWORD: &str = env!(
-    "PASSWORD",
-    "if you see this error in the editor, ignore it. Otherwise, set the environment variable"
-);
+use sc_messages::{icd::BAUD_RATE, motion_profile::Setpoint, pwm::STOP_DUTY};
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -96,85 +69,19 @@ async fn main(spawner: Spawner) {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
     info!("Embassy initialized on the first core!");
+    info!("Taking control of the UART port. Please close RTT and open the host PC program.");
 
-    let radio =
-        RADIO.init_with(|| esp_radio::init().expect("Failed to initialize Wi-Fi/BLE controller"));
-    let wifi_config = esp_radio::wifi::Config::default()
-        .with_country_code(CountryInfo::from(*b"US").with_operating_class(OperatingClass::Indoors));
-    let (mut wifi_controller, interfaces) =
-        esp_radio::wifi::new(radio, peripherals.WIFI, wifi_config)
-            .expect("Failed to initialize Wi-Fi controller");
-    let net_config = embassy_net::Config::ipv4_static(IP_CONFIG);
-    let rng = Rng::new();
-    let seed = u64::from(rng.random()) << 32 | u64::from(rng.random());
-    // Init network stack
-    let (stack, runner) = embassy_net::new(
-        interfaces.ap,
-        net_config,
-        STACK_RESOURCES.init_with(StackResources::new),
-        seed,
-    );
-
-    // Set the wifi config
-    let wifi_config = esp_radio::wifi::ModeConfig::AccessPoint(
-        esp_radio::wifi::AccessPointConfig::default()
-            .with_ssid(SSID.into())
-            .with_auth_method(AUTH_METHOD)
-            .with_password(PASSWORD.into())
-            .with_max_connections(MAX_CONNECTIONS)
-            .with_beacon_timeout(
-                u16::try_from(TIMEOUT.as_secs()).expect("10 should fit in a u16."),
-            ),
-    );
-    wifi_controller
-        .set_config(&wifi_config)
-        .expect("Failed to set Wifi config");
-
-    // Initialize wifi driver
-    wifi_controller
-        .start_async()
-        .await
-        .expect("Failed to start wifi");
-
-    // Initialize TCP socket
-    let rx_buffer = RX_BUFFER.take();
-    let tx_buffer = TX_BUFFER.take();
-    let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer);
-    socket.set_timeout(Some(TIMEOUT));
-    socket.set_keep_alive(Some(KEEP_ALIVE));
-    let buffer = RX_BUFFER_2.init_with(|| BytesMut::with_capacity(BUFFER_SIZE));
-
-    // Setup encoder interrupt to run on the second core
-    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
-    esp_rtos::start_second_core(
-        peripherals.CPU_CTRL,
-        software_interrupts.software_interrupt0,
-        software_interrupts.software_interrupt1,
-        SECOND_CORE_STACK.take(),
-        || {
-            // Set the interrupt handler for GPIO.
-            // This allows for a slightly lower latency compared to waiting asynchronously.
-            let mut io = Io::new(peripherals.IO_MUX);
-            io.set_interrupt_handler(interrupt_handler);
-
-            // Initialize encoder pin
-            let mut encoder = Input::new(
-                peripherals.GPIO17,
-                InputConfig::default().with_pull(Pull::Up),
-            );
-            // Start listening for rising edges
-            critical_section::with(|cs| {
-                encoder.listen(Event::RisingEdge);
-                ENCODER.borrow_ref_mut(cs).replace(encoder);
-            });
-        },
+    // Initialize encoder pin
+    let encoder = Input::new(
+        peripherals.GPIO27,
+        InputConfig::default().with_pull(Pull::Up),
     );
 
     // Initialize PWM
     let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
     let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
     mcpwm.operator0.set_timer(&mcpwm.timer0);
-    // connect operator0 to pin IO23:
+    // connect operator0 to pin IO26:
     // https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3
     let mut pwm_pin = mcpwm
         .operator0
@@ -237,37 +144,62 @@ async fn main(spawner: Spawner) {
     // Disable touch chip select for now
     let _ = Output::new(peripherals.GPIO33, Level::Low, OutputConfig::default());
 
-    // Setup communication between tasks
-    let recv_cmd_channel = RECV_CMD_CHANNEL.take();
-    let send_info_channel = SEND_INFO_CHANNEL.take();
-    let terminal_channel = TERMINAL_CHANNEL.take();
+    // Initialize vacuum pump pin
+    let vacuum_pump_pin = Output::new(peripherals.GPIO17, Level::Low, OutputConfig::default());
 
+    // Setup communication between tasks
+    let request_channel = REQUEST_CHANNEL.take();
+    let terminal_channel = TERMINAL_CHANNEL.take();
+    let to_terminal = terminal_channel.sender();
+
+    // Initialize the setpoint list with a starting setpoint of (0, 0).
     let setpoints = SETPOINTS.init_with(|| Vec::from([Setpoint { rpm: 0, time: 0 }]));
 
-    spawner.must_spawn(handle_connections(
-        wifi_controller,
-        recv_cmd_channel.sender(),
-        terminal_channel.sender(),
-    ));
-    spawner.must_spawn(net_task(runner));
-    spawner.must_spawn(update_terminal(terminal, terminal_channel.receiver()));
+    // Setup context
+    let context = Context::new(request_channel.sender(), vacuum_pump_pin);
 
-    // Await connections in a loop.
-    spawner.must_spawn(handle_socket_connections(
-        socket,
-        buffer,
-        recv_cmd_channel.sender(),
-        send_info_channel.receiver(),
-        terminal_channel.sender(),
+    // Setup UART and postcard-rpc after we're done with the spawner
+    let config = uart::Config::default().with_baudrate(BAUD_RATE);
+    let uart = Uart::new(peripherals.UART0, config)
+        .expect("Failed to initialize UART")
+        .with_tx(peripherals.GPIO1)
+        .with_rx(peripherals.GPIO3)
+        .into_async();
+    let (rx, tx) = uart.split();
+    let dispatcher = Dispatcher::new(context, EioWireSpawn::from(spawner));
+    let (wire_rx, wire_tx) = WIRE_STORAGE
+        .init(rx, tx)
+        .expect("Failed to create wire RX and TX");
+    let frame_buffer = FRAME_BUFFER.take();
+    let vkk = dispatcher.min_key_len();
+    let mut server = Server::new(
+        wire_tx,
+        wire_rx,
+        frame_buffer.as_mut_slice(),
+        dispatcher,
+        vkk,
+    );
+
+    spawner.must_spawn(handle_encoder(encoder));
+
+    spawner.must_spawn(update_terminal(
+        terminal,
+        server.sender(),
+        terminal_channel.receiver(),
     ));
 
-    App::new(
+    let runner = Runner::new(
         setpoints,
         pwm_pin,
-        recv_cmd_channel.receiver(),
-        send_info_channel.sender(),
-        terminal_channel.sender(),
-    )
-    .run()
-    .await
+        request_channel.receiver(),
+        server.sender(),
+    );
+    spawner.must_spawn(run(runner));
+
+    loop {
+        // Since we lose access to espflash's RTT output as soon as we take control of the UART pins,
+        // The only place we can log the error message is to the terminal.
+        let err = server.run().await;
+        to_terminal.send(TuiEvent::ServerError(err)).await;
+    }
 }
