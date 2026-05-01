@@ -159,10 +159,10 @@ async fn main(spawner: Spawner) -> ! {
 
     // Setup UART and postcard-rpc after we're done with the spawner
     let config = uart::Config::default().with_baudrate(BAUD_RATE);
-    let uart = Uart::new(peripherals.UART0, config)
+    let uart = Uart::new(peripherals.UART1, config)
         .expect("Failed to initialize UART")
-        .with_tx(peripherals.GPIO1)
-        .with_rx(peripherals.GPIO3)
+        .with_tx(peripherals.GPIO32)
+        .with_rx(peripherals.GPIO25)
         .into_async();
     let (rx, tx) = uart.split();
     let dispatcher = Dispatcher::new(context, EioWireSpawn::from(spawner));

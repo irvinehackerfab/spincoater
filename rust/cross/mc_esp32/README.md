@@ -21,7 +21,10 @@ Run with `cargo run --release --bin pwm`
 
 ## `spincoater`
 This program does the following:
-- Takes control of the USB port to establish UART communication.
+- Enables UART communication over the pins:
+  - TX: IO23
+  - RX: IO35
+  - The ESP-Prog-2 can be used to connect a PC to this UART interface.
   - Programs must use [postcard-rpc](https://github.com/jamesmunns/postcard-rpc) and the protocol defined in `sc_messages` (in the workspace above this one) to successfully communicate with the MCU.
 - Initializes PWM on pin [IO26](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
   - Starts with a constant duty cycle of 5% at a frequency of 50hz.
