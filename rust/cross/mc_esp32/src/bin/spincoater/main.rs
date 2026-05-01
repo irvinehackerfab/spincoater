@@ -14,6 +14,7 @@ use esp_hal::{
     clock::CpuClock,
     delay::Delay,
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
+    interrupt::{Priority, software::SoftwareInterruptControl},
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     spi::master::{Config, Spi},
     time::Rate,
@@ -21,10 +22,11 @@ use esp_hal::{
     uart::{self, Uart},
 };
 use esp_println::println;
+use esp_rtos::embassy::InterruptExecutor;
 use heapless::Vec;
 use ibm437::IBM437_9X14_REGULAR;
 use mc_esp32::{
-    REQUEST_CHANNEL,
+    REQUEST_CHANNEL, SECOND_CORE_EXECUTOR, SECOND_CORE_STACK,
     gpio::{
         display::{
             DISPLAY, ORIENTATION, SPI_BUFFER,
@@ -62,12 +64,10 @@ async fn main(spawner: Spawner) -> ! {
     let peripherals = esp_hal::init(config);
 
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
-    // Ratatui requires extra memory
-    esp_alloc::heap_allocator!(size: 64 * 1024);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
-    println!("Embassy initialized on the first core!");
+
     println!("Taking control of the UART port. Please close RTT and open the host PC program.");
 
     // Initialize encoder pin
@@ -179,8 +179,6 @@ async fn main(spawner: Spawner) -> ! {
         vkk,
     );
 
-    spawner.must_spawn(handle_encoder(encoder));
-
     spawner.must_spawn(update_terminal(
         terminal,
         server.sender(),
@@ -194,6 +192,21 @@ async fn main(spawner: Spawner) -> ! {
         server.sender(),
     );
     spawner.must_spawn(run(runner));
+
+    // Run the server on the second core so it doesn't miss UART interrupts.
+    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    esp_rtos::start_second_core(
+        peripherals.CPU_CTRL,
+        software_interrupts.software_interrupt0,
+        software_interrupts.software_interrupt1,
+        SECOND_CORE_STACK.take(),
+        || {
+            let executor = SECOND_CORE_EXECUTOR
+                .init_with(|| InterruptExecutor::new(software_interrupts.software_interrupt2));
+            let spawner = executor.start(Priority::Priority1);
+            spawner.must_spawn(handle_encoder(encoder));
+        },
+    );
 
     loop {
         // Since we lose access to espflash's RTT output as soon as we take control of the UART pins,

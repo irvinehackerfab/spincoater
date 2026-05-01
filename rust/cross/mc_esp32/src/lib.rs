@@ -14,14 +14,22 @@ use embassy_sync::{
     signal::Signal,
 };
 use embassy_time::Duration;
+use esp_hal::system::Stack;
+use esp_rtos::embassy::InterruptExecutor;
 use sc_messages::motion_profile::{Request, RequestRefused};
-use static_cell::ConstStaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 use crate::gpio::pwm::SETPOINT_LIST_LENGTH;
 
 pub mod gpio;
 pub mod motion_profile;
 pub mod rpc;
+
+/// The stack of the second core.
+pub static SECOND_CORE_STACK: ConstStaticCell<Stack<8192>> = ConstStaticCell::new(Stack::new());
+
+/// The executor for the second core.
+pub static SECOND_CORE_EXECUTOR: StaticCell<InterruptExecutor<2>> = StaticCell::new();
 
 /// The period that the main control loop runs at.
 pub const LOOP_PERIOD: Duration = Duration::from_millis(20);

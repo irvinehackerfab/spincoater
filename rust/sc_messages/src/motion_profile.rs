@@ -15,9 +15,8 @@ pub const MAX_SETPOINTS: usize = 127;
 pub struct Setpoint {
     /// The target plate RPM.
     pub rpm: u16,
-    /// The time (in micros) that should be taken to reach the rpm.
-    /// The MCU expects this to be time since last setpoint,
-    /// and it sends it back to the host PC as time since the start of the motion profile.
+    /// The time (in micros) for this rpm.
+    /// The MCU expects this to be time since the start of the motion profile.
     // I would like to use `embassy_time::duration::Duration`,
     // but it doesn't impl Serialize.
     #[serde(rename = "time (micros)")]

@@ -39,7 +39,7 @@ pub static WIRE_STORAGE: WireStorage<
 
 /// According to [the example](https://github.com/jamesmunns/postcard-rpc/blob/17dc2360a21c5caad5a20efb6a0a276df29ec945/example/firmware/src/bin/comms-02.rs#L277),
 /// publish requires 0.
-pub const SEQUENCE_NUMBER: VarSeq = VarSeq::Seq1(0);
+pub const SEQUENCE_NUMBER: VarSeq = VarSeq::Seq2(0);
 
 pub type WireTx = EioWireTx<CriticalSectionRawMutex, UartTx<'static, Async>>;
 

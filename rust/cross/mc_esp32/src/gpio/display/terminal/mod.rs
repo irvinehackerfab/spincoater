@@ -37,10 +37,8 @@ pub async fn update_terminal(
 ) -> ! {
     let mut state = TerminalState::default();
     loop {
-        if let Err(err) = terminal.draw(|frame| state.draw(frame)) {
-            let _ = to_server
-                .log_fmt(format_args!("Display error: {err}"))
-                .await;
+        if let Err(_err) = terminal.draw(|frame| state.draw(frame)) {
+            let _ = to_server.log_str("Display error!").await;
         }
         match from_all.receive().await {
             TuiEvent::ServerError(server_error) => state.server_error = Some(server_error),

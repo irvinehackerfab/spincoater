@@ -80,14 +80,6 @@ impl Runner {
                 }
             }
         }
-        // Change the setpoints from time since last setpoint to time since the start of the motion profile.
-        // We could potentially log the return value of this (AKA the total motion profile time)
-        // for something like a progress bar.
-        self.setpoints.iter_mut().fold(0u64, |time, setpoint| {
-            let delta_time = setpoint.time;
-            setpoint.time += time;
-            time + delta_time
-        });
     }
 
     /// Executes the motion profile,
@@ -127,34 +119,25 @@ impl Runner {
                 return;
             };
             self.pwm_pin.set_timestamp(setpoint_duty_cycle);
-
             // todo!("Add feedback")
             // This is where we would add feedback.
-            let current_rpm = match Self::calculate_rpm() {
-                Ok(rpm) => rpm,
-                Err(err) => {
-                    self.pwm_pin.set_timestamp(*STOP_DUTY);
-                    let _ = self
-                        .to_server
-                        .log_fmt(format_args!("Failed to calculate rpm: {err}. Stopping!"))
-                        .await;
-                    return;
-                }
+            let Ok(current_rpm) = Self::calculate_rpm() else {
+                self.pwm_pin.set_timestamp(*STOP_DUTY);
+                let _ = self
+                    .to_server
+                    .log_str("Failed to calculate rpm. Stopping!")
+                    .await;
+                return;
             };
 
             // Logging
-            let duty_cycle = match DutyCycle::try_from(setpoint_duty_cycle) {
-                Ok(duty_cycle) => duty_cycle,
-                Err(err) => {
-                    self.pwm_pin.set_timestamp(*STOP_DUTY);
-                    let _ = self
-                        .to_server
-                        .log_fmt(format_args!(
-                            "Failed to create duty cycle: {err}. Stopping!"
-                        ))
-                        .await;
-                    return;
-                }
+            let Ok(duty_cycle) = DutyCycle::try_from(setpoint_duty_cycle) else {
+                self.pwm_pin.set_timestamp(*STOP_DUTY);
+                let _ = self
+                    .to_server
+                    .log_str("Tried to log an out of range duty cycle. Stopping!")
+                    .await;
+                return;
             };
             let state = motion_profile::State {
                 setpoint_rpm,
@@ -214,23 +197,22 @@ impl Runner {
             let _ = self.to_server.log_str("Motion profile done.").await;
             return None;
         };
+
         // Get setpoint rpm.
-        let setpoint_rpm = match Self::next_setpoint_rpm(
-            previous_setpoint,
-            current_setpoint,
-            elapsed_since_start_micros,
-        ) {
-            Ok(rpm) => rpm,
-            Err(err) => {
-                self.pwm_pin.set_timestamp(*STOP_DUTY);
-                let _ = self
-                    .to_server
-                    .log_fmt(format_args!(
-                        "Failed to calculate setpoint RPM: {err}. Stopping!"
-                    ))
-                    .await;
-                return None;
-            }
+        let Some(setpoint_rpm) = self
+            .next_setpoint_rpm(
+                previous_setpoint,
+                current_setpoint,
+                elapsed_since_start_micros,
+            )
+            .await
+        else {
+            self.pwm_pin.set_timestamp(*STOP_DUTY);
+            let _ = self
+                .to_server
+                .log_str("Failed to calculate setpoint RPM. Stopping!")
+                .await;
+            return None;
         };
         // Then we need to linearly interpolate to find the required duty cycle.
         Some((setpoint_rpm, linear_interpolation(setpoint_rpm)))
@@ -268,19 +250,33 @@ impl Runner {
     ///
     /// # Errors
     /// Returns an error if the rpm cannot fit in a [`u16`].
-    fn next_setpoint_rpm(
+    async fn next_setpoint_rpm(
+        &self,
         previous_setpoint: &Setpoint,
         current_setpoint: &Setpoint,
         elapsed_since_start_micros: u64,
-    ) -> Result<u16, TryFromIntError> {
+    ) -> Option<u16> {
         // We need to increase the size of some numbers to prevent overflow.
         let previous_setpoint_rpm = u64::from(previous_setpoint.rpm);
         let current_setpoint_rpm = u64::from(current_setpoint.rpm);
-        let delta_rpm = current_setpoint_rpm - previous_setpoint_rpm;
-        let delta_time = elapsed_since_start_micros - previous_setpoint.time;
-        let numerator = delta_rpm * delta_time;
+        let Some(delta_rpm) = current_setpoint_rpm.checked_sub(previous_setpoint_rpm) else {
+            let _ = self.to_server.log_str("RPM subtraction overflowed!").await;
+            return None;
+        };
+        let Some(delta_time) = elapsed_since_start_micros.checked_sub(previous_setpoint.time)
+        else {
+            let _ = self.to_server.log_str("Time subtraction overflowed!").await;
+            return None;
+        };
+        let Some(numerator) = delta_rpm.checked_mul(delta_time) else {
+            let _ = self.to_server.log_str("Multiplication overflowed!").await;
+            return None;
+        };
+
         let denominator = current_setpoint.time - previous_setpoint.time;
-        u16::try_from(previous_setpoint_rpm + numerator / denominator)
+        let result = u16::try_from(previous_setpoint_rpm + numerator / denominator)
+            .expect("The rpm should never exceed 65535.");
+        Some(result)
     }
 
     /// Calculates the current rpm using [`LOOP_PERIOD`] as the amount of time that has passed.
@@ -323,8 +319,9 @@ fn linear_interpolation(setpoint_rpm: u16) -> u16 {
                 .zip(&THROTTLE_CURVE[1][1..THROTTLE_POINTS]),
         )
     {
-        if setpoint_rpm == *rpm_0 {
-            return *duty_0;
+        // Avoid dividing by zero
+        if rpm_0 == rpm_1 {
+            return *rpm_0;
         }
         if setpoint_rpm > *rpm_0 {
             let delta_duty = u32::from(duty_1 - duty_0);

@@ -43,9 +43,11 @@ pub const SETPOINT_LIST_LENGTH: usize = MAX_SETPOINTS + 1;
 pub static SETPOINTS: StaticCell<Vec<Setpoint, SETPOINT_LIST_LENGTH>> = StaticCell::new();
 
 /// The number of datapoints for the throttle curve.
-pub const THROTTLE_POINTS: usize = 10;
+pub const THROTTLE_POINTS: usize = 9;
 
 /// The table of values we got from reading the motor RPM at multiple PWM duty cycles.
+///
+/// No two RPM values should be the same.
 ///
 /// Units of `[0]`: Plate RPM (motor RPM * 20/74)
 ///
@@ -53,6 +55,6 @@ pub const THROTTLE_POINTS: usize = 10;
 ///
 /// See [the graph](https://www.desmos.com/calculator/dtaaxpy72o) for more info.
 pub const THROTTLE_CURVE: [[u16; THROTTLE_POINTS]; 2] = [
-    [0, 2649, 4838, 6730, 7973, 8783, 9324, 10297, 10405, 10405],
-    [4800, 5056, 5120, 5200, 5280, 5360, 5440, 5760, 6080, 6400],
+    [0, 2649, 4838, 6730, 7973, 8783, 9324, 10297, 10405],
+    [4800, 5056, 5120, 5200, 5280, 5360, 5440, 5760, 6080],
 ];
