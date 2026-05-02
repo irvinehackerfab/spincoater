@@ -209,7 +209,7 @@ async fn main(spawner: Spawner) -> ! {
     );
     spawner.must_spawn(run(runner));
 
-    // Run the server on the second core so it doesn't miss UART interrupts.
+    // Run the encoder task/ISR on the second core so it doesn't block the program.
     let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     esp_rtos::start_second_core(
         peripherals.CPU_CTRL,
@@ -225,8 +225,6 @@ async fn main(spawner: Spawner) -> ! {
     );
 
     loop {
-        // Since we lose access to espflash's RTT output as soon as we take control of the UART pins,
-        // The only place we can log the error message is to the terminal.
         let err = server.run().await;
         to_terminal.send(TuiEvent::ServerError(err)).await;
     }
