@@ -39,7 +39,7 @@ In effect: you can use the convenient upstream pre-builts for `rustc`/`rustdoc` 
 1. You’ll get further instructions there:
 
 ```
-❯ cd esp-rust-nix-sandbox
+❯ cd mc_esp32
 
 🔨 Welcome to esp-rust-nix-sandbox-devshell
 
@@ -60,13 +60,11 @@ The other tools (Cargo, espflash, etc.) are source-based and come from regular N
   rustfmt       - Tool for formatting Rust code according to style guidelines
 
 You can now run:
-  • cd embassy_hello_world
-  • cargo build --features esp32 --target xtensa-esp32-none-elf --release
-  • cargo doc   --features esp32 --target xtensa-esp32-none-elf --release --open
-  • espflash save-image --chip esp32 target/xtensa-esp32-none-elf/release/embassy-hello-world out.bin
+  • cargo build
+  • cargo doc --open
+  • espflash save-image --chip esp32 target/xtensa-esp32-none-elf/debug/spincoater out.bin
 
 To flash, and monitor output:
-  • cargo espflash flash --monitor --features esp32 --target xtensa-esp32-none-elf --release
   • cargo run --release (alias of ^)
   • picocom --baud=115200 --imap lfcrlf /dev/ttyUSB0
 ```

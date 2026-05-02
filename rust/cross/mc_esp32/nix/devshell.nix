@@ -3,29 +3,27 @@
   lib,
   pkgs,
   ...
-}: {
-  devshells.default = let
-    inherit (config) packages;
-    chosen.rustc =
-      if pkgs.stdenv.isLinux
-      then packages.bwrap-rustc
-      else packages.unsafe-bin-esp-rust;
-    chosen.rustdoc =
-      if pkgs.stdenv.isLinux
-      then packages.bwrap-rustdoc
-      else packages.unsafe-bin-esp-rust;
-  in
-    {config, ...}: {
-      name = "esp-rust-nix-sandbox-devshell";
+}:
+{
+  devshells.default =
+    let
+      inherit (config) packages;
+      chosen.rustc = if pkgs.stdenv.isLinux then packages.bwrap-rustc else packages.unsafe-bin-esp-rust;
+      chosen.rustdoc =
+        if pkgs.stdenv.isLinux then packages.bwrap-rustdoc else packages.unsafe-bin-esp-rust;
+    in
+    { config, ... }:
+    {
+      name = "mc_esp32";
 
       commands = [
-        {package = chosen.rustc;}
-        {package = packages.cargo-any-rust;}
-        {package = pkgs.rustfmt;}
-        {package = pkgs.rust-analyzer;}
-        {package = pkgs.clippy;}
-        {package = pkgs.espflash;}
-        {package = pkgs.picocom;}
+        { package = chosen.rustc; }
+        { package = packages.cargo-any-rust; }
+        { package = pkgs.rustfmt; }
+        { package = pkgs.rust-analyzer; }
+        { package = pkgs.clippy; }
+        { package = pkgs.espflash; }
+        { package = pkgs.picocom; }
       ];
 
       env = [
@@ -66,13 +64,11 @@
           $(menu)
 
           You can now run:
-            • {bold}cd embassy_hello_world{reset}
-            • {bold}cargo build --features esp32 --target xtensa-esp32-none-elf --release{reset}
-            • {bold}cargo doc   --features esp32 --target xtensa-esp32-none-elf --release --open{reset}
-            • {bold}espflash save-image --chip esp32 target/xtensa-esp32-none-elf/release/embassy-hello-world out.bin{reset}
+            • {bold}cargo build
+            • {bold}cargo doc --open{reset}
+            • {bold}espflash save-image --chip esp32 target/xtensa-esp32-none-elf/debug/spincoater out.bin{reset}
 
           To flash, and monitor output:
-            • {bold}cargo espflash flash --monitor --features esp32 --target xtensa-esp32-none-elf --release{reset}
             • {bold}cargo run --release{reset} (alias of ^)
             • {bold}picocom --baud=115200 --imap lfcrlf /dev/ttyUSB0{reset}
         '';

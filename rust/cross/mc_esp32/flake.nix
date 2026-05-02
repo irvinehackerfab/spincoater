@@ -14,11 +14,8 @@
 
   outputs =
     inputs:
-    let
-      inherit (inputs.nixpkgs) lib;
-    in
     inputs.flake-parts.lib.mkFlake { inherit inputs; } (
-      { config, ... }:
+      { ... }:
       {
         imports = [
           inputs.devshell.flakeModule
@@ -33,11 +30,9 @@
 
         perSystem =
           {
-            system,
-            pkgs,
             ...
           }:
-          rec {
+          {
             imports = [
               ./nix/unsafe-bin.nix
               ./nix/safe-bwrap.nix
@@ -46,7 +41,7 @@
             ];
 
             treefmt =
-              { pkgs, ... }:
+              { ... }:
               {
                 projectRootFile = "flake.nix";
                 programs = {
