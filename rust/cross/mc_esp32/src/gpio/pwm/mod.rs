@@ -54,7 +54,7 @@ pub const THROTTLE_POINTS: usize = 9;
 /// Units of `[1]`: PWM units (microseconds * [`sc_messages::PERIOD`] * [`FREQUENCY`] seconds^-1 / 10^6 microseconds)
 ///
 /// See [the graph](https://www.desmos.com/calculator/dtaaxpy72o) for more info.
-pub const THROTTLE_CURVE: [[u16; THROTTLE_POINTS]; 2] = [
+pub const THROTTLE_CURVE: [[u32; THROTTLE_POINTS]; 2] = [
     [0, 2649, 4838, 6730, 7973, 8783, 9324, 10297, 10405],
     [4800, 5056, 5120, 5200, 5280, 5360, 5440, 5760, 6080],
 ];

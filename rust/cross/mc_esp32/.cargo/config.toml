@@ -6,7 +6,6 @@ runner = "espflash flash --monitor --chip esp32"
 [build]
 rustflags = [
   "-C", "link-arg=-nostartfiles",
-  "-Z", "stack-protector=all",
 ]
 
 target = "xtensa-esp32-none-elf"

@@ -34,18 +34,22 @@ impl Deref for DutyCycle {
     }
 }
 
-impl TryFrom<u16> for DutyCycle {
-    type Error = OutOfRange;
-
-    /// Attempt to wrap a [`u16`] in [`DutyCycle`].
+impl From<u16> for DutyCycle {
+    /// Wraps a [`u16`] in [`DutyCycle`].
     ///
-    /// This fails if the value is greater than [`PERIOD`].
-    fn try_from(value: u16) -> Result<DutyCycle, OutOfRange> {
-        if value <= PERIOD {
-            Ok(Self(value))
-        } else {
-            Err(OutOfRange(value))
-        }
+    /// Truncates to [`MAX_POWER_DUTY`].
+    fn from(value: u16) -> Self {
+        Self(value.min(*MAX_POWER_DUTY))
+    }
+}
+
+impl From<u32> for DutyCycle {
+    /// Wraps a [`u32`] in [`DutyCycle`].
+    ///
+    /// Truncates to [`MAX_POWER_DUTY`].
+    #[allow(clippy::cast_possible_truncation)]
+    fn from(value: u32) -> Self {
+        Self((value as u16).min(*MAX_POWER_DUTY))
     }
 }
 

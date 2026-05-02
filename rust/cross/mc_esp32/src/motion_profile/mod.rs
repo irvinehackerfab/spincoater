@@ -1,5 +1,5 @@
 //! This module contains the functionality for running motion profiles sent by the host PC.
-use core::{num::TryFromIntError, sync::atomic::Ordering};
+use core::sync::atomic::Ordering;
 
 use crate::{
     LOOP_PERIOD, REQUEST_CHANNEL_LENGTH, REQUEST_RESPONSE_SIGNAL,
@@ -131,31 +131,16 @@ impl Runner {
             else {
                 return;
             };
-            self.pwm_pin.set_timestamp(setpoint_duty_cycle);
+            self.pwm_pin.set_timestamp(*setpoint_duty_cycle);
             // todo!("Add feedback")
             // This is where we would add feedback.
-            let Ok(current_rpm) = Self::calculate_rpm() else {
-                self.pwm_pin.set_timestamp(*STOP_DUTY);
-                let _ = self
-                    .to_server
-                    .log_str("Failed to calculate rpm. Stopping!")
-                    .await;
-                return;
-            };
+            let current_rpm = Self::calculate_rpm();
 
             // Logging
-            let Ok(duty_cycle) = DutyCycle::try_from(setpoint_duty_cycle) else {
-                self.pwm_pin.set_timestamp(*STOP_DUTY);
-                let _ = self
-                    .to_server
-                    .log_str("Tried to log an out of range duty cycle. Stopping!")
-                    .await;
-                return;
-            };
             let state = motion_profile::State {
                 setpoint_rpm,
                 current_rpm,
-                duty_cycle,
+                duty_cycle: setpoint_duty_cycle,
                 time: elapsed_since_start_micros,
             };
             if self
@@ -183,7 +168,9 @@ impl Runner {
                 let before_sleep = Instant::now();
                 Timer::after(time_to_sleep).await;
                 // Manually calculating the end of the function makes this function immune to oversleep from the timer.
-                before_sleep + time_to_sleep
+                before_sleep
+                    .checked_add(time_to_sleep)
+                    .expect("This program will not run for 584558 years.")
             }
             None => Instant::now(),
         }
@@ -201,7 +188,7 @@ impl Runner {
         &mut self,
         setpoint_idx: &mut usize,
         elapsed_since_start_micros: u64,
-    ) -> Option<(u16, u16)> {
+    ) -> Option<(u16, DutyCycle)> {
         // Get next pair of setpoints.
         let Some((previous_setpoint, current_setpoint)) =
             self.next_setpoint_pair(setpoint_idx, elapsed_since_start_micros)
@@ -240,16 +227,17 @@ impl Runner {
         elapsed_since_start_micros: u64,
     ) -> Option<(&Setpoint, &Setpoint)> {
         loop {
+            let next_setpoint_idx = setpoint_idx.checked_add(1)?;
             match (
                 self.setpoints.get(*setpoint_idx),
-                self.setpoints.get(*setpoint_idx + 1),
+                self.setpoints.get(next_setpoint_idx),
             ) {
                 (Some(previous_setpoint), Some(current_setpoint)) => {
                     // Only act on setpoints that haven't passed.
                     if elapsed_since_start_micros <= current_setpoint.time {
                         return Some((previous_setpoint, current_setpoint));
                     }
-                    *setpoint_idx += 1;
+                    *setpoint_idx = next_setpoint_idx;
                 }
                 // The motion profile is done.
                 (_, None) | (None, _) => return None,
@@ -262,62 +250,59 @@ impl Runner {
     /// See [Wikipedia's explanation for linear approximation](https://en.wikipedia.org/wiki/Linear_interpolation#Linear_interpolation_as_an_approximation).
     ///
     /// # Errors
-    /// Returns an error if the rpm cannot fit in a [`u16`].
+    /// Returns None if one of multiple possible arithmetic errors occurs.
     async fn next_setpoint_rpm(
         &self,
         previous_setpoint: &Setpoint,
         current_setpoint: &Setpoint,
         elapsed_since_start_micros: u64,
     ) -> Option<u16> {
-        // Avoid division by zero
-        if previous_setpoint.time == current_setpoint.time {
-            return Some(previous_setpoint.rpm);
-        }
-
         // We need to increase the size of some numbers to prevent overflow.
         let previous_setpoint_rpm = u64::from(previous_setpoint.rpm);
         let current_setpoint_rpm = u64::from(current_setpoint.rpm);
-        let Some(delta_rpm) = current_setpoint_rpm.checked_sub(previous_setpoint_rpm) else {
-            let _ = self.to_server.log_str("RPM subtraction underflowed!").await;
-            return None;
-        };
-        let Some(delta_time) = elapsed_since_start_micros.checked_sub(previous_setpoint.time)
-        else {
-            let _ = self
-                .to_server
-                .log_str("Time subtraction underflowed!")
-                .await;
-            return None;
-        };
+        let delta_rpm = current_setpoint_rpm.saturating_sub(previous_setpoint_rpm);
+        let delta_time = elapsed_since_start_micros.saturating_sub(previous_setpoint.time);
         let Some(numerator) = delta_rpm.checked_mul(delta_time) else {
             let _ = self.to_server.log_str("Multiplication overflowed!").await;
             return None;
         };
-
-        let denominator = current_setpoint.time - previous_setpoint.time;
-        let result = u16::try_from(previous_setpoint_rpm + numerator / denominator)
-            .expect("The rpm should never exceed 65535.");
+        let denominator = current_setpoint.time.saturating_sub(previous_setpoint.time);
+        let Some(interpolation) = numerator.checked_div(denominator) else {
+            return Some(previous_setpoint.rpm);
+        };
+        let Ok(interpolation) = u16::try_from(interpolation) else {
+            let _ = self
+                .to_server
+                .log_str("Interpolation exceeds u16::MAX!")
+                .await;
+            return None;
+        };
+        let Some(result) = previous_setpoint.rpm.checked_add(interpolation) else {
+            let _ = self.to_server.log_str("RPM exceeds u16::MAX!").await;
+            return None;
+        };
         Some(result)
     }
 
     /// Calculates the current rpm using [`LOOP_PERIOD`] as the amount of time that has passed.
     ///
-    /// # Errors
-    /// Returns an error if time can't fit in a [`u32`],
-    /// or RPM can't fit in a [`u16`].
-    fn calculate_rpm() -> Result<u16, TryFromIntError> {
+    /// This function never fails. If the RPM is greater than [`u16::MAX`], [`u16::MAX`] is returned.
+    #[allow(clippy::cast_possible_truncation)]
+    fn calculate_rpm() -> u16 {
         // Relaxed ordering because the order of instructions does not matter for the swap.
-        let motor_revolutions_doubled = MOTOR_REVOLUTIONS_DOUBLED.swap(0, Ordering::Relaxed);
-        let time_ms = u32::try_from(LOOP_PERIOD.as_millis())?;
-        // Avoid dividing by zero
-        if time_ms == 0 {
-            return Ok(0);
-        }
+        let motor_revolutions_doubled =
+            u64::from(MOTOR_REVOLUTIONS_DOUBLED.swap(0, Ordering::Relaxed));
+        let time_ms = LOOP_PERIOD.as_millis();
         // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(`time` ms) * (6000 ms / 1 min)
         // = (2*motor revolutions) * 30,000 / (37 * `time`)
         // Final units: plate revolutions per minute
-        let rpm = motor_revolutions_doubled * 30_000 / (37 * (time_ms));
-        u16::try_from(rpm)
+        // Note: These multiplications are saturating because there's absolutely no chance for either of them to be 2^64 - 1.
+        let numerator = motor_revolutions_doubled.saturating_mul(30_000);
+        let denominator = time_ms.saturating_mul(37);
+        let Some(rpm) = numerator.checked_div(denominator) else {
+            return 0;
+        };
+        rpm as u16
     }
 }
 
@@ -325,11 +310,16 @@ impl Runner {
 ///
 /// [`THROTTLE_CURVE`] must be nonzero and [`THROTTLE_CURVE`]`[0]` must have increasing values.
 ///
+/// This function never fails. If the duty cycle is greater than [`u16::MAX`], [`u16::MAX`] is returned.
+///
 /// # Implementation
 /// See [Wikipedia](https://en.wikipedia.org/wiki/Linear_interpolation#Linear_interpolation_as_an_approximation) for more info.
-fn linear_interpolation(setpoint_rpm: u16) -> u16 {
+#[allow(clippy::cast_possible_truncation)]
+fn linear_interpolation(setpoint_rpm: u16) -> DutyCycle {
+    // Everything here is in u32 to prevent overflow.
+    let setpoint_rpm = u32::from(setpoint_rpm);
     if setpoint_rpm <= THROTTLE_CURVE[0][0] {
-        return THROTTLE_CURVE[1][0];
+        return THROTTLE_CURVE[1][0].into();
     }
     for ((rpm_0, rpm_1), (duty_0, duty_1)) in THROTTLE_CURVE[0]
         .iter()
@@ -340,22 +330,21 @@ fn linear_interpolation(setpoint_rpm: u16) -> u16 {
                 .zip(&THROTTLE_CURVE[1][1..THROTTLE_POINTS]),
         )
     {
-        // Avoid dividing by zero
-        if rpm_0 == rpm_1 {
-            return *rpm_0;
-        }
-        if setpoint_rpm > *rpm_0 {
-            let delta_duty = u32::from(duty_1 - duty_0);
-            let delta_rpm = u32::from(setpoint_rpm - rpm_0);
-            let numerator = delta_duty * delta_rpm;
-            let denominator = u32::from(rpm_1 - rpm_0);
-            let result =
-                u16::try_from(numerator / denominator).expect("The rpm should never exceed 65535.");
-            return duty_0 + result;
+        if setpoint_rpm >= *rpm_0 {
+            let delta_duty = duty_1.saturating_sub(*duty_0);
+            let delta_rpm = setpoint_rpm.saturating_sub(*rpm_0);
+            // This multiplication is saturating because there is no chance for the product to exceed 2^32 - 1.
+            let numerator = delta_duty.saturating_mul(delta_rpm);
+            let denominator = rpm_1.saturating_sub(*rpm_0);
+            let Some(result) = numerator.checked_div(denominator) else {
+                return (*duty_0).into();
+            };
+            let result = duty_0.saturating_add(result);
+            return result.into();
         }
     }
     // The setpoint rpm is higher than any known rpm, so just return the highest rpm.
-    THROTTLE_CURVE[1][THROTTLE_POINTS - 1]
+    THROTTLE_CURVE[1][THROTTLE_POINTS - 1].into()
 }
 
 /// Runs the [`Runner`] forever.

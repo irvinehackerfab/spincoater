@@ -32,6 +32,9 @@ pub static SECOND_CORE_STACK: ConstStaticCell<Stack<8192>> = ConstStaticCell::ne
 pub static SECOND_CORE_EXECUTOR: StaticCell<InterruptExecutor<2>> = StaticCell::new();
 
 /// The period that the main control loop runs at.
+///
+/// Don't set this to a value that the MCU can't achieve,
+/// or else RPM calculation will not work correctly.
 pub const LOOP_PERIOD: Duration = Duration::from_millis(20);
 
 /// The length of the buffer used by [`REQUEST_CHANNEL`].
