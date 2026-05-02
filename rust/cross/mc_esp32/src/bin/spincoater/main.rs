@@ -43,7 +43,7 @@ use mc_esp32::{
 };
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
 use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
-use postcard_rpc::server::{Dispatch, Server, impls::embedded_io_async_v0_6::EioWireSpawn};
+use postcard_rpc::server::{Dispatch, Server};
 use ratatui::Terminal;
 use sc_messages::{icd::BAUD_RATE, motion_profile::Setpoint, pwm::STOP_DUTY};
 
@@ -164,7 +164,7 @@ async fn main(spawner: Spawner) -> ! {
         .with_rx(peripherals.GPIO25)
         .into_async();
     let (rx, tx) = uart.split();
-    let dispatcher = Dispatcher::new(context, EioWireSpawn::from(spawner));
+    let dispatcher = Dispatcher::new(context, ());
     let (wire_rx, wire_tx) = WIRE_STORAGE
         .init(rx, tx)
         .expect("Failed to create wire RX and TX");

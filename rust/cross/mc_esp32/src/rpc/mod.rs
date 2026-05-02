@@ -10,7 +10,7 @@ use esp_hal::{
 use postcard_rpc::{
     define_dispatch,
     header::{VarHeader, VarSeq},
-    server::impls::embedded_io_async_v0_6::{EioWireRx, EioWireSpawn, EioWireTx, WireStorage},
+    server::impls::embedded_io_async_v0_6::{EioWireRx, EioWireTx, WireStorage},
 };
 use sc_messages::{
     icd::{ENDPOINTS_LIST, MotionRequestEndpoint, TOPICS_LIST, VacuumPumpRequestEndpoint},
@@ -95,7 +95,7 @@ define_dispatch! {
     app: Dispatcher;
     spawn_fn: spawn_fn;
     tx_impl: EioWireTx<CriticalSectionRawMutex, UartTx<'static, Async>>;
-    spawn_impl: EioWireSpawn;
+    spawn_impl: ();
     context: Context;
 
     endpoints: {
