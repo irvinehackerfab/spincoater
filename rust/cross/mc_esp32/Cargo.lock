@@ -1553,6 +1553,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 [[package]]
 name = "sc_messages"
 version = "0.1.0"
+source = "git+https://github.com/irvinehackerfab/spincoater.git?branch=v3-postcard-rpc#2281ca95082a3927c7a427deb85ad3c6ced3f417"
 dependencies = [
  "postcard-rpc",
  "postcard-schema",
