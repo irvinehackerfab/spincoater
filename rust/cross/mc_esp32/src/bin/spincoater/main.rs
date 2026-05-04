@@ -13,19 +13,18 @@ use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
     delay::Delay,
-    gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
-    interrupt::{Priority, software::SoftwareInterruptControl},
+    gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
+    interrupt::software::SoftwareInterruptControl,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     spi::master::{Config, Spi},
     time::Rate,
     timer::timg::TimerGroup,
     uart::{self, Uart},
 };
-use esp_rtos::embassy::InterruptExecutor;
 use heapless::Vec;
 use ibm437::IBM437_9X14_REGULAR;
 use mc_esp32::{
-    REQUEST_CHANNEL, SECOND_CORE_EXECUTOR, SECOND_CORE_STACK,
+    REQUEST_CHANNEL, SECOND_CORE_STACK,
     gpio::{
         display::{
             DISPLAY, ORIENTATION, SPI_BUFFER,
@@ -35,7 +34,8 @@ use mc_esp32::{
                 update_terminal,
             },
         },
-        encoder::handle_encoder,
+        encoder::ENCODER,
+        interrupt_handler,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
     },
     motion_profile::{Runner, run},
@@ -85,12 +85,6 @@ async fn main(spawner: Spawner) -> ! {
     esp_rtos::start(timg0.timer0);
 
     // println!("Taking control of the UART port. Please close RTT and open the host PC program.");
-
-    // Initialize encoder pin
-    let encoder = Input::new(
-        peripherals.GPIO27,
-        InputConfig::default().with_pull(Pull::Up),
-    );
 
     // Initialize PWM
     let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
@@ -217,10 +211,21 @@ async fn main(spawner: Spawner) -> ! {
         software_interrupts.software_interrupt1,
         SECOND_CORE_STACK.take(),
         || {
-            let executor = SECOND_CORE_EXECUTOR
-                .init_with(|| InterruptExecutor::new(software_interrupts.software_interrupt2));
-            let spawner = executor.start(Priority::Priority1);
-            spawner.must_spawn(handle_encoder(encoder));
+            // Set the interrupt handler for GPIO.
+            let mut io = Io::new(peripherals.IO_MUX);
+            io.set_interrupt_handler(interrupt_handler);
+
+            // Initialize encoder pin
+            let mut encoder = Input::new(
+                peripherals.GPIO27,
+                InputConfig::default().with_pull(Pull::Down),
+            );
+
+            // Start listening for rising edges
+            critical_section::with(|cs| {
+                encoder.listen(Event::RisingEdge);
+                ENCODER.borrow_ref_mut(cs).replace(encoder);
+            });
         },
     );
 
