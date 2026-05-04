@@ -25,31 +25,21 @@
         custom-rust-bin = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
       in
       {
-        devShells.default =
-          with pkgs;
-          mkShell {
-            strictDeps = true;
-            # host/target agnostic programs
-            depsBuildBuild = [
-            ];
-            # compilers & linkers & dependency finding programs
-            nativeBuildInputs = [
-              custom-rust-bin
-              pkg-config
-              eza
-              fd
-            ];
-            # libraries
-            buildInputs = [
-              openssl
-              wayland
-            ];
+        devShells.default = pkgs.mkShell {
+          packages = with pkgs; [
+            custom-rust-bin
+            pkg-config
+            eza
+            fd
+            openssl
+            wayland
+          ];
 
-            shellHook = ''
-              alias ls=eza
-              alias find=fd
-            '';
-          };
+          shellHook = ''
+            alias ls=eza
+            alias find=fd
+          '';
+        };
       }
     );
 }
