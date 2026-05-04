@@ -17,6 +17,9 @@ pub mod pwm;
 /// Since you can only have one GPIO handler,
 /// you must perform pin-specific code by checking the interrupt status of each pin.
 ///
+/// See [`set_interrupt_handler`](esp_hal::gpio::Io::set_interrupt_handler) for ISR requirements,
+/// and see [`listen`](esp_hal::gpio::Input::listen) for an example.
+///
 /// # Panics
 /// Panics if [`MOTOR_REVOLUTIONS_DOUBLED`] overflows.
 #[handler]
@@ -28,6 +31,7 @@ pub fn interrupt_handler() {
         };
         if encoder.is_interrupt_set() {
             MOTOR_REVOLUTIONS_DOUBLED.fetch_add(1, Ordering::Relaxed);
+            // This must be called to ensure that the interrupt handler can be reliably reused in the future.
             encoder.clear_interrupt();
         }
     });
