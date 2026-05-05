@@ -32,7 +32,11 @@
             eza
             fd
             openssl
+            # For Rusty File Dialogs
             wayland
+            dbus
+            xdg-desktop-portal-gtk
+            zenity
           ];
 
           shellHook = ''
