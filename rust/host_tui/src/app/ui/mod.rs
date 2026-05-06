@@ -81,14 +81,20 @@ impl App {
             .title_alignment(HorizontalAlignment::Center)
             .border_type(BorderType::Rounded);
 
+        let (current_rpm, setpoint_rpm, duty_cycle, duty_cycle_f32) = match &self.mcu_state {
+            Some(state) => (
+                Some(state.current_rpm),
+                Some(state.setpoint_rpm),
+                Some(state.duty_cycle),
+                Some(f32::from(*state.duty_cycle) / f32::from(PERIOD)),
+            ),
+            None => (None, None, None, None),
+        };
         let paragraph = Paragraph::new(Text::from_iter([
-            Line::raw(format!("Current RPM: {}", self.current_rpm)),
-            Line::raw(format!("Setpoint RPM: {}", self.setpoint_rpm)),
-            Line::raw(format!("Duty Cycle (0..{}): {}", PERIOD, self.duty_cycle)),
-            Line::raw(format!(
-                "Duty Cycle (0.0..1.0): {}",
-                f32::from(*self.duty_cycle) / f32::from(PERIOD)
-            )),
+            Line::raw(format!("Current RPM: {current_rpm:?}")),
+            Line::raw(format!("Setpoint RPM: {setpoint_rpm:?}")),
+            Line::raw(format!("Duty Cycle (0..{PERIOD}): {duty_cycle:?}")),
+            Line::raw(format!("Duty Cycle (0.0..1.0): {duty_cycle_f32:?}")),
         ]))
         .block(block);
 

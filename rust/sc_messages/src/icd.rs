@@ -2,7 +2,7 @@
 use postcard_rpc::{TopicDirection, endpoints, topics};
 
 use crate::{
-    motion_profile::{Request as MotionProfileRequest, RequestResult, State},
+    motion_profile::{Request as MotionProfileRequest, RequestResult, StateOrDisabled},
     vacuum_pump::Request as VacuumPumpRequest,
 };
 
@@ -23,7 +23,7 @@ endpoints! {
 topics! {
    list = TOPICS_LIST;
    direction = TopicDirection::ToClient;
-   | TopicTy                 | MessageTy | Path                          |
-   |-------------------------|-----------|-------------------------------|
-   | MotionProfileStateTopic | State     | "topics/motion_profile/state" |
+   | TopicTy                 | MessageTy       | Path                          |
+   |-------------------------|-----------------|-------------------------------|
+   | MotionProfileStateTopic | StateOrDisabled | "topics/motion_profile/state" |
 }

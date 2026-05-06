@@ -14,7 +14,7 @@ use postcard_rpc::{
 use ratatui::crossterm::event::Event as CrosstermEvent;
 use sc_messages::{
     icd::{MotionProfileStateTopic, MotionRequestEndpoint, VacuumPumpRequestEndpoint},
-    motion_profile::{self, RequestRefused, State},
+    motion_profile::{self, RequestRefused, StateOrDisabled},
     vacuum_pump,
 };
 use tokio::sync::mpsc::{self, UnboundedSender};
@@ -42,7 +42,7 @@ pub enum UsbEvent {
     /// The MCU logged a message.
     Log(String),
     /// The MCU sent the motion profile state.
-    State(State),
+    State(StateOrDisabled),
 }
 
 /// A motion profile response + the time it was received.
@@ -216,7 +216,7 @@ async fn await_log_messages(
 
 /// Sends the MCU's motion profile state to the terminal.
 async fn await_state_messages(
-    mut subscription: Subscription<State>,
+    mut subscription: Subscription<StateOrDisabled>,
     to_handler: UnboundedSender<Result<TuiEvent>>,
 ) {
     // As soon as the stream closes, the terminal must close as well.

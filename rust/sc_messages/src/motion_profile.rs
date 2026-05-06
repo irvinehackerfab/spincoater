@@ -8,12 +8,12 @@ use crate::pwm::DutyCycle;
 /// Any further setpoints will be ignored by the microcontroller.
 pub const MAX_SETPOINTS: usize = 127;
 
-/// A single target plate RPM value with the corresponding time taken to reach that RPM.
+/// A single target motor RPM value with the corresponding time taken to reach that RPM.
 ///
 /// These setpoints are combined to create a motion profile.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Schema)]
 pub struct Setpoint {
-    /// The target plate RPM.
+    /// The target motor RPM.
     pub rpm: u16,
     /// The time (in micros) for this rpm.
     /// The MCU expects this to be time since the start of the motion profile.
@@ -26,9 +26,9 @@ pub struct Setpoint {
 /// The current state of the motion profile.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Schema)]
 pub struct State {
-    /// The setpoint plate RPM.
+    /// The setpoint motor RPM.
     pub setpoint_rpm: u16,
-    /// The measured plate RPM.
+    /// The measured motor RPM.
     pub current_rpm: u16,
     /// The current duty cycle being set to try and reach the setpoint.
     pub duty_cycle: DutyCycle,
@@ -75,3 +75,6 @@ pub enum RequestRefused {
 
 /// See [this issue](https://github.com/jamesmunns/postcard-rpc/issues/56) for why we need a type alias.
 pub type RequestResult = Result<(), RequestRefused>;
+
+/// See [this issue](https://github.com/jamesmunns/postcard-rpc/issues/56) for why we need a type alias.
+pub type StateOrDisabled = Option<State>;

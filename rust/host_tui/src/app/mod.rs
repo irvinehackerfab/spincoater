@@ -20,8 +20,7 @@ use ratatui::{
     widgets::ListState,
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
-use sc_messages::motion_profile::{self, RequestRefused, Setpoint};
-use sc_messages::pwm::DutyCycle;
+use sc_messages::motion_profile::{self, RequestRefused, Setpoint, StateOrDisabled};
 use sc_messages::vacuum_pump;
 
 /// The maximum number of MCU logs kept in the TUI at a time.
@@ -36,12 +35,8 @@ pub struct App {
     events: EventHandler,
     /// The state of the commands section.
     commands_state: ListState,
-    /// The current plate RPM, as reported by the MCU.
-    current_rpm: u16,
-    /// The current setpoint plate RPM, as reported by the MCU.
-    setpoint_rpm: u16,
-    /// The current duty cycle, as reported by the MCU.
-    duty_cycle: DutyCycle,
+    /// The current state, as reported by the MCU.
+    mcu_state: StateOrDisabled,
     /// The last [`MCU_LOG_CAPACITY`] commands received from the MCU since the app started.
     ///
     /// When max capacity is reached, the oldest messages are overridden.
@@ -63,9 +58,7 @@ impl App {
         Ok(Self {
             running: true,
             events,
-            current_rpm: 0,
-            setpoint_rpm: 0,
-            duty_cycle: DutyCycle::from(0u16),
+            mcu_state: None,
             commands_state: ListState::default().with_selected(Some(0)),
             mcu_logs: AllocRingBuffer::new(MCU_LOG_CAPACITY),
             motor_data_file,
@@ -188,10 +181,10 @@ impl App {
                 let _ = self.mcu_logs.enqueue(format!("[Log]: {msg}"));
             }
             UsbEvent::State(state) => {
-                self.current_rpm = state.current_rpm;
-                self.setpoint_rpm = state.setpoint_rpm;
-                self.duty_cycle = state.duty_cycle;
-                self.motor_data_file.serialize(state)?;
+                self.mcu_state.clone_from(&state);
+                if let Some(state) = state {
+                    self.motor_data_file.serialize(state)?;
+                }
             }
             UsbEvent::MotionProfileRequestResponse(response) => {
                 let _ = self.mcu_logs.enqueue(format!("{response}"));

@@ -49,12 +49,16 @@ pub const THROTTLE_POINTS: usize = 9;
 ///
 /// No two RPM values should be the same.
 ///
-/// Units of `[0]`: Plate RPM (motor RPM * 20/74)
+/// Units of `[0]`: Motor RPM (RPM)
 ///
 /// Units of `[1]`: PWM units (microseconds * [`sc_messages::PERIOD`] * [`FREQUENCY`] seconds^-1 / 10^6 microseconds)
 ///
 /// See [the graph](https://www.desmos.com/calculator/dtaaxpy72o) for more info.
 pub const THROTTLE_CURVE: [[u32; THROTTLE_POINTS]; 2] = [
-    [0, 2649, 4838, 6730, 7973, 8783, 9324, 10297, 10405],
-    [4800, 5056, 5120, 5200, 5280, 5360, 5440, 5760, 6080],
+    [
+        0, 9_800, 17_900, 24_900, 29_500, 32_500, 34_500, 38_100, 38_500,
+    ],
+    [
+        4_800, 5_056, 5_120, 5_200, 5_280, 5_360, 5_440, 5_760, 6_080,
+    ],
 ];

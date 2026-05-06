@@ -120,7 +120,7 @@ impl Runner {
                             .to_server
                             .log_str("Motion profile stopped early.")
                             .await;
-                        return;
+                        break;
                     }
                 }
             }
@@ -129,7 +129,7 @@ impl Runner {
                 .feedforward(&mut setpoint_idx, elapsed_since_start_micros)
                 .await
             else {
-                return;
+                break;
             };
             self.pwm_pin.set_timestamp(*setpoint_duty_cycle);
             // todo!("Add feedback")
@@ -137,12 +137,12 @@ impl Runner {
             let current_rpm = Self::calculate_rpm();
 
             // Logging
-            let state = motion_profile::State {
+            let state = Some(motion_profile::State {
                 setpoint_rpm,
                 current_rpm,
                 duty_cycle: setpoint_duty_cycle,
                 time: elapsed_since_start_micros,
-            };
+            });
             if self
                 .to_server
                 .publish::<MotionProfileStateTopic>(SEQUENCE_NUMBER, &state)
@@ -151,9 +151,14 @@ impl Runner {
             {
                 // The host PC disconnected, so we need to stop.
                 self.pwm_pin.set_timestamp(*STOP_DUTY);
-                return;
+                break;
             }
         }
+        // Report that there is no more state.
+        let _ = self
+            .to_server
+            .publish::<MotionProfileStateTopic>(SEQUENCE_NUMBER, &None)
+            .await;
     }
 
     /// Sleeps if less than [`LOOP_PERIOD`] time has passed since the last end of this function.
@@ -292,14 +297,13 @@ impl Runner {
         // Relaxed ordering because the order of instructions does not matter for the swap.
         let motor_revolutions_doubled =
             u64::from(MOTOR_REVOLUTIONS_DOUBLED.swap(0, Ordering::Relaxed));
-        let time_ms = LOOP_PERIOD.as_millis();
-        // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(`time` ms) * (6000 ms / 1 min)
-        // = (2*motor revolutions) * 30,000 / (37 * `time`)
-        // Final units: plate revolutions per minute
-        // Note: These multiplications are saturating because there's absolutely no chance for either of them to be 2^64 - 1.
-        let numerator = motor_revolutions_doubled.saturating_mul(30_000);
-        let denominator = time_ms.saturating_mul(37);
-        let Some(rpm) = numerator.checked_div(denominator) else {
+        let time_micros = LOOP_PERIOD.as_micros();
+        // (2*motor revolutions) * 1/2 * 1/(`time` μs) * (10^6 μs / 1 s) * (60 s / 1 min)
+        // = (2*motor revolutions) * 30,000,000 / `time`
+        // Final units: motor revolutions per minute
+        // Note: This multiplication is saturating because there's absolutely no chance for it to exceed 2^64 - 1.
+        let numerator = motor_revolutions_doubled.saturating_mul(30_000_000);
+        let Some(rpm) = numerator.checked_div(time_micros) else {
             return 0;
         };
         rpm as u16
