@@ -2,7 +2,7 @@
 use esp_hal::time::Rate;
 use heapless::Vec;
 use sc_messages::motion_profile::{MAX_SETPOINTS, Setpoint};
-use static_cell::StaticCell;
+use static_cell::ConstStaticCell;
 
 /// The current motor controller reads PWM at 50 Hz.
 pub const FREQUENCY: Rate = Rate::from_hz(50);
@@ -40,7 +40,8 @@ pub const PERIOD: u16 = sc_messages::pwm::PERIOD - 1;
 pub const SETPOINT_LIST_LENGTH: usize = MAX_SETPOINTS + 1;
 
 /// The static cell for storing a motion profile.
-pub static SETPOINTS: StaticCell<Vec<Setpoint, SETPOINT_LIST_LENGTH>> = StaticCell::new();
+pub static SETPOINTS: ConstStaticCell<Vec<Setpoint, SETPOINT_LIST_LENGTH>> =
+    ConstStaticCell::new(Vec::from_array([Setpoint { rpm: 0, time: 0 }]));
 
 /// The number of datapoints for the throttle curve.
 pub const THROTTLE_POINTS: usize = 9;

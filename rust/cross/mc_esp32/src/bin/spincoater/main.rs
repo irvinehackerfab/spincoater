@@ -17,7 +17,6 @@ use esp_hal::{
     timer::timg::TimerGroup,
     uart::{self, Uart},
 };
-use heapless::Vec;
 use mc_esp32::{
     REQUEST_CHANNEL, SECOND_CORE_STACK,
     gpio::{
@@ -29,7 +28,7 @@ use mc_esp32::{
     rpc::{Context, Dispatcher, FRAME_BUFFER, WIRE_STORAGE},
 };
 use postcard_rpc::server::{Dispatch, Server};
-use sc_messages::{icd::BAUD_RATE, motion_profile::Setpoint, pwm::STOP_DUTY};
+use sc_messages::{icd::BAUD_RATE, pwm::STOP_DUTY};
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -93,7 +92,7 @@ async fn main(spawner: Spawner) -> ! {
     let request_channel = REQUEST_CHANNEL.take();
 
     // Initialize the setpoint list with a starting setpoint of (0, 0).
-    let setpoints = SETPOINTS.init_with(|| Vec::from([Setpoint { rpm: 0, time: 0 }]));
+    let setpoints = SETPOINTS.take();
 
     // Setup context
     let context = Context::new(request_channel.sender(), vacuum_pump_pin);
