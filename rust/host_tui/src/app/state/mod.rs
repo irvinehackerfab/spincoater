@@ -1,3 +1,5 @@
+//! This module contains additional functionality for tracking the MCU's state.
+
 use sc_messages::motion_profile;
 use sc_messages::pwm::DutyCycle;
 use serde::{Deserialize, Serialize};

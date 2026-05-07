@@ -22,9 +22,8 @@ Run with `cargo run --release --bin pwm`
 ## `spincoater`
 This program does the following:
 - Enables UART communication over the pins:
-  - TX: IO32
-  - RX: IO25
-  - The ESP-Prog-2 can be used to connect a PC to this UART interface.
+  - TX: IO1 (TX)
+  - RX: IO3 (RX)
   - Programs must use [postcard-rpc](https://github.com/jamesmunns/postcard-rpc) and the protocol defined in `sc_messages` (in the workspace above this one) to successfully communicate with the MCU.
 - Initializes PWM on pin [IO26](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
   - Starts with a constant duty cycle of 5% at a frequency of 50hz.
@@ -36,4 +35,7 @@ The display is used to report errors with the UART communication.
 
 Run with `cargo run --bin spincoater`.
 
-If the program crashes with the error message `Detected a write to the stack guard value on AppCpu`, it means a stack overflowed. You'll likely need to increase the second core stack size in [`lib.rs`](src/lib.rs).
+### UART Communication over an Adapter
+Alternatively, you can perform UART communication using pins other than TX and RX. This would allow you to keep `espflash`'s RTT monitor open while running the program. However, it requires a separate UART-to-USB adapter, such as the [ESP-Prog-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#).
+
+If you'd like to do this, run the program with `cargo run --bin spincoater -F uart_over_adapter`.

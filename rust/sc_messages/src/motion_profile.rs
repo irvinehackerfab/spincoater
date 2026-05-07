@@ -1,3 +1,5 @@
+use core::cmp::Ordering;
+
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +23,20 @@ pub struct Setpoint {
     // but it doesn't impl Serialize.
     #[serde(rename = "time (micros)")]
     pub time: u64,
+}
+
+/// Setpoints are ordered by time.
+impl Ord for Setpoint {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.time.cmp(&other.time)
+    }
+}
+
+/// Setpoints are ordered by time.
+impl PartialOrd for Setpoint {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 /// The current state of the motion profile.
@@ -64,8 +80,6 @@ pub enum Request {
 pub enum RequestRefused {
     /// The host PC sent too many setpoints.
     TooManySetpoints,
-    /// The host PC sent a setpoint with a time that is less than the last one that was sent.
-    IncorrectSetpointOrder,
     /// A motion profile is running.
     Running,
     /// No motion profile is running.

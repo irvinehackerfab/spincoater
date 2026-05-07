@@ -63,29 +63,18 @@ impl Runner {
     async fn setup(&mut self) {
         loop {
             match self.from_server.receive().await {
-                Request::Add(setpoint) => {
-                    if self
-                        .setpoints
-                        .last()
-                        .expect("At least one element is always present")
-                        .time
-                        > setpoint.time
-                    {
-                        REQUEST_RESPONSE_SIGNAL.signal(Err(RequestRefused::IncorrectSetpointOrder));
-                    } else {
-                        match self.setpoints.push(setpoint.clone()) {
-                            Ok(()) => REQUEST_RESPONSE_SIGNAL.signal(Ok(())),
-                            Err(_) => REQUEST_RESPONSE_SIGNAL
-                                .signal(Err(RequestRefused::TooManySetpoints)),
-                        }
-                    }
-                }
+                Request::Add(setpoint) => match self.setpoints.push(setpoint.clone()) {
+                    Ok(()) => REQUEST_RESPONSE_SIGNAL.signal(Ok(())),
+                    Err(_) => REQUEST_RESPONSE_SIGNAL.signal(Err(RequestRefused::TooManySetpoints)),
+                },
                 Request::ClearSetpoints => {
                     self.clear();
                     REQUEST_RESPONSE_SIGNAL.signal(Ok(()));
                 }
                 Request::Start => {
                     REQUEST_RESPONSE_SIGNAL.signal(Ok(()));
+                    // `postcard_rpc` sometimes sends setpoints out of order, so we have to sort them.
+                    self.setpoints.sort_unstable();
                     break;
                 }
                 Request::Stop => {

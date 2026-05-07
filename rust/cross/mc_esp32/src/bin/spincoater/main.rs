@@ -8,6 +8,7 @@
 #![deny(clippy::large_stack_frames)]
 
 use embassy_executor::Spawner;
+use embassy_time::Timer;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
@@ -15,8 +16,9 @@ use esp_hal::{
     interrupt::software::SoftwareInterruptControl,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     timer::timg::TimerGroup,
-    uart::{self, Uart},
+    uart::Uart,
 };
+use esp_println::println;
 use mc_esp32::{
     REQUEST_CHANNEL, SECOND_CORE_STACK,
     gpio::{
@@ -67,8 +69,6 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
 
-    // println!("Taking control of the UART port. Please close RTT and open the host PC program.");
-
     // Initialize PWM
     let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
     let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
@@ -98,12 +98,27 @@ async fn main(spawner: Spawner) -> ! {
     let context = Context::new(request_channel.sender(), vacuum_pump_pin);
 
     // Setup UART and postcard-rpc after we're done with the spawner
-    let config = uart::Config::default().with_baudrate(BAUD_RATE);
-    let uart = Uart::new(peripherals.UART1, config)
-        .expect("Failed to initialize UART")
-        .with_tx(peripherals.GPIO32)
-        .with_rx(peripherals.GPIO25)
-        .into_async();
+    let config = esp_hal::uart::Config::default().with_baudrate(BAUD_RATE);
+    // Select pins based on the cargo feature
+    cfg_select! {
+        feature = "uart_over_adapter" => {
+            let uart = Uart::new(peripherals.UART1, config)
+                .expect("Failed to initialize UART")
+                .with_tx(peripherals.GPIO32)
+                .with_rx(peripherals.GPIO25)
+                .into_async();
+        }
+        _ => {
+            println!("Taking control of the UART port. Please close RTT and open the host PC program.");
+            // We have to wait for the print statement to arrive at `espflash`'s RTT monitor before taking control.
+            Timer::after_millis(100).await;
+            let uart = Uart::new(peripherals.UART1, config)
+                .expect("Failed to initialize UART")
+                .with_tx(peripherals.GPIO1)
+                .with_rx(peripherals.GPIO3)
+                .into_async();
+        }
+    }
     let (rx, tx) = uart.split();
     let dispatcher = Dispatcher::new(context, ());
     let (wire_rx, wire_tx) = WIRE_STORAGE
