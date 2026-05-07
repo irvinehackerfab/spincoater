@@ -35,7 +35,6 @@ pub struct State {
     /// The time (in micros) since the motion profile started.
     // I would like to use `embassy_time::duration::Duration`,
     // but it doesn't impl Serialize.
-    #[serde(rename = "time (micros)")]
     pub time: u64,
 }
 

@@ -26,6 +26,7 @@ rfd.workspace = true
 postcard-rpc = { workspace = true, features = ["cobs-serial", "use-std"] }
 # For querying the available ports
 tokio-serial.workspace = true
+serde = { workspace = true, features = ["derive"] }
 
 [features]
 dev-socket = []

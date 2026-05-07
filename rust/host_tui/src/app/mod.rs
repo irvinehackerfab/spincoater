@@ -1,5 +1,6 @@
 //! This module contains the app representing the TUI.
 pub mod event;
+pub mod state;
 pub mod ui;
 
 use std::fs::{DirBuilder, OpenOptions};
@@ -8,6 +9,7 @@ use std::path::PathBuf;
 use std::{env, fs::File};
 
 use crate::app::event::{EventHandler, TuiEvent, UsbEvent};
+use crate::app::state::State;
 use chrono::Local;
 use color_eyre::{Result, eyre::OptionExt};
 use crossterm::event::Event;
@@ -20,7 +22,7 @@ use ratatui::{
     widgets::ListState,
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
-use sc_messages::motion_profile::{self, RequestRefused, Setpoint, StateOrDisabled};
+use sc_messages::motion_profile::{self, RequestRefused, Setpoint};
 use sc_messages::vacuum_pump;
 
 /// The maximum number of MCU logs kept in the TUI at a time.
@@ -36,7 +38,7 @@ pub struct App {
     /// The state of the commands section.
     commands_state: ListState,
     /// The current state, as reported by the MCU.
-    mcu_state: StateOrDisabled,
+    mcu_state: Option<State>,
     /// The last [`MCU_LOG_CAPACITY`] commands received from the MCU since the app started.
     ///
     /// When max capacity is reached, the oldest messages are overridden.

@@ -1,5 +1,5 @@
 //! This module decribes events that cause updates to the TUI.
-use std::fmt::Display;
+use std::{convert::Into, fmt::Display};
 
 use chrono::{Local, NaiveTime};
 use color_eyre::{
@@ -19,7 +19,7 @@ use sc_messages::{
 };
 use tokio::sync::mpsc::{self, UnboundedSender};
 
-use crate::app::MCU_LOG_CAPACITY;
+use crate::app::{MCU_LOG_CAPACITY, state::State};
 
 /// All possible TUI events.
 #[derive(Clone, Debug)]
@@ -42,7 +42,7 @@ pub enum UsbEvent {
     /// The MCU logged a message.
     Log(String),
     /// The MCU sent the motion profile state.
-    State(StateOrDisabled),
+    State(Option<State>),
 }
 
 /// A motion profile response + the time it was received.
@@ -222,7 +222,7 @@ async fn await_state_messages(
     // As soon as the stream closes, the terminal must close as well.
     while let Some(state) = subscription.recv().await {
         if to_handler
-            .send(Ok(TuiEvent::Usb(UsbEvent::State(state))))
+            .send(Ok(TuiEvent::Usb(UsbEvent::State(state.map(Into::into)))))
             .is_err()
         {
             break;
