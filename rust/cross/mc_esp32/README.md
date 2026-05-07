@@ -1,21 +1,41 @@
 # Motor Controller: ESP32
-This is a [Rust](https://rust-lang.org/) workspace with programs that you flash onto the [ESP32](https://www.espressif.com/en/products/socs/esp32) with [espflash](https://docs.espressif.com/projects/rust/book/getting-started/tooling/espflash.html).
+This is a [Rust](https://rust-lang.org/) crate with binaries that you flash onto the [ESP32](https://www.espressif.com/en/products/socs/esp32) with [espflash](https://docs.espressif.com/projects/rust/book/getting-started/tooling/espflash.html).
 
-The guide for Rust programming on ESP32 can be found [here](https://docs.espressif.com/projects/rust/book/preface.html).
+The guide for Rust programming on ESP32 can be found [here](https://docs.espressif.com/projects/rust/book/preface.html). You can either follow this guide for setting up your dev environment, or you can use the one provided by and documented in [DEVELOPMENT.md](DEVELOPMENT.md).
 
-This was generated from [esp-generate](https://docs.espressif.com/projects/rust/book/getting-started/tooling/esp-generate.html).
+The crate was initially generated from [esp-generate](https://docs.espressif.com/projects/rust/book/getting-started/tooling/esp-generate.html).
 
-The `editor_configurations` folder contains default configurations for various editors. To avoid conflicting with any configurations you may have, they have no effect until you move them out into the `esp32` folder and add a `.` to the front of the name.
+# Configuring your editor
+The `editor_configurations` folder contains default configurations for various editors. To avoid conflicting with any configurations you may have, they have no effect until you move them out into the `mc_esp32` folder and add a `.` to the front of the name.
 
 # Programs
+## __Note__
+[0, RX, TX, EN, 12, 13, 14, 15 and 3V3](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) may be used for the [ESP-PROG-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#header-block) in the future.
+
 ## `pwm`
-This is a basic program that initializes PWM on pin [IO23](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3) and sets it to a constant duty cycle of 5% with a frequency of 50hz.
+This is a basic program that initializes PWM on pin [IO26](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) and sets it to a constant duty cycle of 5% with a frequency of 50hz.
+
+This is useful if you ever need to do a simple check to make sure our current ESC isn't misbehaving.
 
 Run with `cargo run --release --bin pwm`
 
-## `wifi_pwm`
-This program initializes PWM on pin [IO23](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3) and sets it to a constant duty cycle of 5% with a frequency of 50hz. It also enables a Wifi access point that allows one connection at a time on port 8080 to send messages defined in `sc_messages` (in the workspace above this one).
+## `spincoater`
+This program does the following:
+- Enables UART communication over the pins:
+  - TX: IO1 (TX)
+  - RX: IO3 (RX)
+  - Programs must use [postcard-rpc](https://github.com/jamesmunns/postcard-rpc) and the protocol defined in `sc_messages` (in the workspace above this one) to successfully communicate with the MCU.
+- Initializes PWM on pin [IO26](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
+  - Starts with a constant duty cycle of 5% at a frequency of 50hz.
+- Records hall effect sensor input on pin [IO27](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
+- Controls the vacuum pump on pin [IO17](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block).
+  - Active high
 
-When flashing the program, you must specify the Wifi's SSID and password through environment variables. One way to do this is by running the program with `SSID=_ PASSWORD=_ cargo run --release --bin wifi_pwm`.
+The display is used to report errors with the UART communication.
 
-The password must be 8-64 characters or else the radio will panic during initialization.
+Run with `cargo run --bin spincoater`.
+
+### UART Communication over an Adapter
+Alternatively, you can perform UART communication using pins other than TX and RX. This would allow you to keep `espflash`'s RTT monitor open while running the program. However, it requires a separate UART-to-USB adapter, such as the [ESP-Prog-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#).
+
+If you'd like to do this, run the program with `cargo run --bin spincoater -F uart_over_adapter`.

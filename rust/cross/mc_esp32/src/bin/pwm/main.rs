@@ -10,22 +10,16 @@
 use embassy_executor::Spawner;
 use embassy_time::Timer;
 use esp_backtrace as _;
-use esp_hal::clock::CpuClock;
-use esp_hal::mcpwm::operator::PwmPinConfig;
-use esp_hal::mcpwm::timer::PwmWorkingMode;
-use esp_hal::mcpwm::{McPwm, PeripheralClockConfig};
-use esp_hal::time::Rate;
-use esp_hal::timer::timg::TimerGroup;
+use esp_hal::{
+    clock::CpuClock,
+    mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
+    timer::timg::TimerGroup,
+};
 use esp_println::println;
+use mc_esp32::gpio::pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER};
+use sc_messages::pwm::STOP_DUTY;
 
 extern crate alloc;
-
-const FREQUENCY: Rate = Rate::from_hz(50);
-/// We can configure this to whatever we like.
-/// Setting it to 99 allows us to set duty cycle in percentages.
-const MAX_DUTY: u16 = 99;
-/// 5% of max duty
-const STOP_DUTY: u16 = 5;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -42,6 +36,23 @@ async fn main(spawner: Spawner) -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
+    // The following pins are used to bootstrap the chip. They are available
+    // for use, but check the datasheet of the module for more information on them.
+    // - GPIO0
+    // - GPIO2
+    // - GPIO5
+    // - GPIO12
+    // - GPIO15
+    // These GPIO pins are in use by some feature of the module and should not be used.
+    // let _ = peripherals.GPIO6;
+    // let _ = peripherals.GPIO7;
+    // let _ = peripherals.GPIO8;
+    // let _ = peripherals.GPIO9;
+    // let _ = peripherals.GPIO10;
+    // let _ = peripherals.GPIO11;
+    let _ = peripherals.GPIO16;
+    // let _ = peripherals.GPIO20;
+
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
     // If you ever decide to use COEX (wifi and bluetooth at the same time)
     // then uncomment this line.
@@ -53,10 +64,7 @@ async fn main(spawner: Spawner) -> ! {
     println!("Embassy initialized!");
 
     // initialize PWM
-    // Ideally we want the lowest prescaler.
-    // 127 is the lowest you can go that divides nicely
-    // and doesn't overflow the timer clock prescaler for target PWM frequencies of around 50 hz.
-    let clock_cfg = PeripheralClockConfig::with_prescaler(127);
+    let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
     let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
     // connect operator0 to timer0
     mcpwm.operator0.set_timer(&mcpwm.timer0);
@@ -64,14 +72,14 @@ async fn main(spawner: Spawner) -> ! {
     // https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3
     let mut pwm_pin = mcpwm
         .operator0
-        .with_pin_a(peripherals.GPIO23, PwmPinConfig::UP_ACTIVE_HIGH);
+        .with_pin_a(peripherals.GPIO26, PwmPinConfig::UP_ACTIVE_HIGH);
     // start timer with timestamp values in the range that we want.
     let timer_clock_cfg = clock_cfg
-        .timer_clock_with_frequency(MAX_DUTY, PwmWorkingMode::Increase, FREQUENCY)
+        .timer_clock_with_frequency(PERIOD, PwmWorkingMode::Increase, FREQUENCY)
         .expect("Failed to create TimerClockConfig");
     println!("Period of the PWM pin: {}", pwm_pin.period());
     mcpwm.timer0.start(timer_clock_cfg);
-    pwm_pin.set_timestamp(STOP_DUTY);
+    pwm_pin.set_timestamp(*STOP_DUTY);
 
     loop {
         Timer::after_secs(1).await;

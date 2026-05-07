@@ -1,37 +1,42 @@
 // madhephaestus/ESP32Servo: Arduino-compatible servo library for the ESP32
 // TaskScheduler | Arduino Documentation
 
-//We can’t use 6-11 because they are for flashing
-//34-39 are for input only.
-//3,1,0, 12 are whatever
-
-
-#include <LiquidCrystal.h>
 #include <ESP32Servo.h>
-#include <TaskScheduler.h> // not sure if we use this
+#include "GUIv3_GSLC.h"
 
 // === ESP32 pin mapping  ===
-// LCD (4-bit)
-#define PIN_RS 21
-#define PIN_RW 22  // If you tie RW to GND physically, set this to 0 and wire RW to GND
-#define PIN_E  19
-#define PIN_D4 18
-#define PIN_D5 17
-#define PIN_D6 16
-#define PIN_D7 5
+// See the user guide for all pin descriptions:
+// https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html
 
+// 0, RX, TX, EN, 12, 13, 14, 15 and 3V3 may be used for the ESP-PROG-2.
+
+// Display pins
+// These are set directly in the library, not here.
+// See this issue for more information:
+// https://github.com/irvinehackerfab/spincoater/issues/6
+// TFT_MISO and T_DO: 19
+// TFT_MOSI and T_DIN: 23
+// TFT_SCK and T_CLK: 18
+// TFT_CS: 16
+// TFT_DC: 2
+// TFT_RST: 4
+// TOUCH_CS: 33
+#define LED 22
+// The LCD is powered with the 5V pin.
+
+// TODO: Remove all usages of the push buttons now that we have a touchscreen
 // Buttons (use INPUT_PULLUP)
 #define PIN_RPM_UP    25
 #define PIN_RPM_DOWN  26
 #define PIN_TIME_UP   27
-#define PIN_TIME_DOWN 14
-#define PIN_START     13
+#define PIN_TIME_DOWN 34
+#define PIN_START     35
 
 // Motor (servo) pin
-#define PIN_MOTOR 12
+#define PIN_MOTOR 32
 
-// IR sensor (interrupt) - UNO attachInterrupt(0) used pin 2; mapped here to GPIO4
-#define PIN_IR 4
+// Hall effect sensor (interrupt)
+#define PIN_HE 17
 
 // Motor Spinning Constants
 constexpr int preSpinRPM = 600;
@@ -39,16 +44,12 @@ constexpr int rampTime = 1000;
 constexpr int rampSteps = 50;
 constexpr int maxRPM = 12000;
 
-// IR Sensor Variables
-volatile unsigned long rpmcount;
-unsigned int measuredRpm;
-unsigned long timeold;
-unsigned long lastMillis = 0;
-volatile unsigned long lastInterruptTime = 0;
+// HE Sensor Variables
+volatile unsigned long motorRevolutionsDoubled;
+unsigned long previousTimeMillis;
 constexpr double adj_mtr = 1.42857143;
 
 Servo servo; // Setup the Servo
-auto lcd = LiquidCrystal(PIN_RS, PIN_RW, PIN_E, PIN_D4, PIN_D5, PIN_D6, PIN_D7); // Setup LCD
 
 // Saves Data for the Spin Phase
 struct spinState {
@@ -61,41 +62,44 @@ void setSpin(int, int);
 spinState menuLoop();
 void preSpin();
 void Spin(int rpm, int duration);
-void rpm_fun();
+void halfRevolutionInterrupt();
 int readRpm();
 int mapRPM(int);
-void startScreen();
 void updateValues();
 
-// Handles the interrupts of the IR Sensor. Calculate rotations over some period of time
-void IRAM_ATTR rpm_fun()
+// Handles the interrupts of the HE sensor.
+// Every 2 counts is one motor revolution.
+void IRAM_ATTR halfRevolutionInterrupt()
 {
-  unsigned long interruptTime = micros(); // for ISR safety
-  if (interruptTime - lastInterruptTime > 2000) {  // Debounce pulses
-    rpmcount++;
-    lastInterruptTime = interruptTime;
-  }
-
+  // Incrementing is ok here because interrupts are disabled in readRpm().
+  motorRevolutionsDoubled++;
 }
 
-// Uses the IR Sensor Data to calculate RPM
+// Uses the HE Sensor Data to calculate RPM
+// This function is only reliable if the program has been running for less than 50 days.
+// For more info, see https://docs.arduino.cc/language-reference/en/functions/time/millis/
 int readRpm(){
-  lastMillis = millis();
+  // For why we need to disable interrupts, see https://www.gammon.com.au/interrupts
   noInterrupts();
-  unsigned long count = rpmcount;
-  rpmcount = 0;
-  unsigned long elapsedTime = millis() - timeold;
-  timeold = millis();
+  unsigned long motorRevolutionsDoubledClone = motorRevolutionsDoubled;
+  motorRevolutionsDoubled = 0;
   interrupts();
-  if (elapsedTime > 0) {
-    measuredRpm = (30UL * 1000UL * count) / elapsedTime;
+  unsigned long elapsedTimeMillis = millis() - previousTimeMillis;
+  previousTimeMillis = millis();
+  unsigned long measuredRpm;
+  if (elapsedTimeMillis > 0) {
+    // (2*motor revolutions) * 1/2 * (20 plate revolutions / 74 motor revolutions) * 1/(elapsedTimeMillis ms) * (6000 ms / 1 min)
+    // = (2*motor revolutions) * 30,000 / (37 * elapsedTimeMillis)
+    Serial.print("Motor revs: ");
+    Serial.println(motorRevolutionsDoubled);
+    Serial.print("Millis: ");
+    Serial.println(elapsedTimeMillis);
+    // Final units: plate revolutions per minute
+    measuredRpm = motorRevolutionsDoubledClone * 30000 / (37 * elapsedTimeMillis);
   } else {
     measuredRpm = 0;
   }
-  if(measuredRpm != 0){
-    return measuredRpm;
-  }
-  return 0;
+  return measuredRpm;
 }
 
 // Debounce any of the button presses
@@ -126,7 +130,7 @@ bool debounce(int buttonNumber) {
 // Maps input RPM to a value that is understandable by the Servo
 int mapRPM(int x){
   // map returns long; ceil used in original — keep same behavior
-  return ceil(map(x, 0, maxRPM, 1500, 1000));
+  return ceil(map(x, 0, maxRPM, 1500, 2000));
 }
 
 // Transitions between the current RPM (curr) and the target RPM (target)
@@ -141,19 +145,10 @@ void setSpin(int curr, int target){
   servo.writeMicroseconds(mapRPM(target));
 }
 
-// Initial Start Screen (Press Start to Continue)
-void startScreen(){
-  lcd.clear();
-  lcd.setCursor(0, 0); lcd.print("UCI Spin Coater!");
-  lcd.setCursor(0, 1); lcd.print("Press Start...");
-  while(1){ if(debounce(4)){ return; } }
-}
-
 // Menu Loop (User Selects RPM and Duration)
 spinState menuLoop(){
   spinState state;
   bool initial = true;
-  lcd.clear();
   while(true){
     bool updated = true;
     if(debounce(1)){ // Increases RPM
@@ -182,8 +177,6 @@ spinState menuLoop(){
 
     // Updates the Display with the Current Values
     if(updated || initial){
-      lcd.setCursor(0, 0); lcd.print("RPM: "); lcd.print("    "); lcd.setCursor(5, 0); lcd.print((int)(state.rpm / adj_mtr));
-      lcd.setCursor(0, 1); lcd.print("Duration: "); lcd.print("    ");  lcd.setCursor(10, 1); lcd.print((int)state.duration);
       initial = false;
     }
   }
@@ -191,10 +184,6 @@ spinState menuLoop(){
 
 // Controls the PreSpin Phase (Add Photoresist here)
 void preSpin(){
-  lcd.clear();
-  lcd.setCursor(0,0); lcd.print("Pre-Spin Phase");
-  lcd.setCursor(0,1); lcd.print("RPM: 600");
-
   setSpin(0, preSpinRPM);
   while(1){
     if (debounce(4)){ // Exit using Start Button
@@ -205,27 +194,31 @@ void preSpin(){
 
 // Controls Spin Phase & Display
 void Spin(int rpm, int duration){
-  lcd.clear();
-  lcd.setCursor(0,0); lcd.print("Spinning...");
-  lcd.setCursor(0, 1); lcd.print("Duration: "); lcd.print((int)duration);
   setSpin(preSpinRPM, rpm);
-  int progress = 0;
-  int startTime = millis();
-  int lastDisplayed = -1;
+  // int progress = 0;
+  unsigned int startTimeMillis = millis();
+  // int lastDisplayed = -1;
 
-  while(progress < duration * 1000){
-    progress = millis() - startTime;
-    int timeLeft = ceil(duration - progress/1000.0);
-    if(timeLeft != lastDisplayed){
-      lcd.setCursor(0, 1); lcd.print("Duration: ");lcd.setCursor(10, 1);  lcd.print("     "); lcd.setCursor(10, 1); lcd.print(timeLeft);
-      lastDisplayed = timeLeft;
-    }
-    if(debounce(4)){break;} // Early Exit with Start Button
-    Serial.println(readRpm());
+  // while(progress < duration * 1000){
+  //   progress = millis() - startTime;
+  //   int timeLeft = ceil(duration - progress/1000.0);
+  //   if(timeLeft != lastDisplayed){
+  //     lastDisplayed = timeLeft;
+  //   }
+  //   if(debounce(4)){break;} // Early Exit with Start Button
+  //   rpm = readRpm();
+  //   if (rpm != 0) {
+  //     // Serial.println(rpm);
+  //   }
+  // }
+  while (!debounce(4)) {
+      // Waiting for 90 ms means you multiply the "motorRevolutionsDoubled" by 9.009,
+      // which hopefully doesn't lose much precision.
+      delay(90);
+      rpm = readRpm();
+      Serial.println(rpm);
   }
   setSpin(rpm, 0);
-  lcd.clear();
-  lcd.setCursor(0,0); lcd.print("Completed Spin!");
   delay(3000);
 }
 
@@ -239,26 +232,26 @@ void setup() {
   pinMode(PIN_TIME_DOWN, INPUT_PULLUP);
   pinMode(PIN_START, INPUT_PULLUP);
 
-  // IR sensor pin: configure as input 
-  pinMode(PIN_IR, INPUT_PULLUP);
+  // Hall effect sensor pin
+  pinMode(PIN_HE, INPUT_PULLUP);
 
-  // Servo attach: the ESP32 Servo 
+  // Servo attach: the ESP32 Servo
   pinMode(PIN_MOTOR, OUTPUT);
   digitalWrite(PIN_MOTOR, LOW);       // hold LOW during boot
   delay(200);                          // short delay for stable boot
   servo.attach(PIN_MOTOR, 1000, 2000); // then attach servo
   servo.writeMicroseconds(1500); // for esc
 
+  // Setup display
+  gslc_InitDebug(&DebugOut);
+  InitGUIslice_gen();
+  pinMode(LED, OUTPUT);
+  digitalWrite(LED, HIGH);
 
-  // Setup LCD
-  lcd.begin(16, 2);
-  lcd.clear();
-
-  // Setup IR Sensor interrupt using the pin number
-  rpmcount = 0;
-  measuredRpm = 0;
-  timeold = millis();
-  attachInterrupt(digitalPinToInterrupt(PIN_IR), rpm_fun, FALLING);
+  // Setup HE Sensor interrupt using the pin number
+  motorRevolutionsDoubled = 0;
+  previousTimeMillis = millis();
+  attachInterrupt(digitalPinToInterrupt(PIN_HE), halfRevolutionInterrupt, RISING);
 
   Serial.println("ESP32 Spin Coater ready");
 }
@@ -286,15 +279,13 @@ void test(){
 
 // System Loop
 void loop() {
-  test(); // These two lines are for testing/graphing
+  // test(); // These two lines are for testing/graphing
   //while(1){}
-
-  startScreen();
   while(1){
+    gslc_Update(&m_gui);
     spinState state = menuLoop();
     Serial.println("Finished Menu State");
     preSpin();
     Spin((int)state.rpm, (int)state.duration);
   }
 }
-

@@ -6,13 +6,12 @@ license.workspace = true
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
-
-[dev-dependencies]
-postcard = { workspace = true, features = ["heapless"] }
-sc_messages = { path = ".", features = ["std"] }
+thiserror = { workspace = true, optional = true }
+postcard-rpc = { workspace = true }
+postcard-schema = { workspace = true, features = ["derive"] }
 
 [features]
-std = []
+std = ["dep:thiserror"]
 
 [lints]
 workspace = true
