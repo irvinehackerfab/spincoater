@@ -1,72 +1,68 @@
 //! This crate provides a TUI for the PC connecting to the spincoater's ESP32.
 pub mod app;
 
-use std::net::{Ipv4Addr, SocketAddrV4};
+use std::io;
 
-use cfg_if::cfg_if;
-use color_eyre::Result;
-use tokio::net::TcpStream;
+use color_eyre::{Result, eyre::eyre};
+use postcard_rpc::{header::VarSeqKind, host_client::HostClient};
+use sc_messages::icd::BAUD_RATE;
+use std::io::Write;
+use tokio_serial::{SerialPortType, available_ports};
 
 use crate::app::App;
 
-cfg_if! {
-    if #[cfg(feature = "dev-socket")] {
-        pub(crate) const DEV_ADDRESS: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 8080);
+/// The URI that the MCU can use to report "unrecognized request" errors.
+const ERROR_PATH: &str = "error";
 
-        #[tokio::main]
-        async fn main() -> Result<()> {
-            color_eyre::install()?;
-            open_dev_connection()?;
-            let stream = TcpStream::connect(DEV_ADDRESS).await?;
-            let terminal = ratatui::init();
-            let result = App::new(stream)?.run(terminal).await;
-            ratatui::restore();
-            result
-        }
+/// The size of the outgoing queue.
+const TX_QUEUE_SIZE: usize = 128;
 
-        /// Binds a TCP socket to [`DEV_ADDRESS`] and spawns a task to accept all messages.
-        fn open_dev_connection() -> Result<()> {
-            use crate::DEV_ADDRESS;
-            use crate::app::event::BUFFER_SIZE;
-            use tokio::io::AsyncReadExt;
-            use tokio::net::TcpSocket;
+/// The size of sequuence numbers used when making requests.
+///
+/// [`postcard_rpc`] gives no hint as to what this should be.
+const VAR_SEQUENCE_KIND: VarSeqKind = VarSeqKind::Seq2;
 
-            let socket = TcpSocket::new_v4()?;
-            socket.bind(DEV_ADDRESS.into())?;
-            let listener = socket.listen(0)?;
-            // Open fake MCU socket
-            tokio::spawn(async move {
-                'connection: loop {
-                    let mut stream = listener
-                        .accept()
-                        .await
-                        .expect("Failed to accept connection")
-                        .0;
-                    let mut buffer = [1u8; BUFFER_SIZE];
-                    loop {
-                        match stream.read(&mut buffer).await {
-                            Ok(0) | Err(_) => continue 'connection,
-                            Ok(_) => {
-                            }
-                        }
-                    }
-                }
-            });
-            Ok(())
-        }
-    } else {
-        /// Keep this up to date with the IP and port listed in `../cross/mc_esp32/src/wifi/mod.rs`
-        pub(crate) const MCU_ADDRESS: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::new(192, 168, 2, 1), 8080);
+/// The Vendor ID that shows up when you connect an ESP32 `DevKitC` to a PC over USB.
+const DEV_KIT_C_VENDOR_ID: u16 = 4292;
 
-        #[tokio::main]
-        async fn main() -> Result<()> {
-            color_eyre::install()?;
-            println!("Attempting to connect to the MCU. If you're not connected to the wifi, connect and restart the program.");
-            let stream = TcpStream::connect(MCU_ADDRESS).await?;
-            let terminal = ratatui::init();
-            let result = App::new(stream)?.run(terminal).await;
-            ratatui::restore();
-            result
-        }
+/// The Vendor ID that shows up when you connect an ESP-Prog-2 to a PC over USB.
+const ESP_PROG_2_VENDOR_ID: u16 = 12346;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    color_eyre::install()?;
+
+    let ports = available_ports()?
+        .into_iter()
+        .filter(|info| match &info.port_type {
+            SerialPortType::UsbPort(usb_port_info) => {
+                usb_port_info.vid == DEV_KIT_C_VENDOR_ID
+                    || usb_port_info.vid == ESP_PROG_2_VENDOR_ID
+            }
+            _ => false,
+        })
+        .collect::<Vec<_>>();
+    let stdout = io::stdout();
+    {
+        let mut out = stdout.lock();
+        writeln!(out, "Detected an ESP device on: {ports:#?}")?;
+        write!(out, "Please choose a \"port_name\" to connect to: ")?;
+        out.flush()?;
     }
+    let mut buffer = String::new();
+    io::stdin().read_line(&mut buffer)?;
+
+    let client = HostClient::try_new_serial_cobs(
+        buffer.trim(),
+        ERROR_PATH,
+        TX_QUEUE_SIZE,
+        BAUD_RATE,
+        VAR_SEQUENCE_KIND,
+    )
+    .map_err(|err| eyre!("Failed to initialize USB connection: {}", err))?;
+
+    let terminal = ratatui::init();
+    let result = App::new(client).await?.run(terminal).await;
+    ratatui::restore();
+    result
 }

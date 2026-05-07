@@ -17,7 +17,7 @@ use esp_hal::{
 };
 use esp_println::println;
 use mc_esp32::gpio::pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER};
-use sc_messages::STOP_DUTY;
+use sc_messages::pwm::STOP_DUTY;
 
 extern crate alloc;
 
@@ -35,6 +35,23 @@ async fn main(spawner: Spawner) -> ! {
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
+
+    // The following pins are used to bootstrap the chip. They are available
+    // for use, but check the datasheet of the module for more information on them.
+    // - GPIO0
+    // - GPIO2
+    // - GPIO5
+    // - GPIO12
+    // - GPIO15
+    // These GPIO pins are in use by some feature of the module and should not be used.
+    // let _ = peripherals.GPIO6;
+    // let _ = peripherals.GPIO7;
+    // let _ = peripherals.GPIO8;
+    // let _ = peripherals.GPIO9;
+    // let _ = peripherals.GPIO10;
+    // let _ = peripherals.GPIO11;
+    let _ = peripherals.GPIO16;
+    // let _ = peripherals.GPIO20;
 
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
     // If you ever decide to use COEX (wifi and bluetooth at the same time)
@@ -55,7 +72,7 @@ async fn main(spawner: Spawner) -> ! {
     // https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3
     let mut pwm_pin = mcpwm
         .operator0
-        .with_pin_a(peripherals.GPIO32, PwmPinConfig::UP_ACTIVE_HIGH);
+        .with_pin_a(peripherals.GPIO26, PwmPinConfig::UP_ACTIVE_HIGH);
     // start timer with timestamp values in the range that we want.
     let timer_clock_cfg = clock_cfg
         .timer_clock_with_frequency(PERIOD, PwmWorkingMode::Increase, FREQUENCY)

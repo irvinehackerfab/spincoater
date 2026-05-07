@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, BorderType, List, ListItem, ListState, Paragraph},
 };
 use ringbuffer::RingBuffer;
-use sc_messages::PERIOD;
+use sc_messages::pwm::PERIOD;
 
 use crate::app::App;
 
@@ -59,7 +59,14 @@ impl App {
             .border_type(BorderType::Rounded)
             .title_bottom(instructions);
 
-        let items = ["Load motion profile CSV file", "Start", "Stop"];
+        let items = [
+            "Load motion profile CSV file",
+            "Clear all setpoints",
+            "Start",
+            "Stop",
+            "Enable vacuum pump",
+            "Disable vacuum pump",
+        ];
         let list = List::new(items)
             .block(cmd_block)
             .highlight_symbol("-> ")
@@ -74,14 +81,31 @@ impl App {
             .title_alignment(HorizontalAlignment::Center)
             .border_type(BorderType::Rounded);
 
+        let (
+            setpoint_rpm,
+            setpoint_plate_rpm,
+            current_rpm,
+            current_plate_rpm,
+            duty_cycle,
+            duty_cycle_f32,
+        ) = match &self.mcu_state {
+            Some(state) => (
+                Some(state.setpoint_rpm),
+                Some(state.setpoint_plate_rpm),
+                Some(state.current_rpm),
+                Some(state.current_plate_rpm),
+                Some(state.duty_cycle),
+                Some(f32::from(*state.duty_cycle) / f32::from(PERIOD)),
+            ),
+            None => (None, None, None, None, None, None),
+        };
         let paragraph = Paragraph::new(Text::from_iter([
-            Line::raw(format!("Current RPM: {}", self.current_rpm)),
-            Line::raw(format!("Current setpoint RPM: {}", self.setpoint_rpm)),
-            Line::raw(format!("Duty Cycle (0..{}): {}", PERIOD, self.duty_cycle)),
-            Line::raw(format!(
-                "Duty Cycle (0.0..1.0): {}",
-                f32::from(*self.duty_cycle) / f32::from(PERIOD)
-            )),
+            Line::raw(format!("Setpoint RPM: {setpoint_rpm:?}")),
+            Line::raw(format!("Setpoint plate RPM: {setpoint_plate_rpm:?}")),
+            Line::raw(format!("Current RPM: {current_rpm:?}")),
+            Line::raw(format!("Current plate RPM: {current_plate_rpm:?}")),
+            Line::raw(format!("Duty Cycle (0..{PERIOD}): {duty_cycle:?}")),
+            Line::raw(format!("Duty Cycle (0.0..1.0): {duty_cycle_f32:?}")),
         ]))
         .block(block);
 
@@ -90,15 +114,15 @@ impl App {
 
     fn render_logs(&mut self, area: Rect, frame: &mut Frame) {
         let info_block = Block::bordered()
-            .title("Previous Commands")
+            .title("MCU Logs")
             .title_alignment(HorizontalAlignment::Center)
             .border_type(BorderType::Rounded);
 
         // Todo: Consider replacing with scrolled paragraph to gain wrapping support
         let items = self
-            .previous_commands
+            .mcu_logs
             .iter()
-            .map(|command| ListItem::new(Text::from(format!("{command:?}"))));
+            .map(|msg| ListItem::new(Text::from(format!("{msg:?}"))));
 
         let list = List::new(items).block(info_block);
         let mut state = ListState::default();

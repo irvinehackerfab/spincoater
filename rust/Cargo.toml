@@ -16,16 +16,20 @@ ratatui = "0.30.0"
 color-eyre = "0.6.5"
 crossterm = "0.29.0"
 futures = "0.3.32"
-tokio = "1.51.0"
-bytes = "1.11.1"
+tokio = "1.52.2"
 chrono = "0.4.44"
-cfg-if = "1.0.4"
 ringbuffer = "0.16.0"
 thiserror = "2.0.18"
 # For logging
 csv = "1.4.0"
 # For loading motion profile files
 rfd = "0.17.2"
+# For easier communication between the MCU and PC
+postcard-rpc = "0.12.1"
+# For postcard-rpc
+postcard-schema = "0.2.5"
+# For querying the available ports
+tokio-serial = "5.4.5"
 
 
 [workspace.lints.rust]

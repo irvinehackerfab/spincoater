@@ -7,71 +7,30 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
-pub mod app;
-
-use bytes::BytesMut;
 use embassy_executor::Spawner;
-use embassy_net::{StackResources, tcp::TcpSocket};
-use embedded_hal_bus::spi::ExclusiveDevice;
+use embassy_time::Timer;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
-    delay::Delay,
     gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
     interrupt::software::SoftwareInterruptControl,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
-    rng::Rng,
-    spi::master::{Config, Spi},
-    time::Rate,
     timer::timg::TimerGroup,
+    uart::Uart,
 };
 use esp_println::println;
-use esp_radio::wifi::{CountryInfo, OperatingClass};
-use heapless::Vec;
-use ibm437::IBM437_9X14_REGULAR;
 use mc_esp32::{
-    SECOND_CORE_STACK,
+    REQUEST_CHANNEL, SECOND_CORE_STACK,
     gpio::{
-        display::{
-            DISPLAY, ORIENTATION, SPI_BUFFER,
-            terminal::{TERMINAL, channel::TERMINAL_CHANNEL, update_terminal},
-        },
         encoder::ENCODER,
         interrupt_handler,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
     },
-    wifi::{
-        AUTH_METHOD, IP_CONFIG, MAX_CONNECTIONS, RADIO, STACK_RESOURCES,
-        channel::{RECV_CMD_CHANNEL, SEND_INFO_CHANNEL},
-        handle_connections, net_task,
-        tcp::{
-            BUFFER_SIZE, KEEP_ALIVE, RX_BUFFER, RX_BUFFER_2, TIMEOUT, TX_BUFFER,
-            handle_socket_connections,
-        },
-    },
+    motion_profile::{Runner, run},
+    rpc::{Context, Dispatcher, FRAME_BUFFER, WIRE_STORAGE},
 };
-use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
-use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
-use ratatui::Terminal;
-use sc_messages::{STOP_DUTY, motion_profile::Setpoint};
-
-use crate::app::App;
-
-// Wifi requires heap allocation
-extern crate alloc;
-
-// Do not hardcode sensitive information like this.
-// Instead, pass in the variables as environment variables when you compile, like this:
-// SSID=_ PASSWORD=_ cargo run --release
-const SSID: &str = env!(
-    "SSID",
-    "If you see this error in the editor, ignore it. Otherwise, set the environment variable."
-);
-/// Note: Password must be 8-64 characters.
-const PASSWORD: &str = env!(
-    "PASSWORD",
-    "if you see this error in the editor, ignore it. Otherwise, set the environment variable"
-);
+use postcard_rpc::server::{Dispatch, Server};
+use sc_messages::{icd::BAUD_RATE, pwm::STOP_DUTY};
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -88,92 +47,33 @@ async fn main(spawner: Spawner) -> ! {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
+    // The following pins are used to bootstrap the chip. They are available
+    // for use, but check the datasheet of the module for more information on them.
+    // - GPIO0
+    // - GPIO2
+    // - GPIO5
+    // - GPIO12
+    // - GPIO15
+    // These GPIO pins are in use by some feature of the module and should not be used.
+    // let _ = peripherals.GPIO6;
+    // let _ = peripherals.GPIO7;
+    // let _ = peripherals.GPIO8;
+    // let _ = peripherals.GPIO9;
+    // let _ = peripherals.GPIO10;
+    // let _ = peripherals.GPIO11;
+    let _ = peripherals.GPIO16;
+    // let _ = peripherals.GPIO20;
+
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
-    // Ratatui requires extra memory
-    esp_alloc::heap_allocator!(size: 64 * 1024);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
-    println!("Embassy initialized on the first core!");
-
-    let radio =
-        RADIO.init_with(|| esp_radio::init().expect("Failed to initialize Wi-Fi/BLE controller"));
-    let wifi_config = esp_radio::wifi::Config::default()
-        .with_country_code(CountryInfo::from(*b"US").with_operating_class(OperatingClass::Indoors));
-    let (mut wifi_controller, interfaces) =
-        esp_radio::wifi::new(radio, peripherals.WIFI, wifi_config)
-            .expect("Failed to initialize Wi-Fi controller");
-    let net_config = embassy_net::Config::ipv4_static(IP_CONFIG);
-    let rng = Rng::new();
-    let seed = u64::from(rng.random()) << 32 | u64::from(rng.random());
-    // Init network stack
-    let (stack, runner) = embassy_net::new(
-        interfaces.ap,
-        net_config,
-        STACK_RESOURCES.init_with(StackResources::new),
-        seed,
-    );
-
-    // Set the wifi config
-    let wifi_config = esp_radio::wifi::ModeConfig::AccessPoint(
-        esp_radio::wifi::AccessPointConfig::default()
-            .with_ssid(SSID.into())
-            .with_auth_method(AUTH_METHOD)
-            .with_password(PASSWORD.into())
-            .with_max_connections(MAX_CONNECTIONS)
-            .with_beacon_timeout(
-                u16::try_from(TIMEOUT.as_secs()).expect("10 should fit in a u16."),
-            ),
-    );
-    wifi_controller
-        .set_config(&wifi_config)
-        .expect("Failed to set Wifi config");
-
-    // Initialize wifi driver
-    wifi_controller
-        .start_async()
-        .await
-        .expect("Failed to start wifi");
-
-    // Initialize TCP socket
-    let rx_buffer = RX_BUFFER.take();
-    let tx_buffer = TX_BUFFER.take();
-    let mut socket = TcpSocket::new(stack, rx_buffer, tx_buffer);
-    socket.set_timeout(Some(TIMEOUT));
-    socket.set_keep_alive(Some(KEEP_ALIVE));
-    let buffer = RX_BUFFER_2.init_with(|| BytesMut::with_capacity(BUFFER_SIZE));
-
-    // Setup encoder interrupt to run on the second core
-    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
-    esp_rtos::start_second_core(
-        peripherals.CPU_CTRL,
-        software_interrupts.software_interrupt0,
-        software_interrupts.software_interrupt1,
-        SECOND_CORE_STACK.take(),
-        || {
-            // Set the interrupt handler for GPIO.
-            // This allows for a slightly lower latency compared to waiting asynchronously.
-            let mut io = Io::new(peripherals.IO_MUX);
-            io.set_interrupt_handler(interrupt_handler);
-
-            // Initialize encoder pin
-            let mut encoder = Input::new(
-                peripherals.GPIO27,
-                InputConfig::default().with_pull(Pull::Up),
-            );
-            // Start listening for rising edges
-            critical_section::with(|cs| {
-                encoder.listen(Event::RisingEdge);
-                ENCODER.borrow_ref_mut(cs).replace(encoder);
-            });
-        },
-    );
 
     // Initialize PWM
     let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
     let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
     mcpwm.operator0.set_timer(&mcpwm.timer0);
-    // connect operator0 to pin IO23:
+    // connect operator0 to pin IO26:
     // https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3
     let mut pwm_pin = mcpwm
         .operator0
@@ -185,88 +85,90 @@ async fn main(spawner: Spawner) -> ! {
     mcpwm.timer0.start(timer_clock_cfg);
     pwm_pin.set_timestamp(*STOP_DUTY);
 
-    // Initialize the display
-    // init_with constructs the value in-place to save stack space.
-    let terminal = TERMINAL.init_with(|| {
-        // init_with constructs the value in-place to save stack space.
-        let display = DISPLAY.init_with(|| {
-            // https://esp32.implrust.com/tft-display/circuit.html
-            let spi = Spi::new(
-                peripherals.SPI2,
-                Config::default()
-                    .with_frequency(Rate::from_mhz(4))
-                    .with_mode(esp_hal::spi::Mode::_0),
-            )
-            .expect("Frequency is within 70kHz..80MHz")
-            .into_async()
-            // Master In Slave Out. SPI read line from the display to the microcontroller.
-            .with_miso(peripherals.GPIO19)
-            // Master Out Slave In. This is the SPI data line from the microcontroller to the display. Used to send pixel data and commands.
-            .with_mosi(peripherals.GPIO23)
-            // Serial Clock. SPI clock signal from the microcontroller. It synchronizes the data being sent.
-            .with_sck(peripherals.GPIO18);
-            // Chip Select. This tells the display when it should listen to SPI commands. Keep it low (active) when sending data.
-            // [`ExclusiveDevice::new_no_delay`] says to have an initial output of high.
-            let cs = Output::new(peripherals.GPIO15, Level::High, OutputConfig::default());
-            // Data/Command control pin. Set high to send data, low to send commands. Used to switch between writing commands and pixel data.
-            let dc = Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default());
-            // Resets the display. Useful during startup to make sure the display starts in a known state.
-            // Starts off low because [`Ili9341::new`] sets the reset low, then high
-            let reset = Output::new(peripherals.GPIO4, Level::Low, OutputConfig::default());
-            let spi_device = ExclusiveDevice::new_no_delay(spi, cs).expect("cs is already high");
-            let interface = SpiInterface::new(spi_device, dc, SPI_BUFFER.take());
-            mipidsi::Builder::new(ILI9341Rgb565, interface)
-                .reset_pin(reset)
-                .orientation(ORIENTATION)
-                .init(&mut Delay::new())
-                .expect("Failed to init display")
-        });
-        let config = EmbeddedBackendConfig {
-            // The default font is too small so we use a bigger (and more optimzied) one
-            font_regular: IBM437_9X14_REGULAR,
-            ..EmbeddedBackendConfig::default()
-        };
-        let backend = EmbeddedBackend::new(display, config);
-        Terminal::new(backend).expect("Failed to create terminal")
-    });
-
-    // Enable the backlight at all times so we can always see the display.
-    let _ = Output::new(peripherals.GPIO22, Level::High, OutputConfig::default());
-
-    // Disable touch chip select for now
-    let _ = Output::new(peripherals.GPIO33, Level::Low, OutputConfig::default());
+    // Initialize vacuum pump pin
+    let vacuum_pump_pin = Output::new(peripherals.GPIO17, Level::Low, OutputConfig::default());
 
     // Setup communication between tasks
-    let recv_cmd_channel = RECV_CMD_CHANNEL.take();
-    let send_info_channel = SEND_INFO_CHANNEL.take();
-    let terminal_channel = TERMINAL_CHANNEL.take();
+    let request_channel = REQUEST_CHANNEL.take();
 
-    let setpoints = SETPOINTS.init_with(|| Vec::from([Setpoint { rpm: 0, time: 0 }]));
+    // Initialize the setpoint list with a starting setpoint of (0, 0).
+    let setpoints = SETPOINTS.take();
 
-    spawner.must_spawn(handle_connections(
-        wifi_controller,
-        recv_cmd_channel.sender(),
-        terminal_channel.sender(),
-    ));
-    spawner.must_spawn(net_task(runner));
-    spawner.must_spawn(update_terminal(terminal, terminal_channel.receiver()));
+    // Setup context
+    let context = Context::new(request_channel.sender(), vacuum_pump_pin);
 
-    // Await connections in a loop.
-    spawner.must_spawn(handle_socket_connections(
-        socket,
-        buffer,
-        recv_cmd_channel.sender(),
-        send_info_channel.receiver(),
-        terminal_channel.sender(),
-    ));
+    // Setup UART and postcard-rpc after we're done with the spawner
+    let config = esp_hal::uart::Config::default().with_baudrate(BAUD_RATE);
+    // Select pins based on the cargo feature
+    cfg_select! {
+        feature = "uart_over_adapter" => {
+            let uart = Uart::new(peripherals.UART1, config)
+                .expect("Failed to initialize UART")
+                .with_tx(peripherals.GPIO32)
+                .with_rx(peripherals.GPIO25)
+                .into_async();
+        }
+        _ => {
+            println!("Taking control of the UART port. Please close RTT and open the host PC program.");
+            // We have to wait for the print statement to arrive at `espflash`'s RTT monitor before taking control.
+            Timer::after_millis(100).await;
+            let uart = Uart::new(peripherals.UART1, config)
+                .expect("Failed to initialize UART")
+                .with_tx(peripherals.GPIO1)
+                .with_rx(peripherals.GPIO3)
+                .into_async();
+        }
+    }
+    let (rx, tx) = uart.split();
+    let dispatcher = Dispatcher::new(context, ());
+    let (wire_rx, wire_tx) = WIRE_STORAGE
+        .init(rx, tx)
+        .expect("Failed to create wire RX and TX");
+    let frame_buffer = FRAME_BUFFER.take();
+    let vkk = dispatcher.min_key_len();
+    let mut server = Server::new(
+        wire_tx,
+        wire_rx,
+        frame_buffer.as_mut_slice(),
+        dispatcher,
+        vkk,
+    );
 
-    App::new(
+    let runner = Runner::new(
         setpoints,
         pwm_pin,
-        recv_cmd_channel.receiver(),
-        send_info_channel.sender(),
-        terminal_channel.sender(),
-    )
-    .run()
-    .await
+        request_channel.receiver(),
+        server.sender(),
+    );
+    spawner.must_spawn(run(runner));
+
+    // Run the encoder task/ISR on the second core so it doesn't block the program.
+    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    esp_rtos::start_second_core(
+        peripherals.CPU_CTRL,
+        software_interrupts.software_interrupt0,
+        software_interrupts.software_interrupt1,
+        SECOND_CORE_STACK.take(),
+        || {
+            // Set the interrupt handler for GPIO.
+            let mut io = Io::new(peripherals.IO_MUX);
+            io.set_interrupt_handler(interrupt_handler);
+
+            // Initialize encoder pin
+            let mut encoder = Input::new(
+                peripherals.GPIO27,
+                InputConfig::default().with_pull(Pull::Down),
+            );
+
+            // Start listening for rising edges
+            critical_section::with(|cs| {
+                encoder.listen(Event::RisingEdge);
+                ENCODER.borrow_ref_mut(cs).replace(encoder);
+            });
+        },
+    );
+
+    loop {
+        let _ = server.run().await;
+    }
 }

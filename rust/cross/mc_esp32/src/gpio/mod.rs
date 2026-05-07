@@ -2,6 +2,7 @@
 //!
 //! See [Espressif's documentation](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/peripherals/gpio.html)
 //! for more information on GPIO.
+
 use core::sync::atomic::Ordering;
 
 use esp_hal::handler;
@@ -16,21 +17,22 @@ pub mod pwm;
 /// Since you can only have one GPIO handler,
 /// you must perform pin-specific code by checking the interrupt status of each pin.
 ///
+/// See [`set_interrupt_handler`](esp_hal::gpio::Io::set_interrupt_handler) for ISR requirements,
+/// and see [`listen`](esp_hal::gpio::Input::listen) for an example.
+///
 /// # Panics
 /// Panics if [`MOTOR_REVOLUTIONS_DOUBLED`] overflows.
 #[handler]
 pub fn interrupt_handler() {
-    let encoder_rising_edge = critical_section::with(|cs| {
-        let encoder = ENCODER.borrow_ref(cs);
-        match encoder.as_ref() {
-            Some(encoder) => encoder.is_interrupt_set(),
-            // Some other interrupt occurred before the encoder was set up.
-            None => false,
+    critical_section::with(|cs| {
+        let mut encoder = ENCODER.borrow_ref_mut(cs);
+        let Some(encoder) = encoder.as_mut() else {
+            return;
+        };
+        if encoder.is_interrupt_set() {
+            MOTOR_REVOLUTIONS_DOUBLED.fetch_add(1, Ordering::Relaxed);
+            // This must be called to ensure that the interrupt handler can be reliably reused in the future.
+            encoder.clear_interrupt();
         }
     });
-    if encoder_rising_edge {
-        let previous_value = MOTOR_REVOLUTIONS_DOUBLED.fetch_add(1, Ordering::Relaxed);
-        // If the previous value was the highest possible value, the counter overflowed.
-        assert_ne!(previous_value, u32::MAX);
-    }
 }
