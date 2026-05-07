@@ -1,5 +1,7 @@
 # Development Guide
-This workspace contains a Nix dev shell for Rust on ESP/ESP32.
+This workspace contains a Nix dev shell for Rust on ESP/ESP32. 
+
+If this dev enviornment is kept up to date, everyone who is using it will have tools that are up to date. If you already set up Nix and direnv for host PC development, using this dev environment is less work than installing the tools yourself.
 
 ## Installation
 1. Install [Nix](https://nixos.org/download/).

@@ -1,5 +1,7 @@
 # Development Guide
-This workspace contains a Nix dev shell for Rust.
+This workspace contains a Nix dev shell for Rust. 
+
+This dev environment eliminates the possibility of missing system libraries on your PC as this project progresses. If this dev environment is kept up to date, everyone who is using it will have tools that are up to date.
 
 ## Installation
 1. Install [Nix](https://nixos.org/download/).
