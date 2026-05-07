@@ -16,13 +16,13 @@ You can open this workspace in your own IDE, but rust-analyzer will not work unl
 
 If you'd like to use an editor without direnv support, you can find it in [nixpkgs](https://search.nixos.org/packages?channel=unstable) and add it to the flake.
 
-## VSCode
+### VSCode
 Try [direnv-vscode](https://github.com/direnv/direnv-vscode).
 
-## Vim/Neovim
+### Vim/Neovim
 Try [direnv.vim](https://github.com/direnv/direnv.vim).
 
-## emacs
+### emacs
 Try [emacs-direnv](https://github.com/wbolster/emacs-direnv).
 
 ### Zed
