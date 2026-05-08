@@ -10,7 +10,9 @@ The `editor_configurations` folder contains default configurations for various e
 
 # Programs
 ## __Note__
-[0, RX, TX, EN, 12, 13, 14, 15 and 3V3](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) may be used for the [ESP-PROG-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#header-block) in the future.
+Pins [6, 7, 8, 9, 10, 11](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) are shared with the flash memory and should not be used as normal GPIOs.
+
+Pins [0, RX, TX, EN, 12, 13, 14, 15 and 5V](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) need to be for the [ESP-PROG-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#header-block).
 
 ## `pwm`
 This is a basic program that initializes PWM on pin [IO26](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block) and sets it to a constant duty cycle of 5% with a frequency of 50hz.
@@ -22,16 +24,27 @@ Run with `cargo run --release --bin pwm`
 ## `spincoater`
 This program does the following:
 - Enables UART communication over the pins:
-  - TX: IO1 (TX)
-  - RX: IO3 (RX)
+  - TX: 1 (TX)
+  - RX: 3 (RX)
   - Programs must use [postcard-rpc](https://github.com/jamesmunns/postcard-rpc) and the protocol defined in `sc_messages` (in the workspace above this one) to successfully communicate with the MCU.
-- Initializes PWM on pin [IO26](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
+- Initializes PWM on pin 26
   - Starts with a constant duty cycle of 5% at a frequency of 50hz.
-- Records hall effect sensor input on pin [IO27](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
-- Controls the vacuum pump on pin [IO17](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block).
+- Records hall effect sensor input on pin 27
+- Controls the vacuum pump on pin 17
   - Active high
 
-The display is used to report errors with the UART communication.
+The display is not used in this program. If we ever use it, the [display's pins](https://protosupplies.com/wp-content/uploads/2020/07/TFT-LCD-28-240x320-RGB-ILI9341-with-Touchscreen-Connections-Top-Side.jpg) will be connected as follows:
+- Vcc: Powered by power PCB. Not connected to DevKitC.
+- GND: Grounded by power PCB. Not connected to DevKitC.
+- CS (Display Chip Select): 19
+- RESET: 18
+- DC (Data/Command): 25
+- MOSI and T_MOSI (Master Out Slave In): 33
+- SCK and T_CLK (Clock): 32
+- LED: Bridge with Vcc/3.3V because the display should always be on.
+- MISO and T_MISO (Master In Slave Out): 35
+- T_CS (Touch Chip Select): 16
+- T_IRQ (Touch Interrupt Request): 34
 
 Run with `cargo run --bin spincoater`.
 

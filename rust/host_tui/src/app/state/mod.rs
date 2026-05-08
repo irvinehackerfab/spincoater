@@ -5,7 +5,7 @@ use sc_messages::pwm::DutyCycle;
 use serde::{Deserialize, Serialize};
 
 /// The conversion factor from motor revolutions to plate revolutions.
-const MOTOR_TO_PLATE_CONVERSION: f64 = 20.0 / 70.0;
+const MOTOR_TO_PLATE_CONVERSION: f64 = 30.0 / 72.0;
 
 /// A wrapper around [`motion_profile::State`] with the plate RPM added.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
