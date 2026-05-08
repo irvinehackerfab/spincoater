@@ -6,7 +6,7 @@ This dev environment eliminates the possibility of missing system libraries on y
 ## Installation
 1. Install [Nix](https://nixos.org/download/).
 2. Install [direnv](https://direnv.net/), preferably with `nix-direnv`.
-3. Enter the directory, and run `direnv allow`. From now on, the dev shell should activate automatically whenever you enter this directory.
+3. Enter the directory, and run `direnv allow`. From now on, the dev shell should activate automatically whenever you enter [this directory](./).
 
 ## Configuring your editor's rust-analyzer
 The dev shell does not install any editors for you.

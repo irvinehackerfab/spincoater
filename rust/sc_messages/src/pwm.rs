@@ -10,7 +10,7 @@ use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
 /// The value corresponding to 100% of the PWM period.
-/// See [`../cross/mc_esp32/src/pwm/mod.rs`] for an explanation on the choice for this value.
+/// See [`../cross/esp32/src/pwm/mod.rs`] for an explanation on the choice for this value.
 pub const PERIOD: u16 = u16::MAX - 1_535;
 
 /// The current motor controller reads 10% of [`PERIOD`] as 100% power.

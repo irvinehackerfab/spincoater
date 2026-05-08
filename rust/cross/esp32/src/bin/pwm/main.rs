@@ -16,7 +16,7 @@ use esp_hal::{
     timer::timg::TimerGroup,
 };
 use esp_println::println;
-use mc_esp32::gpio::pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER};
+use esp32::gpio::pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER};
 use sc_messages::pwm::STOP_DUTY;
 
 extern crate alloc;

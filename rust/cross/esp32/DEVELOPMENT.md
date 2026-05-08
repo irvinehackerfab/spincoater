@@ -6,7 +6,7 @@ If this dev enviornment is kept up to date, everyone who is using it will have t
 ## Installation
 1. Install [Nix](https://nixos.org/download/).
 2. Install [direnv](https://direnv.net/), preferably with `nix-direnv`.
-3. Enter the directory, and run `direnv allow`. From now on, the dev shell should activate automatically whenever you enter `mc_esp32`. 
+3. Enter the directory, and run `direnv allow`. From now on, the dev shell should activate automatically whenever you enter [esp32](./). 
 4. Install the ESP32 toolchain with `espup install`.
 
 ## Configuring your editor's rust-analyzer

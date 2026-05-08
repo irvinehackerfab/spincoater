@@ -42,6 +42,11 @@ async fn main() -> Result<()> {
             _ => false,
         })
         .collect::<Vec<_>>();
+    if ports.is_empty() {
+        return Err(eyre!(
+            "No ESP devices detected. Please plug one in and run this program again."
+        ));
+    }
     let stdout = io::stdout();
     {
         let mut out = stdout.lock();

@@ -2,9 +2,9 @@
 
 use esp_alloc::HEAP;
 use ratatui::{
-    Frame,
     text::{Line, Text, ToSpan},
     widgets::{Block, Paragraph, Wrap},
+    Frame,
 };
 
 use crate::gpio::display::terminal::TerminalState;
@@ -12,7 +12,7 @@ use crate::gpio::display::terminal::TerminalState;
 impl TerminalState {
     /// Draws the current information to the terminal.
     pub fn draw(&self, frame: &mut Frame) {
-        let block = Block::new().title("mc_esp32");
+        let block = Block::new().title("esp32");
 
         let optional_error = {
             match &self.server_error {

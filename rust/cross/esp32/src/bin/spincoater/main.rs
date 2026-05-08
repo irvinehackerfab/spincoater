@@ -19,7 +19,7 @@ use esp_hal::{
     uart::Uart,
 };
 use esp_println::println;
-use mc_esp32::{
+use esp32::{
     REQUEST_CHANNEL, SECOND_CORE_STACK,
     gpio::{
         encoder::ENCODER,

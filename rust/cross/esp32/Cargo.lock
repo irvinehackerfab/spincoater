@@ -814,6 +814,38 @@ dependencies = [
 
 [[package]]
 name = "esp32"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "critical-section",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync 0.7.2",
+ "embassy-time",
+ "embedded-graphics",
+ "embedded-hal-bus",
+ "embedded-io 0.7.1",
+ "embedded-io-async 0.7.0",
+ "esp-alloc",
+ "esp-backtrace",
+ "esp-bootloader-esp-idf",
+ "esp-hal",
+ "esp-println",
+ "esp-rtos",
+ "heapless 0.9.3",
+ "ibm437",
+ "mipidsi",
+ "mousefood",
+ "postcard",
+ "postcard-rpc",
+ "ratatui",
+ "sc_messages",
+ "serde",
+ "static_cell",
+]
+
+[[package]]
+name = "esp32"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b76170a463d18f888a1ad258031901036fd827a9ef126733053ba5f8739fb0c8"
@@ -1186,38 +1218,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f66e8d5d03f609abc3a39e6f08e4164ebf1447a732906d39eb9b99b7919ef39"
 dependencies = [
  "hashbrown 0.16.1",
-]
-
-[[package]]
-name = "mc_esp32"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "critical-section",
- "embassy-executor",
- "embassy-futures",
- "embassy-sync 0.7.2",
- "embassy-time",
- "embedded-graphics",
- "embedded-hal-bus",
- "embedded-io 0.7.1",
- "embedded-io-async 0.7.0",
- "esp-alloc",
- "esp-backtrace",
- "esp-bootloader-esp-idf",
- "esp-hal",
- "esp-println",
- "esp-rtos",
- "heapless 0.9.3",
- "ibm437",
- "mipidsi",
- "mousefood",
- "postcard",
- "postcard-rpc",
- "ratatui",
- "sc_messages",
- "serde",
- "static_cell",
 ]
 
 [[package]]

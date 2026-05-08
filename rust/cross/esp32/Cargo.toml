@@ -1,10 +1,10 @@
 [workspace]
 
 [package]
-name = "mc_esp32"
-authors = ["Anthony Pagone"]
+name = "esp32"
+authors = ["Spincoater Members"]
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.95"
 version = "0.1.0"
 license = "MIT"
 
@@ -64,6 +64,11 @@ lto           = 'fat'
 opt-level     = 's'
 
 [lib]
+test = false
+bench = false
+
+[[bin]]
+name = "pin_usage_checker"
 test = false
 bench = false
 

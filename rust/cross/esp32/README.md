@@ -1,12 +1,12 @@
-# Motor Controller: ESP32
-This is a [Rust](https://rust-lang.org/) crate with binaries that you flash onto the [ESP32](https://www.espressif.com/en/products/socs/esp32) with [espflash](https://docs.espressif.com/projects/rust/book/getting-started/tooling/espflash.html).
+# ESP32
+This is a [Rust](https://rust-lang.org/) crate with binaries that you flash onto the [ESP32](https://www.espressif.com/en/products/socs/esp32) with [espflash](https://docs.espressif.com/projects/rust/book/getting-started/tooling/espflash.html). We currently use an [ESP32-DevKitC V4](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html) to simplify development.
 
 The guide for Rust programming on ESP32 can be found [here](https://docs.espressif.com/projects/rust/book/preface.html). You can either follow this guide for setting up your dev environment, or you can use the one provided by and documented in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 The crate was initially generated from [esp-generate](https://docs.espressif.com/projects/rust/book/getting-started/tooling/esp-generate.html).
 
 # Configuring your editor
-The `editor_configurations` folder contains default configurations for various editors. To avoid conflicting with any configurations you may have, they have no effect until you move them out into the `mc_esp32` folder and add a `.` to the front of the name.
+The `editor_configurations` folder contains default configurations for various editors. To avoid conflicting with any configurations you may have, they have no effect until you move them out into the [esp32](./) folder and add a `.` to the front of the name.
 
 # Pin Layout
 All of the ESP32 DevKitC's pins can be found [here](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block).
@@ -31,7 +31,14 @@ If we ever use the display, its [pins](https://protosupplies.com/wp-content/uplo
 - T_CS (Touch Chip Select): **16**
 - T_IRQ (Touch Interrupt Request): **34**
 
-# Programs
+# Binaries
+## `pin_usage_checker`
+This is not a program. Rather, it contains a function that declares variables for every pin we might use.
+
+This should be kept up to date with our pin layout, as Rust's borrow checker will prevent us from accidentally using a pin for two different functions.
+
+If your editor's rust-analyzer is functioning properly, it will notify you if you create pin conflicts.
+
 ## `pwm`
 This is a basic program that initializes PWM on pin **26** and sets it to a constant duty cycle of 5% with a frequency of 50hz.
 
