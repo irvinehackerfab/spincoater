@@ -113,7 +113,7 @@ impl App {
                     Event::Key(key_event)
                         if key_event.kind == crossterm::event::KeyEventKind::Press =>
                     {
-                        self.handle_key_event(key_event)?;
+                        self.handle_key_event(key_event).await?;
                     }
                     // We're only concerned with key presses right now.
                     _ => {}
@@ -125,10 +125,14 @@ impl App {
     }
 
     /// Handles the key events and updates the state of [`App`].
-    fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
+    async fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
         match key_event.code {
-            KeyCode::Esc | KeyCode::Char('q') => self.running = false,
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.events.send_disconnect_notification().await;
+                self.running = false;
+            }
             KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
+                self.events.send_disconnect_notification().await;
                 self.running = false;
             }
             KeyCode::Up => self.commands_state.scroll_up_by(1),

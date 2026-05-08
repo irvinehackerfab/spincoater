@@ -1,5 +1,5 @@
 //! This module decribes events that cause updates to the TUI.
-use std::{convert::Into, fmt::Display};
+use std::{convert::Into, fmt::Display, time::Duration};
 
 use chrono::{Local, NaiveTime};
 use color_eyre::{
@@ -8,18 +8,28 @@ use color_eyre::{
 };
 use futures::StreamExt;
 use postcard_rpc::{
+    header::VarSeq,
     host_client::{HostClient, Subscription},
     standard_icd::{LoggingTopic, WireError},
 };
 use ratatui::crossterm::event::Event as CrosstermEvent;
 use sc_messages::{
-    icd::{MotionProfileStateTopic, MotionRequestEndpoint, VacuumPumpRequestEndpoint},
+    icd::{
+        HostDisconnecting, MotionProfileStateTopic, MotionRequestEndpoint,
+        VacuumPumpRequestEndpoint,
+    },
     motion_profile::{self, RequestRefused, StateOrDisabled},
     vacuum_pump,
 };
-use tokio::sync::mpsc::{self, UnboundedSender};
+use tokio::{
+    sync::mpsc::{self, UnboundedSender},
+    time::timeout,
+};
 
 use crate::app::{MCU_LOG_CAPACITY, state::State};
+
+/// [`postcard_rpc`] requires us to choose a message sequence number and does not explain why.
+const INITIAL_VAR_SEQ: VarSeq = VarSeq::Seq1(0);
 
 /// All possible TUI events.
 #[derive(Clone, Debug)]
@@ -150,6 +160,17 @@ impl EventHandler {
         });
     }
 
+    /// Notifies the MCU that the app is closing.
+    ///
+    /// Although this method usually finishes immediately, it times out after 1 second.
+    pub async fn send_disconnect_notification(&mut self) {
+        let _ = timeout(
+            Duration::from_secs(1),
+            self.client
+                .publish::<HostDisconnecting>(INITIAL_VAR_SEQ, &()),
+        )
+        .await;
+    }
     /// Spawns a task to send a vacuum pump request.
     ///
     /// The response will eventually arrive in [`EventHandler::next`].

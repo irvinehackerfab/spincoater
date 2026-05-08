@@ -7,7 +7,7 @@ use crate::{
         encoder::MOTOR_REVOLUTIONS_DOUBLED,
         pwm::{SETPOINT_LIST_LENGTH, THROTTLE_CURVE, THROTTLE_POINTS},
     },
-    rpc::{SEQUENCE_NUMBER, WireTx},
+    rpc::{HOST_DISCONNECTED, SEQUENCE_NUMBER, WireTx},
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver};
 use embassy_time::{Instant, Timer};
@@ -61,6 +61,9 @@ impl Runner {
     ///
     /// Repeatedly waits for setpoints until a start message is received.
     async fn setup(&mut self) {
+        // We only care if the host disconnects during execution.
+        HOST_DISCONNECTED.reset();
+
         loop {
             match self.from_server.receive().await {
                 Request::Add(setpoint) => match self.setpoints.push(setpoint.clone()) {
@@ -82,6 +85,8 @@ impl Runner {
                 }
             }
         }
+        // Since we reset the time, we must reset the motor revolutions counter as well.
+        MOTOR_REVOLUTIONS_DOUBLED.store(0, Ordering::Relaxed);
     }
 
     /// Executes the motion profile,
@@ -89,8 +94,6 @@ impl Runner {
     async fn execute_motion_profile(&mut self) {
         let starting_time = Instant::now();
         let mut previous_sleep_end = starting_time;
-        // Since we reset the time, we must reset the motor revolutions counter as well.
-        MOTOR_REVOLUTIONS_DOUBLED.store(0, Ordering::Relaxed);
         let mut setpoint_idx = 0;
         loop {
             // Sleep must be called at the start so LOOP_PERIOD time can pass before the current rpm is calculated.
@@ -113,6 +116,13 @@ impl Runner {
                     }
                 }
             }
+
+            // Check for host disconnects.
+            if HOST_DISCONNECTED.try_take().is_some() {
+                self.pwm_pin.set_timestamp(*STOP_DUTY);
+                break;
+            }
+
             let elapsed_since_start_micros = starting_time.elapsed().as_micros();
             let Some((setpoint_rpm, setpoint_duty_cycle)) = self
                 .feedforward(&mut setpoint_idx, elapsed_since_start_micros)
@@ -121,6 +131,7 @@ impl Runner {
                 break;
             };
             self.pwm_pin.set_timestamp(*setpoint_duty_cycle);
+
             // todo!("Add feedback")
             // This is where we would add feedback.
             let current_rpm = Self::calculate_rpm();

@@ -21,7 +21,15 @@ endpoints! {
 }
 
 topics! {
-   list = TOPICS_LIST;
+    list = TOPICS_TO_SERVER_LIST;
+    direction = TopicDirection::ToServer;
+    | TopicTy                 | MessageTy       | Path                          |
+    |-------------------------|-----------------|-------------------------------|
+    | HostDisconnecting | () | "topics/host/disconnecting" |
+}
+
+topics! {
+   list = TOPICS_TO_CLIENT_LIST;
    direction = TopicDirection::ToClient;
    | TopicTy                 | MessageTy       | Path                          |
    |-------------------------|-----------------|-------------------------------|

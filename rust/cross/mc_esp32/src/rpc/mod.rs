@@ -1,6 +1,7 @@
 use embassy_sync::{
     blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
     channel::Sender,
+    signal::Signal,
 };
 use esp_hal::{
     Async,
@@ -10,10 +11,16 @@ use esp_hal::{
 use postcard_rpc::{
     define_dispatch,
     header::{VarHeader, VarSeq},
-    server::impls::embedded_io_async_v0_6::{EioWireRx, EioWireTx, WireStorage},
+    server::{
+        self,
+        impls::embedded_io_async_v0_6::{EioWireRx, EioWireTx, WireStorage},
+    },
 };
 use sc_messages::{
-    icd::{ENDPOINTS_LIST, MotionRequestEndpoint, TOPICS_LIST, VacuumPumpRequestEndpoint},
+    icd::{
+        ENDPOINTS_LIST, HostDisconnecting, MotionRequestEndpoint, TOPICS_TO_CLIENT_LIST,
+        TOPICS_TO_SERVER_LIST, VacuumPumpRequestEndpoint,
+    },
     motion_profile::{self, RequestRefused},
     vacuum_pump,
 };
@@ -40,6 +47,9 @@ pub static WIRE_STORAGE: WireStorage<
 /// According to [the example](https://github.com/jamesmunns/postcard-rpc/blob/17dc2360a21c5caad5a20efb6a0a276df29ec945/example/firmware/src/bin/comms-02.rs#L277),
 /// publish requires 0.
 pub const SEQUENCE_NUMBER: VarSeq = VarSeq::Seq2(0);
+
+/// This signal is sent to the motion profile runner whenever the host notifies that it is disconnecting.
+pub static HOST_DISCONNECTED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
 pub type WireTx = EioWireTx<CriticalSectionRawMutex, UartTx<'static, Async>>;
 
@@ -91,6 +101,10 @@ fn handle_vacuum_pump_request(context: &mut Context, _: VarHeader, request: vacu
     }
 }
 
+fn handle_host_disconnect(_: &mut Context, _: VarHeader, _: (), _: &server::Sender<WireTx>) {
+    HOST_DISCONNECTED.signal(());
+}
+
 define_dispatch! {
     app: Dispatcher;
     spawn_fn: spawn_fn;
@@ -108,13 +122,14 @@ define_dispatch! {
     };
 
     topics_in: {
-        list: TOPICS_LIST;
+        list: TOPICS_TO_SERVER_LIST;
 
         | TopicTy            | kind  | handler              |
         |--------------------|-------|----------------------|
+        | HostDisconnecting | blocking | handle_host_disconnect |
     };
 
     topics_out: {
-        list: TOPICS_LIST;
+        list: TOPICS_TO_CLIENT_LIST;
     };
 }
