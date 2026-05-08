@@ -9,12 +9,16 @@ The crate was initially generated from [esp-generate](https://docs.espressif.com
 The `editor_configurations` folder contains default configurations for various editors. To avoid conflicting with any configurations you may have, they have no effect until you move them out into the `mc_esp32` folder and add a `.` to the front of the name.
 
 # Pin Layout
-Pins **[6, 7, 8, 9, 10, 11](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)** are shared with the flash memory and should not be used as normal GPIOs.
+All of the ESP32 DevKitC's pins can be found [here](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block).
 
-Pins **[0, RX, TX, EN, 12, 13, 14, 15 and 5V](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)** need to be for the [ESP-PROG-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#header-block).
+Pins **6, 7, 8, 9, 10, 11** are shared with the flash memory and should not be used as normal GPIOs.
 
-## Unused Pins
-The display is not used in this program. If we ever use it, the [display's pins](https://protosupplies.com/wp-content/uploads/2020/07/TFT-LCD-28-240x320-RGB-ILI9341-with-Touchscreen-Connections-Top-Side.jpg) will be connected as follows:
+Pins **12, 13, 14, and 15** must be kept available for debugging with the [ESP-PROG-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#header-block).
+
+Pins **0, RX, TX, 22, 23, and EN** must be kept available for flashing and UART communication with the host PC.
+
+## Display Pins
+If we ever use the display, its [pins](https://protosupplies.com/wp-content/uploads/2020/07/TFT-LCD-28-240x320-RGB-ILI9341-with-Touchscreen-Connections-Top-Side.jpg) will be connected as follows:
 - Vcc: Powered by power PCB. Not connected to DevKitC.
 - GND: Grounded by power PCB. Not connected to DevKitC.
 - CS (Display Chip Select): **19**
@@ -42,7 +46,7 @@ This program does the following:
   - RX: **3 (RX)**
   - Programs must use [postcard-rpc](https://github.com/jamesmunns/postcard-rpc) and the protocol defined in `sc_messages` (in the workspace above this one) to successfully communicate with the MCU.
 - Initializes PWM on pin **26**
-  - Starts with a constant duty cycle of 5% at a frequency of 50hz.
+  - Starts with a constant duty cycle of 7.5% at a frequency of 50hz.
 - Records hall effect sensor input on pin **27**
 - Controls the vacuum pump on pin **17**
   - Active high
@@ -50,6 +54,6 @@ This program does the following:
 Run with `cargo run --bin spincoater`.
 
 ### UART Communication over an Adapter
-Alternatively, you can perform UART communication using pins other than TX and RX. This would allow you to keep `espflash`'s RTT monitor open while running the program. However, it requires a separate UART-to-USB adapter, such as the [ESP-Prog-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#).
+You can perform UART communication using pins other than TX and RX. This would allow you to keep `espflash`'s RTT monitor open while running the program. However, it requires a separate UART-to-USB adapter, such as the [ESP-Prog-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#).
 
-If you'd like to do this, run the program with `cargo run --bin spincoater -F uart_over_adapter`.
+The `spincoater` program has a cargo feature that uses pins **23** and **22** for TX and RX instead. You can run it with `cargo run --bin spincoater -F uart_over_adapter`.

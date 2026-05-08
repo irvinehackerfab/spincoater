@@ -104,8 +104,8 @@ async fn main(spawner: Spawner) -> ! {
         feature = "uart_over_adapter" => {
             let uart = Uart::new(peripherals.UART1, config)
                 .expect("Failed to initialize UART")
-                .with_tx(peripherals.GPIO32)
-                .with_rx(peripherals.GPIO25)
+                .with_tx(peripherals.GPIO23)
+                .with_rx(peripherals.GPIO22)
                 .into_async();
         }
         _ => {
