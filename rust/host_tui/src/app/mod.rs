@@ -28,7 +28,7 @@ use sc_messages::vacuum_pump;
 /// The maximum number of MCU logs kept in the TUI at a time.
 pub const MCU_LOG_CAPACITY: usize = 128;
 
-/// Application.
+/// All the state for the host terminal.
 #[derive(Debug)]
 pub struct App {
     /// This boolean provides an easy way for methods to end the program.
@@ -44,7 +44,8 @@ pub struct App {
     /// When max capacity is reached, the oldest messages are overridden.
     mcu_logs: AllocRingBuffer<String>,
     /// The motor data file.
-    motor_data_file: Writer<File>,
+    /// This is only [`Some`] when a motion profile is running.
+    motor_data_file: Option<Writer<File>>,
 }
 
 impl App {
@@ -54,26 +55,24 @@ impl App {
     /// Returns an error if opening the log file fails.
     pub async fn new(client: HostClient<WireError>) -> Result<Self> {
         let events = EventHandler::new(client).await?;
-        let date = Local::now().date_naive().to_string();
-        let motor_data_file = Self::open_log_file(&date)?;
-
         Ok(Self {
             running: true,
             events,
             mcu_state: None,
             commands_state: ListState::default().with_selected(Some(0)),
             mcu_logs: AllocRingBuffer::new(MCU_LOG_CAPACITY),
-            motor_data_file,
+            motor_data_file: None,
         })
     }
 
-    /// Opens the motor data log file.
-    fn open_log_file(date: &str) -> Result<Writer<File>> {
+    /// Opens a motor data log file.
+    fn open_log_file() -> Result<Writer<File>> {
         const LOG_DIR: &str = "motor_data";
 
         let mut dir = env::current_dir()?;
         dir.push(LOG_DIR);
         DirBuilder::new().recursive(true).create(dir.clone())?;
+        let date = Local::now().date_naive().to_string();
         dir.push(format!("{date}.txt"));
         // If the file already exists, we need to make a new one.
         let mut open_options = OpenOptions::new();
@@ -101,11 +100,20 @@ impl App {
         Ok(writer)
     }
 
-    /// Run the application's main loop.
+    /// Runs the application.
+    ///
+    /// Attempts to disconnect cleanly upon exit.
     ///
     /// # Errors
     /// Returns an error if drawing to the terminal, receiving events or handling keystrokes fails.
-    pub async fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
+    pub async fn run(mut self, terminal: DefaultTerminal) -> Result<()> {
+        let result = self.app_loop(terminal).await;
+        self.events.send_disconnect_notification().await;
+        result
+    }
+
+    /// Runs the application's main loop.
+    async fn app_loop(&mut self, mut terminal: DefaultTerminal) -> Result<()> {
         while self.running {
             terminal.draw(|frame| self.render(frame))?;
             match self.events.next().await?? {
@@ -113,7 +121,7 @@ impl App {
                     Event::Key(key_event)
                         if key_event.kind == crossterm::event::KeyEventKind::Press =>
                     {
-                        self.handle_key_event(key_event).await?;
+                        self.handle_key_event(key_event)?;
                     }
                     // We're only concerned with key presses right now.
                     _ => {}
@@ -125,14 +133,12 @@ impl App {
     }
 
     /// Handles the key events and updates the state of [`App`].
-    async fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
+    fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
         match key_event.code {
             KeyCode::Esc | KeyCode::Char('q') => {
-                self.events.send_disconnect_notification().await;
                 self.running = false;
             }
             KeyCode::Char('c' | 'C') if key_event.modifiers == KeyModifiers::CONTROL => {
-                self.events.send_disconnect_notification().await;
                 self.running = false;
             }
             KeyCode::Up => self.commands_state.scroll_up_by(1),
@@ -158,9 +164,11 @@ impl App {
                     .events
                     .send_motion_profile_request(motion_profile::Request::ClearSetpoints),
                 // Start the motion profile.
-                2 => self
-                    .events
-                    .send_motion_profile_request(motion_profile::Request::Start),
+                2 => {
+                    self.motor_data_file.replace(Self::open_log_file()?);
+                    self.events
+                        .send_motion_profile_request(motion_profile::Request::Start);
+                }
                 // Stop the motion profile.
                 3 => self
                     .events
@@ -188,8 +196,16 @@ impl App {
             }
             UsbEvent::State(state) => {
                 self.mcu_state.clone_from(&state);
-                if let Some(state) = state {
-                    self.motor_data_file.serialize(state)?;
+                match state {
+                    Some(state) => self
+                        .motor_data_file
+                        .as_mut()
+                        .ok_or_eyre("The motor data file should be open.")?
+                        .serialize(state)?,
+                    None => {
+                        // Close the writer.
+                        let _ = self.motor_data_file.take();
+                    }
                 }
             }
             UsbEvent::MotionProfileRequestResponse(response) => {
