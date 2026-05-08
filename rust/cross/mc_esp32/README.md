@@ -22,7 +22,7 @@ The display is not used in this program. If we ever use it, the [display's pins]
 - DC (Data/Command): **25**
 - MOSI and T_MOSI (Master Out Slave In): **33**
 - SCK and T_CLK (Clock): **32**
-- LED: Bridge with Vcc/3.3V because the display should always be on.
+- LED: Held at a constant 3.3V by the power PCB because the display should always be on.
 - MISO and T_MISO (Master In Slave Out): **35**
 - T_CS (Touch Chip Select): **16**
 - T_IRQ (Touch Interrupt Request): **34**
