@@ -817,7 +817,6 @@ name = "esp32"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "critical-section",
  "embassy-executor",
  "embassy-futures",
  "embassy-sync 0.7.2",
@@ -832,6 +831,7 @@ dependencies = [
  "esp-hal",
  "esp-println",
  "esp-rtos",
+ "esp-sync",
  "heapless 0.9.3",
  "ibm437",
  "mipidsi",

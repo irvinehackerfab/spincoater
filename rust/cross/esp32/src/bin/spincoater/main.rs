@@ -161,9 +161,9 @@ async fn main(spawner: Spawner) -> ! {
             );
 
             // Start listening for rising edges
-            critical_section::with(|cs| {
+            ENCODER.with(|encoder_memory_cell| {
                 encoder.listen(Event::RisingEdge);
-                ENCODER.borrow_ref_mut(cs).replace(encoder);
+                encoder_memory_cell.replace(encoder);
             });
         },
     );
