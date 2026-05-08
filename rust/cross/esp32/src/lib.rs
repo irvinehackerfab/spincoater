@@ -35,7 +35,7 @@ pub static SECOND_CORE_EXECUTOR: StaticCell<InterruptExecutor<2>> = StaticCell::
 ///
 /// Don't set this to a value that the MCU can't achieve,
 /// or else RPM calculation will not work correctly.
-pub const LOOP_PERIOD: Duration = Duration::from_millis(100);
+pub const LOOP_PERIOD: Duration = Duration::from_millis(50);
 
 /// The length of the buffer used by [`REQUEST_CHANNEL`].
 pub const REQUEST_CHANNEL_LENGTH: usize = SETPOINT_LIST_LENGTH;
