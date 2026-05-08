@@ -9,12 +9,16 @@
 
 use embassy_executor::Spawner;
 use embassy_time::Timer;
+use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
+    delay::Delay,
     gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
     interrupt::software::SoftwareInterruptControl,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
+    spi::master::{Config, Spi},
+    time::Rate,
     timer::timg::TimerGroup,
     uart::Uart,
 };
@@ -22,6 +26,10 @@ use esp_println::println;
 use esp32::{
     REQUEST_CHANNEL, SECOND_CORE_STACK,
     gpio::{
+        display::{
+            DISPLAY, ORIENTATION, SPI_BUFFER,
+            terminal::{TERMINAL, channel::TERMINAL_CHANNEL, update_terminal},
+        },
         encoder::ENCODER,
         interrupt_handler,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
@@ -29,7 +37,11 @@ use esp32::{
     motion_profile::{Runner, run},
     rpc::{Context, Dispatcher, FRAME_BUFFER, WIRE_STORAGE},
 };
+use ibm437::IBM437_9X14_REGULAR;
+use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
+use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
 use postcard_rpc::server::{Dispatch, Server};
+use ratatui::Terminal;
 use sc_messages::{icd::BAUD_RATE, pwm::STOP_DUTY};
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
@@ -61,8 +73,6 @@ async fn main(spawner: Spawner) -> ! {
     // let _ = peripherals.GPIO9;
     // let _ = peripherals.GPIO10;
     // let _ = peripherals.GPIO11;
-    let _ = peripherals.GPIO16;
-    // let _ = peripherals.GPIO20;
 
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
 
@@ -84,6 +94,57 @@ async fn main(spawner: Spawner) -> ! {
         .expect("Failed to create TimerClockConfig");
     mcpwm.timer0.start(timer_clock_cfg);
     pwm_pin.set_timestamp(*STOP_DUTY);
+
+    // Initialize the display
+    // init_with constructs the value in-place to save stack space.
+    let terminal = TERMINAL.init_with(|| {
+        // init_with constructs the value in-place to save stack space.
+        let display = DISPLAY.init_with(|| {
+            // https://esp32.implrust.com/tft-display/circuit.html
+            let spi = Spi::new(
+                peripherals.SPI2,
+                Config::default()
+                    .with_frequency(Rate::from_mhz(4))
+                    .with_mode(esp_hal::spi::Mode::_0),
+            )
+            .expect("Frequency is within 70kHz..80MHz")
+            .into_async()
+            // Master In Slave Out. SPI read line from the display to the microcontroller.
+            .with_miso(peripherals.GPIO35)
+            // Master Out Slave In. This is the SPI data line from the microcontroller to the display. Used to send pixel data and commands.
+            .with_mosi(peripherals.GPIO33)
+            // Serial Clock. SPI clock signal from the microcontroller. It synchronizes the data being sent.
+            .with_sck(peripherals.GPIO32);
+            // Chip Select. This tells the display when it should listen to SPI commands. Keep it low (active) when sending data.
+            // [`ExclusiveDevice::new_no_delay`] says to have an initial output of high.
+            let cs = Output::new(peripherals.GPIO19, Level::High, OutputConfig::default());
+            // Data/Command control pin. Set high to send data, low to send commands. Used to switch between writing commands and pixel data.
+            let dc = Output::new(peripherals.GPIO25, Level::Low, OutputConfig::default());
+            // Resets the display. Useful during startup to make sure the display starts in a known state.
+            // Starts off low because [`Ili9341::new`] sets the reset low, then high
+            let reset = Output::new(peripherals.GPIO18, Level::Low, OutputConfig::default());
+            let spi_device = ExclusiveDevice::new_no_delay(spi, cs).expect("cs is already high");
+            let interface = SpiInterface::new(spi_device, dc, SPI_BUFFER.take());
+            mipidsi::Builder::new(ILI9341Rgb565, interface)
+                .reset_pin(reset)
+                .orientation(ORIENTATION)
+                .init(&mut Delay::new())
+                .expect("Failed to init display")
+        });
+        let config = EmbeddedBackendConfig {
+            // The default font is too small so we use a bigger (and more optimzied) one
+            font_regular: IBM437_9X14_REGULAR,
+            ..EmbeddedBackendConfig::default()
+        };
+        let backend = EmbeddedBackend::new(display, config);
+        Terminal::new(backend).expect("Failed to create terminal")
+    });
+
+    // Disable touch chip select for now
+    let _ = Output::new(peripherals.GPIO16, Level::Low, OutputConfig::default());
+
+    // Setup communication between tasks
+    let terminal_channel = TERMINAL_CHANNEL.take();
 
     // Initialize vacuum pump pin
     let vacuum_pump_pin = Output::new(peripherals.GPIO17, Level::Low, OutputConfig::default());
@@ -133,6 +194,12 @@ async fn main(spawner: Spawner) -> ! {
         dispatcher,
         vkk,
     );
+
+    spawner.must_spawn(update_terminal(
+        terminal,
+        server.sender(),
+        terminal_channel.receiver(),
+    ));
 
     let runner = Runner::new(
         setpoints,

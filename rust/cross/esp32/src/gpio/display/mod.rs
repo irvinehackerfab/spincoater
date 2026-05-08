@@ -29,4 +29,4 @@ pub type DisplayType = Display<
 pub static DISPLAY: StaticCell<DisplayType> = StaticCell::new();
 
 /// The orientation settings for mipidsi.
-pub const ORIENTATION: Orientation = Orientation::new().flip_vertical().rotate(Rotation::Deg90);
+pub const ORIENTATION: Orientation = Orientation::new().flip_vertical().rotate(Rotation::Deg270);
