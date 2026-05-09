@@ -33,9 +33,9 @@ pub static SECOND_CORE_EXECUTOR: StaticCell<InterruptExecutor<2>> = StaticCell::
 
 /// The period that the main control loop runs at.
 ///
-/// Don't set this to a value that the MCU can't achieve,
-/// or else RPM calculation will not work correctly.
-pub const LOOP_PERIOD: Duration = Duration::from_millis(50);
+/// The further you raise this past `20`, the greater your risk of filling up [`gpio::encoder::RPM_RING_BUFFER`] is.
+/// The only consequence of this is a less accurate moving average.
+pub const LOOP_PERIOD: Duration = Duration::from_millis(20);
 
 /// The length of the buffer used by [`REQUEST_CHANNEL`].
 pub const REQUEST_CHANNEL_LENGTH: usize = SETPOINT_LIST_LENGTH;

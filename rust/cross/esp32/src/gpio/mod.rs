@@ -3,11 +3,9 @@
 //! See [Espressif's documentation](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/peripherals/gpio.html)
 //! for more information on GPIO.
 
-use core::sync::atomic::Ordering;
-
 use esp_hal::handler;
 
-use crate::gpio::encoder::{ENCODER, MOTOR_REVOLUTIONS_DOUBLED};
+use crate::gpio::encoder::{ENCODER, ENCODER_STATE, EncoderState};
 
 pub mod display;
 pub mod encoder;
@@ -24,15 +22,19 @@ pub mod pwm;
 /// Panics if [`MOTOR_REVOLUTIONS_DOUBLED`] overflows.
 #[handler]
 pub fn interrupt_handler() {
-    ENCODER.with(|encoder| {
+    if ENCODER.with(|encoder| {
         let Some(encoder) = encoder.as_mut() else {
             // A GPIO interrupt fired before the encoder was initialized.
-            return;
+            return false;
         };
         if encoder.is_interrupt_set() {
-            MOTOR_REVOLUTIONS_DOUBLED.fetch_add(1, Ordering::Relaxed);
             // This must be called to ensure that the interrupt handler can be reliably reused in the future.
             encoder.clear_interrupt();
+            return true;
         }
-    });
+        false
+    }) {
+        // An interrupt occurred, so it's time to calculate the rpm.
+        ENCODER_STATE.with(EncoderState::calculate_rpm);
+    }
 }

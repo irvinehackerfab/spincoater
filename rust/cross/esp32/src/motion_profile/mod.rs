@@ -1,10 +1,9 @@
 //! This module contains the functionality for running motion profiles sent by the host PC.
-use core::sync::atomic::Ordering;
 
 use crate::{
     LOOP_PERIOD, REQUEST_CHANNEL_LENGTH, REQUEST_RESPONSE_SIGNAL,
     gpio::{
-        encoder::MOTOR_REVOLUTIONS_DOUBLED,
+        encoder::{ENCODER_STATE, EncoderState},
         pwm::{SETPOINT_LIST_LENGTH, THROTTLE_CURVE, THROTTLE_POINTS},
     },
     rpc::{HOST_DISCONNECTED, SEQUENCE_NUMBER, WireTx},
@@ -85,8 +84,8 @@ impl Runner {
                 }
             }
         }
-        // Since we reset the time, we must reset the motor revolutions counter as well.
-        MOTOR_REVOLUTIONS_DOUBLED.store(0, Ordering::Relaxed);
+        // Since we are starting again, we must reset the encoder state.
+        ENCODER_STATE.with(EncoderState::reset);
     }
 
     /// Executes the motion profile,
@@ -289,24 +288,20 @@ impl Runner {
         Some(result)
     }
 
-    /// Calculates the current rpm using [`LOOP_PERIOD`] as the amount of time that has passed.
+    /// Calculates the current rpm as a rolling average.
     ///
     /// This function never fails. If the RPM is greater than [`u16::MAX`], [`u16::MAX`] is returned.
     #[allow(clippy::cast_possible_truncation)]
     fn calculate_rpm() -> u16 {
-        // Relaxed ordering because the order of instructions does not matter for the swap.
-        let motor_revolutions_doubled =
-            u64::from(MOTOR_REVOLUTIONS_DOUBLED.swap(0, Ordering::Relaxed));
-        let time_micros = LOOP_PERIOD.as_micros();
-        // (2*motor revolutions) * 1/2 * 1/(`time` μs) * (10^6 μs / 1 s) * (60 s / 1 min)
-        // = (2*motor revolutions) * 30,000,000 / `time`
-        // Final units: motor revolutions per minute
-        // Note: This multiplication is saturating because there's absolutely no chance for it to exceed 2^64 - 1.
-        let numerator = motor_revolutions_doubled.saturating_mul(30_000_000);
-        let Some(rpm) = numerator.checked_div(time_micros) else {
-            return 0;
-        };
-        rpm as u16
+        ENCODER_STATE.with(|state| {
+            state
+                .rpm_ring_buffer
+                .as_slice()
+                .iter()
+                .sum::<usize>()
+                .checked_div(state.rpm_ring_buffer.len())
+                .unwrap_or(0)
+        }) as u16
     }
 }
 
