@@ -17,6 +17,24 @@ Pins **12, 13, 14, and 15** must be kept available for debugging with the [ESP-P
 
 Pins **0, RX, TX, 22, 23, and EN** must be kept available for flashing and UART communication with the host PC.
 
+## Debugging and Communication Pins
+The ESP-Prog-2 can be used as both a JTAG and UART adapter. The pins on the ESP-Prog-2 are connected to the DevKitC as follows:
+- UART:
+  - ESP_EN: Not connected to DevKitC. We can use a pin socket to connect this if we ever need it.
+  - VDD: Not connected to anything (ESP-Prog-2 is powered through USB-C)
+  - ESP_TXD: **23**
+  - GND: Grounded by power PCB.
+  - ESP_RXD: **22**
+  - ESP_IO0: Not connected to DevKitC. We can use a pin socket to connect this if we ever need it.
+- JTAG:
+  - VDD: Not connected to anything (ESP-Prog-2 is powered through USB-C)
+  - ESP_TMS: **14**
+  - Every GND: Grounded by power PCB.
+  - ESP_TCK: **13**
+  - ESP_TDO: **15**
+  - ESP_TDI: **12**
+  - NC: Not connected to anything
+
 ## Display Pins
 If we ever use the display, its [pins](https://protosupplies.com/wp-content/uploads/2020/07/TFT-LCD-28-240x320-RGB-ILI9341-with-Touchscreen-Connections-Top-Side.jpg) will be connected as follows:
 - Vcc: Powered by power PCB. Not connected to DevKitC.
