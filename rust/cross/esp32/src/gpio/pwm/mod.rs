@@ -43,27 +43,6 @@ pub const SETPOINT_LIST_LENGTH: usize = MAX_SETPOINTS + 1;
 pub static SETPOINTS: ConstStaticCell<Vec<Setpoint, SETPOINT_LIST_LENGTH>> =
     ConstStaticCell::new(Vec::from_array([Setpoint { rpm: 0, time: 0 }]));
 
-/// The number of datapoints for the throttle curve.
-pub const THROTTLE_POINTS: usize = 9;
-
-/// The table of values we got from reading the motor RPM at multiple PWM duty cycles.
-///
-/// No two RPM values should be the same.
-///
-/// Units of `[0]`: Motor RPM (RPM)
-///
-/// Units of `[1]`: PWM units (microseconds * [`sc_messages::PERIOD`] * [`FREQUENCY`] seconds^-1 / 10^6 microseconds)
-///
-/// See [the graph](https://www.desmos.com/calculator/dtaaxpy72o) for more info.
-pub const THROTTLE_CURVE: [[u32; THROTTLE_POINTS]; 2] = [
-    [
-        0, 9_800, 17_900, 24_900, 29_500, 32_500, 34_500, 38_100, 38_500,
-    ],
-    [
-        4_800, 5_056, 5_120, 5_200, 5_280, 5_360, 5_440, 5_760, 6_080,
-    ],
-];
-
 /// Since the relationship betwen motor RPM and PWM units is mostly linear, we can just use a conversion factor.
 /// This value was obtained from the `linear_regression` program.
 pub const RPM_TO_DUTY_NUMERATOR: u32 = 31_309;

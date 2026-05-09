@@ -6,7 +6,7 @@ use crate::{
         encoder::{ENCODER_STATE, EncoderState},
         pwm::{
             K_P_INVERSE, RPM_TO_DUTY_DENOMINATOR, RPM_TO_DUTY_INTERCEPT, RPM_TO_DUTY_NUMERATOR,
-            SETPOINT_LIST_LENGTH, STATIC_DUTY, THROTTLE_CURVE, THROTTLE_POINTS,
+            SETPOINT_LIST_LENGTH, STATIC_DUTY,
         },
     },
     rpc::{HOST_DISCONNECTED, SEQUENCE_NUMBER, WireTx},
@@ -79,7 +79,7 @@ impl Runner {
                 Request::Start => {
                     REQUEST_RESPONSE_SIGNAL.signal(Ok(()));
                     // `postcard_rpc` sometimes sends setpoints out of order, so we have to sort them.
-                    self.setpoints.sort_unstable();
+                    self.setpoints.sort();
                     break;
                 }
                 Request::Stop => {
@@ -327,47 +327,6 @@ fn linear_conversion(setpoint_rpm: u16) -> DutyCycle {
     let duty = (setpoint_rpm.saturating_mul(RPM_TO_DUTY_NUMERATOR) / RPM_TO_DUTY_DENOMINATOR)
         .saturating_add(RPM_TO_DUTY_INTERCEPT);
     duty.into()
-}
-
-/// Performs linear interpolation on [`THROTTLE_CURVE`] to find the setpoint duty cycle.
-///
-/// [`THROTTLE_CURVE`] must be nonzero and [`THROTTLE_CURVE`]`[0]` must have increasing values.
-///
-/// This function never fails. If the duty cycle is greater than [`u16::MAX`], [`u16::MAX`] is returned.
-///
-/// # Implementation
-/// See [Wikipedia](https://en.wikipedia.org/wiki/Linear_interpolation#Linear_interpolation_as_an_approximation) for more info.
-#[allow(clippy::cast_possible_truncation)]
-fn linear_interpolation(setpoint_rpm: u16) -> DutyCycle {
-    // Everything here is in u32 to prevent overflow.
-    let setpoint_rpm = u32::from(setpoint_rpm);
-    if setpoint_rpm <= THROTTLE_CURVE[0][0] {
-        return THROTTLE_CURVE[1][0].into();
-    }
-    for ((rpm_0, rpm_1), (duty_0, duty_1)) in THROTTLE_CURVE[0]
-        .iter()
-        .zip(&THROTTLE_CURVE[0][1..THROTTLE_POINTS])
-        .zip(
-            THROTTLE_CURVE[1]
-                .iter()
-                .zip(&THROTTLE_CURVE[1][1..THROTTLE_POINTS]),
-        )
-    {
-        if setpoint_rpm >= *rpm_0 {
-            let delta_duty = duty_1.saturating_sub(*duty_0);
-            let delta_rpm = setpoint_rpm.saturating_sub(*rpm_0);
-            // This multiplication is saturating because there is no chance for the product to exceed 2^32 - 1.
-            let numerator = delta_duty.saturating_mul(delta_rpm);
-            let denominator = rpm_1.saturating_sub(*rpm_0);
-            let Some(result) = numerator.checked_div(denominator) else {
-                return (*duty_0).into();
-            };
-            let result = duty_0.saturating_add(result);
-            return result.into();
-        }
-    }
-    // The setpoint rpm is higher than any known rpm, so just return the highest rpm.
-    THROTTLE_CURVE[1][THROTTLE_POINTS - 1].into()
 }
 
 /// Calculates the difference between the setpoint and current RPM.
