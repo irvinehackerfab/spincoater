@@ -73,7 +73,7 @@ impl App {
         dir.push(LOG_DIR);
         DirBuilder::new().recursive(true).create(dir.clone())?;
         let date = Local::now().date_naive().to_string();
-        dir.push(format!("{date}.txt"));
+        dir.push(format!("{date}.csv"));
         // If the file already exists, we need to make a new one.
         let mut open_options = OpenOptions::new();
         open_options.read(true).append(true).create_new(true);
@@ -83,7 +83,7 @@ impl App {
                 io::ErrorKind::AlreadyExists => {
                     let mut i = 1;
                     loop {
-                        dir.set_file_name(format!("{date}_({i}).txt"));
+                        dir.set_file_name(format!("{date}_({i}).csv"));
                         match open_options.open(dir.clone()) {
                             Ok(file) => break file,
                             Err(err) => match err.kind() {

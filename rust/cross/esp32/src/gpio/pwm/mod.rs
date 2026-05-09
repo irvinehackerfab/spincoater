@@ -63,3 +63,23 @@ pub const THROTTLE_CURVE: [[u32; THROTTLE_POINTS]; 2] = [
         4_800, 5_056, 5_120, 5_200, 5_280, 5_360, 5_440, 5_760, 6_080,
     ],
 ];
+
+/// Since the relationship betwen motor RPM and PWM units is mostly linear, we can just use a conversion factor.
+/// This value was obtained from the `linear_regression` program.
+pub const RPM_TO_DUTY_NUMERATOR: u32 = 31_309;
+
+/// Since the relationship betwen motor RPM and PWM units is mostly linear, we can just use a conversion factor.
+/// This value was obtained from the `linear_regression` program.
+pub const RPM_TO_DUTY_DENOMINATOR: u32 = 2_000_000;
+
+/// The linear relationship between motor RPM and PWM units has an intercept because the duty cycle representing 0 is nonzero.
+/// This value was obtained from the `linear_regression` program.
+pub const RPM_TO_DUTY_INTERCEPT: u32 = 5_018;
+
+/// This duty cycle is guaranteed to make the motor start spinning.
+pub const STATIC_DUTY: u16 = 5_065;
+
+/// The inverse of the proportional gain.
+///
+/// The non-inverse of `K_P` is in units of duty cycle per motor RPM error.
+pub const K_P_INVERSE: i16 = 16;

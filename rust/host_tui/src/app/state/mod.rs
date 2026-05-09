@@ -18,6 +18,10 @@ pub struct State {
     pub current_rpm: u16,
     /// The measured plate RPM.
     pub current_plate_rpm: f64,
+    /// Setpoint motor RPM - current motor RPM.
+    pub rpm_error: i16,
+    /// Setpoint plate RPM - current plate RPM.
+    pub plate_rpm_error: f64,
     /// The current duty cycle being set to try and reach the setpoint.
     pub duty_cycle: DutyCycle,
     /// The time (in micros) since the motion profile started.
@@ -28,14 +32,16 @@ pub struct State {
 }
 
 impl From<motion_profile::State> for State {
-    fn from(value: motion_profile::State) -> Self {
+    fn from(state: motion_profile::State) -> Self {
         Self {
-            setpoint_rpm: value.setpoint_rpm,
-            setpoint_plate_rpm: f64::from(value.setpoint_rpm) * MOTOR_TO_PLATE_CONVERSION,
-            current_rpm: value.current_rpm,
-            current_plate_rpm: f64::from(value.current_rpm) * MOTOR_TO_PLATE_CONVERSION,
-            duty_cycle: value.duty_cycle,
-            time: value.time,
+            setpoint_rpm: state.setpoint_rpm,
+            setpoint_plate_rpm: f64::from(state.setpoint_rpm) * MOTOR_TO_PLATE_CONVERSION,
+            current_rpm: state.current_rpm,
+            current_plate_rpm: f64::from(state.current_rpm) * MOTOR_TO_PLATE_CONVERSION,
+            rpm_error: state.rpm_error,
+            plate_rpm_error: f64::from(state.rpm_error) * MOTOR_TO_PLATE_CONVERSION,
+            duty_cycle: state.duty_cycle,
+            time: state.time,
         }
     }
 }

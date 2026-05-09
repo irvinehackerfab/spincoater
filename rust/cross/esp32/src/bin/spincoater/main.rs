@@ -83,7 +83,7 @@ async fn main(spawner: Spawner) -> ! {
         .timer_clock_with_frequency(PERIOD, PwmWorkingMode::Increase, FREQUENCY)
         .expect("Failed to create TimerClockConfig");
     mcpwm.timer0.start(timer_clock_cfg);
-    pwm_pin.set_timestamp(*STOP_DUTY);
+    pwm_pin.set_timestamp(STOP_DUTY);
 
     // Initialize vacuum pump pin
     let vacuum_pump_pin = Output::new(peripherals.GPIO17, Level::Low, OutputConfig::default());

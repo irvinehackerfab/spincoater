@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["host_tui", "sc_messages"]
+members = ["host_tui", "linear_regression", "sc_messages"]
 exclude = ["cross/*"]
 
 [workspace.package]
@@ -30,6 +30,8 @@ postcard-rpc = "0.12.1"
 postcard-schema = "0.2.5"
 # For querying the available ports
 tokio-serial = "5.4.5"
+# For linear regression of RPM values and duty cycle values
+linreg = "0.2.0"
 
 
 [workspace.lints.rust]

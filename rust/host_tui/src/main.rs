@@ -1,32 +1,15 @@
 //! This crate provides a TUI for the PC connecting to the spincoater's ESP32.
-pub mod app;
 
 use std::io;
 
 use color_eyre::{Result, eyre::eyre};
-use postcard_rpc::{header::VarSeqKind, host_client::HostClient};
+use host_tui::{
+    DEV_KIT_C_VENDOR_ID, ESP_PROG_2_VENDOR_ID, TX_QUEUE_SIZE, VAR_SEQUENCE_KIND, app::App,
+};
+use postcard_rpc::{host_client::HostClient, standard_icd::ERROR_PATH};
 use sc_messages::icd::BAUD_RATE;
 use std::io::Write;
 use tokio_serial::{SerialPortType, available_ports};
-
-use crate::app::App;
-
-/// The URI that the MCU can use to report "unrecognized request" errors.
-const ERROR_PATH: &str = "error";
-
-/// The size of the outgoing queue.
-const TX_QUEUE_SIZE: usize = 128;
-
-/// The size of sequuence numbers used when making requests.
-///
-/// [`postcard_rpc`] gives no hint as to what this should be.
-const VAR_SEQUENCE_KIND: VarSeqKind = VarSeqKind::Seq2;
-
-/// The Vendor ID that shows up when you connect an ESP32 `DevKitC` to a PC over USB.
-const DEV_KIT_C_VENDOR_ID: u16 = 4292;
-
-/// The Vendor ID that shows up when you connect an ESP-Prog-2 to a PC over USB.
-const ESP_PROG_2_VENDOR_ID: u16 = 12346;
 
 #[tokio::main]
 async fn main() -> Result<()> {

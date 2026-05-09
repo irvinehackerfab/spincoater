@@ -4,7 +4,10 @@ use crate::{
     LOOP_PERIOD, REQUEST_CHANNEL_LENGTH, REQUEST_RESPONSE_SIGNAL,
     gpio::{
         encoder::{ENCODER_STATE, EncoderState},
-        pwm::{SETPOINT_LIST_LENGTH, THROTTLE_CURVE, THROTTLE_POINTS},
+        pwm::{
+            K_P_INVERSE, RPM_TO_DUTY_DENOMINATOR, RPM_TO_DUTY_INTERCEPT, RPM_TO_DUTY_NUMERATOR,
+            SETPOINT_LIST_LENGTH, STATIC_DUTY, THROTTLE_CURVE, THROTTLE_POINTS,
+        },
     },
     rpc::{HOST_DISCONNECTED, SEQUENCE_NUMBER, WireTx},
 };
@@ -84,6 +87,9 @@ impl Runner {
                 }
             }
         }
+        // Overcome static friction.
+        self.pwm_pin.set_timestamp(STATIC_DUTY);
+        Timer::after(LOOP_PERIOD).await;
         // Since we are starting again, we must reset the encoder state.
         ENCODER_STATE.with(EncoderState::reset);
     }
@@ -106,7 +112,7 @@ impl Runner {
                     }
                     Request::Stop => {
                         REQUEST_RESPONSE_SIGNAL.signal(Ok(()));
-                        self.pwm_pin.set_timestamp(*STOP_DUTY);
+                        self.pwm_pin.set_timestamp(STOP_DUTY);
                         let _ = self
                             .to_server
                             .log_str("Motion profile stopped early.")
@@ -118,28 +124,34 @@ impl Runner {
 
             // Check for host disconnects.
             if HOST_DISCONNECTED.try_take().is_some() {
-                self.pwm_pin.set_timestamp(*STOP_DUTY);
+                self.pwm_pin.set_timestamp(STOP_DUTY);
                 break;
             }
 
             let elapsed_since_start_micros = starting_time.elapsed().as_micros();
+
+            // Feedforward
             let Some((setpoint_rpm, setpoint_duty_cycle)) = self
                 .feedforward(&mut setpoint_idx, elapsed_since_start_micros)
                 .await
             else {
                 break;
             };
-            self.pwm_pin.set_timestamp(*setpoint_duty_cycle);
 
-            // todo!("Add feedback")
-            // This is where we would add feedback.
+            // Feedback
             let current_rpm = Self::calculate_rpm();
+            let rpm_error = error(setpoint_rpm, current_rpm);
+            let output = next_control_output(rpm_error);
+            let duty_cycle = (*setpoint_duty_cycle).saturating_add_signed(output);
+
+            self.pwm_pin.set_timestamp(duty_cycle);
 
             // Logging
             let state = Some(motion_profile::State {
                 setpoint_rpm,
                 current_rpm,
-                duty_cycle: setpoint_duty_cycle,
+                rpm_error,
+                duty_cycle: DutyCycle::from(duty_cycle),
                 time: elapsed_since_start_micros,
             });
             if self
@@ -149,7 +161,7 @@ impl Runner {
                 .is_err()
             {
                 // The host PC disconnected, so we need to stop.
-                self.pwm_pin.set_timestamp(*STOP_DUTY);
+                self.pwm_pin.set_timestamp(STOP_DUTY);
                 break;
             }
         }
@@ -197,7 +209,7 @@ impl Runner {
         let Some((previous_setpoint, current_setpoint)) =
             self.next_setpoint_pair(setpoint_idx, elapsed_since_start_micros)
         else {
-            self.pwm_pin.set_timestamp(*STOP_DUTY);
+            self.pwm_pin.set_timestamp(STOP_DUTY);
             let _ = self.to_server.log_str("Motion profile done.").await;
             return None;
         };
@@ -211,7 +223,7 @@ impl Runner {
             )
             .await
         else {
-            self.pwm_pin.set_timestamp(*STOP_DUTY);
+            self.pwm_pin.set_timestamp(STOP_DUTY);
             let _ = self
                 .to_server
                 .log_str("Failed to calculate setpoint RPM. Stopping!")
@@ -219,7 +231,7 @@ impl Runner {
             return None;
         };
         // Then we need to linearly interpolate to find the required duty cycle.
-        Some((setpoint_rpm, linear_interpolation(setpoint_rpm)))
+        Some((setpoint_rpm, linear_conversion(setpoint_rpm)))
     }
 
     /// Gets the next pair of setpoints.
@@ -305,6 +317,18 @@ impl Runner {
     }
 }
 
+/// Uses the linear relationship between motor RPM and duty cycle to find the setpoint duty cycle.
+///
+/// This function never fails. If the duty cycle is greater than [`u16::MAX`], [`u16::MAX`] is returned.
+fn linear_conversion(setpoint_rpm: u16) -> DutyCycle {
+    // Everything here is in u32 to prevent overflow.
+    let setpoint_rpm = u32::from(setpoint_rpm);
+    // Ths arithmetic here is saturating because it will never exceed u32::MAX.
+    let duty = (setpoint_rpm.saturating_mul(RPM_TO_DUTY_NUMERATOR) / RPM_TO_DUTY_DENOMINATOR)
+        .saturating_add(RPM_TO_DUTY_INTERCEPT);
+    duty.into()
+}
+
 /// Performs linear interpolation on [`THROTTLE_CURVE`] to find the setpoint duty cycle.
 ///
 /// [`THROTTLE_CURVE`] must be nonzero and [`THROTTLE_CURVE`]`[0]` must have increasing values.
@@ -344,6 +368,20 @@ fn linear_interpolation(setpoint_rpm: u16) -> DutyCycle {
     }
     // The setpoint rpm is higher than any known rpm, so just return the highest rpm.
     THROTTLE_CURVE[1][THROTTLE_POINTS - 1].into()
+}
+
+/// Calculates the difference between the setpoint and current RPM.
+///
+/// This function never fails. The parameters and result are all truncated to fit in an [`i16`].
+fn error(setpoint_rpm: u16, current_rpm: u16) -> i16 {
+    let setpoint_rpm = i16::try_from(setpoint_rpm).unwrap_or(i16::MAX);
+    let current_rpm = i16::try_from(current_rpm).unwrap_or(i16::MAX);
+    setpoint_rpm.saturating_sub(current_rpm)
+}
+
+/// Returns the output of a basic P controller.
+fn next_control_output(error: i16) -> i16 {
+    error / K_P_INVERSE
 }
 
 /// Runs the [`Runner`] forever.
