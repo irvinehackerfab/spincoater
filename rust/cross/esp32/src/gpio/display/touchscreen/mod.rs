@@ -1,14 +1,12 @@
 //! This module contains the functionality for the touchscreen.
 
-use core::convert::Infallible;
-
 use embassy_executor::task;
-use embedded_hal_bus::spi::{DeviceError, RefCellDevice};
+use embedded_hal_bus::spi::RefCellDevice;
 use esp_hal::{
     Blocking,
     delay::Delay,
     gpio::{Input, Output},
-    spi::{Error, master::Spi},
+    spi::master::Spi,
 };
 use postcard_rpc::server::Sender;
 use sc_messages::{icd::TouchPointTopic, touchscreen::TouchPoint};
@@ -54,7 +52,7 @@ impl<'a> Touchscreen<'a> {
             // the cases discussed in page 25 of https://www.buydisplay.com/download/ic/XPT2046.pdf.
             // That is why we are free to use this method, which stops listening after the falling edge.
             self.pen_irq.wait_for_falling_edge().await;
-            let Ok(point) = self.xpt_2046.point::<DeviceError<Error, Infallible>>() else {
+            let Ok(point) = self.xpt_2046.point() else {
                 let _ = self.to_server.log_str("Failed to get touch point.").await;
                 continue;
             };
@@ -75,7 +73,7 @@ impl<'a> Touchscreen<'a> {
             // the cases discussed in page 25 of https://www.buydisplay.com/download/ic/XPT2046.pdf.
             // That is why we are free to use this method, which stops listening after it sees low.
             self.pen_irq.wait_for_low().await;
-            let Ok(point) = self.xpt_2046.point::<DeviceError<Error, Infallible>>() else {
+            let Ok(point) = self.xpt_2046.point() else {
                 let _ = self.to_server.log_str("Failed to get touch point.").await;
                 continue;
             };
@@ -91,5 +89,5 @@ impl<'a> Touchscreen<'a> {
 /// Runs the touchscreen loop.
 #[task]
 pub async fn run_touchscreen(mut touchscreen: Touchscreen<'static>) {
-    touchscreen.handle_presses().await;
+    touchscreen.handle_any_contact().await;
 }

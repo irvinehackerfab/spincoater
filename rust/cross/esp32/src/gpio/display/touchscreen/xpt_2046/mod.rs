@@ -71,10 +71,9 @@ impl<D> Xpt2046<D> {
     ///
     /// # Errors
     /// Returns an error if the SPI transaction fails.
-    pub fn point<E>(&mut self) -> Result<Point, E>
+    pub fn point(&mut self) -> Result<Point, <D as ErrorType>::Error>
     where
         D: SpiDevice,
-        E: From<<D as ErrorType>::Error>,
     {
         // I'm ignoring the propagation delay "tDO". Hopefully that's ok.
         self.spi.transaction(&mut [
