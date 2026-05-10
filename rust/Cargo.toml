@@ -32,7 +32,8 @@ postcard-schema = "0.2.5"
 tokio-serial = "5.4.5"
 # For linear regression of RPM values and duty cycle values
 linreg = "0.2.0"
-
+# For touchscreen
+embedded-graphics-core = "0.4.1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

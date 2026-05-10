@@ -7,9 +7,11 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use core::cell::RefCell;
+
 use embassy_executor::Spawner;
 use embassy_time::Timer;
-use embedded_hal_bus::spi::ExclusiveDevice;
+use embedded_hal_bus::spi::RefCellDevice;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
@@ -27,8 +29,9 @@ use esp32::{
     REQUEST_CHANNEL, SECOND_CORE_STACK,
     gpio::{
         display::{
-            DISPLAY, ORIENTATION, SPI_BUFFER,
+            DISPLAY, ORIENTATION, SPI, SPI_BUFFER,
             terminal::{TERMINAL, channel::TERMINAL_CHANNEL, update_terminal},
+            touchscreen::{Touchscreen, run_touchscreen, xpt_2046::Xpt2046},
         },
         encoder::ENCODER,
         interrupt_handler,
@@ -79,6 +82,32 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
 
+    // Run the encoder task/ISR on the second core so it doesn't block the program.
+    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    esp_rtos::start_second_core(
+        peripherals.CPU_CTRL,
+        software_interrupts.software_interrupt0,
+        software_interrupts.software_interrupt1,
+        SECOND_CORE_STACK.take(),
+        || {
+            // Set the interrupt handler for GPIO.
+            let mut io = Io::new(peripherals.IO_MUX);
+            io.set_interrupt_handler(interrupt_handler);
+
+            // Initialize encoder pin
+            let mut encoder = Input::new(
+                peripherals.GPIO27,
+                InputConfig::default().with_pull(Pull::Down),
+            );
+
+            // Start listening for rising edges
+            ENCODER.with(|encoder_memory_cell| {
+                encoder.listen(Event::RisingEdge);
+                encoder_memory_cell.replace(encoder);
+            });
+        },
+    );
+
     // Initialize PWM
     let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
     let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
@@ -95,26 +124,29 @@ async fn main(spawner: Spawner) -> ! {
     mcpwm.timer0.start(timer_clock_cfg);
     pwm_pin.set_timestamp(STOP_DUTY);
 
+    // Initialize SPI
+    let spi = SPI.init_with(|| {
+        // See https://esp32.implrust.com/tft-display/circuit.html for a tutorial.
+        let spi = Spi::new(
+            peripherals.SPI2,
+            Config::default()
+                .with_frequency(Rate::from_mhz(4))
+                .with_mode(esp_hal::spi::Mode::_0),
+        )
+        .expect("Frequency is within 70kHz..80MHz")
+        // Master In Slave Out. SPI read line from the display to the microcontroller.
+        .with_miso(peripherals.GPIO35)
+        // Master Out Slave In. This is the SPI data line from the microcontroller to the display. Used to send pixel data and commands.
+        .with_mosi(peripherals.GPIO33)
+        // Serial Clock. SPI clock signal from the microcontroller. It synchronizes the data being sent.
+        .with_sck(peripherals.GPIO32);
+        RefCell::new(spi)
+    });
+
     // Initialize the display
     // init_with constructs the value in-place to save stack space.
     let terminal = TERMINAL.init_with(|| {
-        // init_with constructs the value in-place to save stack space.
         let display = DISPLAY.init_with(|| {
-            // https://esp32.implrust.com/tft-display/circuit.html
-            let spi = Spi::new(
-                peripherals.SPI2,
-                Config::default()
-                    .with_frequency(Rate::from_mhz(4))
-                    .with_mode(esp_hal::spi::Mode::_0),
-            )
-            .expect("Frequency is within 70kHz..80MHz")
-            .into_async()
-            // Master In Slave Out. SPI read line from the display to the microcontroller.
-            .with_miso(peripherals.GPIO35)
-            // Master Out Slave In. This is the SPI data line from the microcontroller to the display. Used to send pixel data and commands.
-            .with_mosi(peripherals.GPIO33)
-            // Serial Clock. SPI clock signal from the microcontroller. It synchronizes the data being sent.
-            .with_sck(peripherals.GPIO32);
             // Chip Select. This tells the display when it should listen to SPI commands. Keep it low (active) when sending data.
             // [`ExclusiveDevice::new_no_delay`] says to have an initial output of high.
             let cs = Output::new(peripherals.GPIO19, Level::High, OutputConfig::default());
@@ -123,7 +155,7 @@ async fn main(spawner: Spawner) -> ! {
             // Resets the display. Useful during startup to make sure the display starts in a known state.
             // Starts off low because [`Ili9341::new`] sets the reset low, then high
             let reset = Output::new(peripherals.GPIO18, Level::Low, OutputConfig::default());
-            let spi_device = ExclusiveDevice::new_no_delay(spi, cs).expect("cs is already high");
+            let spi_device = RefCellDevice::new(spi, cs, Delay::new()).expect("cs is already high");
             let interface = SpiInterface::new(spi_device, dc, SPI_BUFFER.take());
             mipidsi::Builder::new(ILI9341Rgb565, interface)
                 .reset_pin(reset)
@@ -139,9 +171,6 @@ async fn main(spawner: Spawner) -> ! {
         let backend = EmbeddedBackend::new(display, config);
         Terminal::new(backend).expect("Failed to create terminal")
     });
-
-    // Disable touch chip select for now
-    let _ = Output::new(peripherals.GPIO16, Level::Low, OutputConfig::default());
 
     // Setup communication between tasks
     let terminal_channel = TERMINAL_CHANNEL.take();
@@ -195,6 +224,18 @@ async fn main(spawner: Spawner) -> ! {
         vkk,
     );
 
+    // Initialize the touchscreen
+    let t_cs = Output::new(peripherals.GPIO16, Level::High, OutputConfig::default());
+    let spi_device = RefCellDevice::new(spi, t_cs, Delay::new()).expect("cs is already high");
+    let xpt_2046 = Xpt2046::new(spi_device);
+    let pen_irq = Input::new(
+        peripherals.GPIO34,
+        InputConfig::default().with_pull(Pull::Up),
+    );
+    let touchscreen = Touchscreen::new(xpt_2046, pen_irq, server.sender());
+
+    spawner.must_spawn(run_touchscreen(touchscreen));
+
     spawner.must_spawn(update_terminal(
         terminal,
         server.sender(),
@@ -208,32 +249,6 @@ async fn main(spawner: Spawner) -> ! {
         server.sender(),
     );
     spawner.must_spawn(run(runner));
-
-    // Run the encoder task/ISR on the second core so it doesn't block the program.
-    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
-    esp_rtos::start_second_core(
-        peripherals.CPU_CTRL,
-        software_interrupts.software_interrupt0,
-        software_interrupts.software_interrupt1,
-        SECOND_CORE_STACK.take(),
-        || {
-            // Set the interrupt handler for GPIO.
-            let mut io = Io::new(peripherals.IO_MUX);
-            io.set_interrupt_handler(interrupt_handler);
-
-            // Initialize encoder pin
-            let mut encoder = Input::new(
-                peripherals.GPIO27,
-                InputConfig::default().with_pull(Pull::Down),
-            );
-
-            // Start listening for rising edges
-            ENCODER.with(|encoder_memory_cell| {
-                encoder.listen(Event::RisingEdge);
-                encoder_memory_cell.replace(encoder);
-            });
-        },
-    );
 
     loop {
         let _ = server.run().await;

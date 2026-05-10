@@ -1,7 +1,5 @@
 //! This module describes the UI layout of the terminal.
 
-use std::time::Duration;
-
 use ratatui::{
     Frame,
     layout::{Constraint, HorizontalAlignment, Layout, Rect},
@@ -83,40 +81,35 @@ impl App {
             .title_alignment(HorizontalAlignment::Center)
             .border_type(BorderType::Rounded);
 
-        let (
-            time,
-            setpoint_rpm,
-            setpoint_plate_rpm,
-            current_rpm,
-            current_plate_rpm,
-            rpm_error,
-            plate_rpm_error,
-            duty_cycle,
-            duty_cycle_f32,
-        ) = match &self.mcu_state {
-            Some(state) => (
-                Some(Duration::from_micros(state.time).as_secs_f64()),
-                Some(state.setpoint_rpm),
-                Some(state.setpoint_plate_rpm),
-                Some(state.current_rpm),
-                Some(state.current_plate_rpm),
-                Some(state.rpm_error),
-                Some(state.plate_rpm_error),
-                Some(state.duty_cycle),
-                Some(f32::from(*state.duty_cycle) / f32::from(PERIOD)),
-            ),
-            None => (None, None, None, None, None, None, None, None, None),
-        };
         let paragraph = Paragraph::new(Text::from_iter([
-            Line::raw(format!("Time (s): {time:?}")),
-            Line::raw(format!("Setpoint RPM: {setpoint_rpm:?}")),
-            Line::raw(format!("Setpoint plate RPM: {setpoint_plate_rpm:?}")),
-            Line::raw(format!("Current RPM: {current_rpm:?}")),
-            Line::raw(format!("Current plate RPM: {current_plate_rpm:?}")),
-            Line::raw(format!("RPM error: {rpm_error:?}")),
-            Line::raw(format!("Plate RPM error: {plate_rpm_error:?}")),
-            Line::raw(format!("Duty Cycle (0..{PERIOD}): {duty_cycle:?}")),
-            Line::raw(format!("Duty Cycle (0.0..1.0): {duty_cycle_f32:?}")),
+            Line::raw(format!("Time (s): {:?}", self.mcu_state.time())),
+            Line::raw(format!("Setpoint RPM: {:?}", self.mcu_state.setpoint_rpm())),
+            Line::raw(format!(
+                "Setpoint plate RPM: {:?}",
+                self.mcu_state.setpoint_plate_rpm()
+            )),
+            Line::raw(format!("Current RPM: {:?}", self.mcu_state.current_rpm())),
+            Line::raw(format!(
+                "Current plate RPM: {:?}",
+                self.mcu_state.current_plate_rpm()
+            )),
+            Line::raw(format!("RPM error: {:?}", self.mcu_state.rpm_error())),
+            Line::raw(format!(
+                "Plate RPM error: {:?}",
+                self.mcu_state.plate_rpm_error()
+            )),
+            Line::raw(format!(
+                "Duty Cycle (0..{PERIOD}): {:?}",
+                self.mcu_state.duty_cycle()
+            )),
+            Line::raw(format!(
+                "Duty Cycle (0.0..1.0): {:?}",
+                self.mcu_state.duty_cycle_f32()
+            )),
+            Line::raw(format!(
+                "Touch Point (0..4095): {:?}",
+                self.mcu_state.touch_state()
+            )),
         ]))
         .block(block);
 

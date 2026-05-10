@@ -822,6 +822,8 @@ dependencies = [
  "embassy-sync 0.7.2",
  "embassy-time",
  "embedded-graphics",
+ "embedded-graphics-core",
+ "embedded-hal 1.0.0",
  "embedded-hal-bus",
  "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
@@ -1554,6 +1556,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 name = "sc_messages"
 version = "0.1.0"
 dependencies = [
+ "embedded-graphics-core",
  "postcard-rpc",
  "postcard-schema",
  "serde",

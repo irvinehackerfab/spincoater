@@ -15,18 +15,20 @@ use postcard_rpc::{
 use ratatui::crossterm::event::Event as CrosstermEvent;
 use sc_messages::{
     icd::{
-        HostDisconnecting, MotionProfileStateTopic, MotionRequestEndpoint,
+        HostDisconnecting, MotionProfileStateTopic, MotionRequestEndpoint, TouchPointTopic,
         VacuumPumpRequestEndpoint,
     },
-    motion_profile::{self, RequestRefused, StateOrDisabled},
+    motion_profile::{self, RequestRefused},
+    touchscreen::TouchPoint,
     vacuum_pump,
 };
+use serde::de::DeserializeOwned;
 use tokio::{
     sync::mpsc::{self, UnboundedSender},
     time::timeout,
 };
 
-use crate::app::{MCU_LOG_CAPACITY, state::State};
+use crate::app::{MCU_LOG_CAPACITY, state::MotionProfileState};
 
 /// [`postcard_rpc`] requires us to choose a message sequence number and does not explain why.
 const INITIAL_VAR_SEQ: VarSeq = VarSeq::Seq1(0);
@@ -39,12 +41,18 @@ pub enum TuiEvent {
     /// These events are emitted by the terminal.
     Crossterm(CrosstermEvent),
     /// Events from the MCU connection.
-    Usb(UsbEvent),
+    MCU(MCUEvent),
+}
+
+impl From<MCUEvent> for TuiEvent {
+    fn from(value: MCUEvent) -> Self {
+        Self::MCU(value)
+    }
 }
 
 /// All possible USB events.
 #[derive(Debug, Clone)]
-pub enum UsbEvent {
+pub enum MCUEvent {
     /// The MCU responded to a motion profile request.
     MotionProfileRequestResponse(Response),
     /// The MCU responded to a vacuum pump request.
@@ -52,7 +60,27 @@ pub enum UsbEvent {
     /// The MCU logged a message.
     Log(String),
     /// The MCU sent the motion profile state.
-    State(Option<State>),
+    State(Option<MotionProfileState>),
+    /// The MCU sent a touch input.
+    Touch(TouchPoint),
+}
+
+impl From<String> for MCUEvent {
+    fn from(value: String) -> Self {
+        Self::Log(value)
+    }
+}
+
+impl From<Option<motion_profile::State>> for MCUEvent {
+    fn from(value: Option<motion_profile::State>) -> Self {
+        Self::State(value.map(Into::into))
+    }
+}
+
+impl From<TouchPoint> for MCUEvent {
+    fn from(value: TouchPoint) -> Self {
+        Self::Touch(value)
+    }
 }
 
 /// A motion profile response + the time it was received.
@@ -110,11 +138,16 @@ impl EventHandler {
         let state_stream = client
             .subscribe_exclusive::<MotionProfileStateTopic>(MCU_LOG_CAPACITY)
             .await?;
+        // Subscribe to the MCU's touch points.
+        let touch_stream = client
+            .subscribe_exclusive::<TouchPointTopic>(MCU_LOG_CAPACITY)
+            .await?;
 
         // Spawn event handler tasks.
         tokio::spawn(await_crossterm_events(to_handler.clone()));
-        tokio::spawn(await_log_messages(log_stream, to_handler.clone()));
-        tokio::spawn(await_state_messages(state_stream, to_handler.clone()));
+        tokio::spawn(await_messages(log_stream, to_handler.clone()));
+        tokio::spawn(await_messages(state_stream, to_handler.clone()));
+        tokio::spawn(await_messages(touch_stream, to_handler.clone()));
 
         Ok(Self {
             from_tasks,
@@ -149,7 +182,7 @@ impl EventHandler {
         tokio::spawn(async move {
             match client.send_resp::<MotionRequestEndpoint>(&request).await {
                 Ok(response) => {
-                    to_handler.send(Ok(TuiEvent::Usb(UsbEvent::MotionProfileRequestResponse(
+                    to_handler.send(Ok(TuiEvent::MCU(MCUEvent::MotionProfileRequestResponse(
                         Response::new(response, Local::now().time()),
                     ))))
                 }
@@ -183,7 +216,7 @@ impl EventHandler {
                 .send_resp::<VacuumPumpRequestEndpoint>(&request)
                 .await
             {
-                Ok(()) => to_handler.send(Ok(TuiEvent::Usb(UsbEvent::VacuumPumpRequestResponse))),
+                Ok(()) => to_handler.send(Ok(TuiEvent::MCU(MCUEvent::VacuumPumpRequestResponse))),
                 Err(wire_err) => {
                     to_handler.send(Err(eyre!("Failed to send command: {}", wire_err)))
                 }
@@ -218,36 +251,18 @@ async fn await_crossterm_events(to_handler: UnboundedSender<Result<TuiEvent>>) {
     }
 }
 
-/// Sends the MCU's logs to the terminal whenever they occur.
-async fn await_log_messages(
-    mut subscription: Subscription<String>,
+/// Awaits messages from a subscription in a loop, and forwards them to the handler.
+async fn await_messages<S>(
+    mut subscription: Subscription<S>,
     to_handler: UnboundedSender<Result<TuiEvent>>,
-) {
-    // As soon as the stream closes, the terminal must close as well.
-    while let Some(msg) = subscription.recv().await {
-        if to_handler
-            .send(Ok(TuiEvent::Usb(UsbEvent::Log(msg))))
-            .is_err()
-        {
-            break;
-        }
-    }
-    let _ = to_handler.send(Err(eyre!("postcard_rpc closed the MCU log stream")));
-}
-
-/// Sends the MCU's motion profile state to the terminal.
-async fn await_state_messages(
-    mut subscription: Subscription<StateOrDisabled>,
-    to_handler: UnboundedSender<Result<TuiEvent>>,
-) {
+) where
+    S: DeserializeOwned + Into<MCUEvent>,
+{
     // As soon as the stream closes, the terminal must close as well.
     while let Some(state) = subscription.recv().await {
-        if to_handler
-            .send(Ok(TuiEvent::Usb(UsbEvent::State(state.map(Into::into)))))
-            .is_err()
-        {
+        if to_handler.send(Ok(TuiEvent::MCU(state.into()))).is_err() {
             break;
         }
     }
-    let _ = to_handler.send(Err(eyre!("postcard_rpc closed the MCU log stream")));
+    let _ = to_handler.send(Err(eyre!("postcard_rpc closed a stream")));
 }

@@ -8,8 +8,8 @@ use std::io::{self};
 use std::path::PathBuf;
 use std::{env, fs::File};
 
-use crate::app::event::{EventHandler, TuiEvent, UsbEvent};
-use crate::app::state::State;
+use crate::app::event::{EventHandler, MCUEvent, TuiEvent};
+use crate::app::state::McuState;
 use chrono::Local;
 use color_eyre::{Result, eyre::OptionExt};
 use crossterm::event::Event;
@@ -38,7 +38,7 @@ pub struct App {
     /// The state of the commands section.
     commands_state: ListState,
     /// The current state, as reported by the MCU.
-    mcu_state: Option<State>,
+    mcu_state: McuState,
     /// The last [`MCU_LOG_CAPACITY`] commands received from the MCU since the app started.
     ///
     /// When max capacity is reached, the oldest messages are overridden.
@@ -58,7 +58,7 @@ impl App {
         Ok(Self {
             running: true,
             events,
-            mcu_state: None,
+            mcu_state: McuState::default(),
             commands_state: ListState::default().with_selected(Some(0)),
             mcu_logs: AllocRingBuffer::new(MCU_LOG_CAPACITY),
             motor_data_file: None,
@@ -126,7 +126,7 @@ impl App {
                     // We're only concerned with key presses right now.
                     _ => {}
                 },
-                TuiEvent::Usb(usb_event) => self.handle_usb_event(usb_event)?,
+                TuiEvent::MCU(usb_event) => self.handle_usb_event(usb_event)?,
             }
         }
         Ok(())
@@ -189,13 +189,13 @@ impl App {
         Ok(())
     }
 
-    fn handle_usb_event(&mut self, usb_event: UsbEvent) -> Result<()> {
+    fn handle_usb_event(&mut self, usb_event: MCUEvent) -> Result<()> {
         match usb_event {
-            UsbEvent::Log(msg) => {
+            MCUEvent::Log(msg) => {
                 let _ = self.mcu_logs.enqueue(format!("[Log]: {msg}"));
             }
-            UsbEvent::State(state) => {
-                self.mcu_state.clone_from(&state);
+            MCUEvent::State(state) => {
+                self.mcu_state.motion_profile_state.clone_from(&state);
                 match state {
                     Some(state) => self
                         .motor_data_file
@@ -208,11 +208,15 @@ impl App {
                     }
                 }
             }
-            UsbEvent::MotionProfileRequestResponse(response) => {
+            MCUEvent::MotionProfileRequestResponse(response) => {
                 let _ = self.mcu_logs.enqueue(format!("{response}"));
             }
-            UsbEvent::VacuumPumpRequestResponse => {
+            MCUEvent::VacuumPumpRequestResponse => {
                 let _ = self.mcu_logs.enqueue("[Vacuum Pump]: Ok".to_string());
+            }
+            MCUEvent::Touch(touch_point) => {
+                self.mcu_state.touch_state.replace(touch_point);
+                let _ = self.mcu_logs.enqueue(format!("[Touch]: {touch_point:?}"));
             }
         }
         Ok(())

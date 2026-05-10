@@ -1,7 +1,7 @@
 use std::env;
 
 use color_eyre::eyre::{OptionExt, Result, eyre};
-use host_tui::app::state::State;
+use host_tui::app::state::MotionProfileState;
 use linreg::linear_regression;
 
 fn main() -> Result<()> {
@@ -16,7 +16,7 @@ fn main() -> Result<()> {
     let mut rpm_values = Vec::new();
     let mut duty_cycle_values = Vec::new();
     for result in file.into_deserialize() {
-        let state: State = result?;
+        let state: MotionProfileState = result?;
         rpm_values.push(state.current_rpm);
         duty_cycle_values.push(*state.duty_cycle);
     }

@@ -22,6 +22,7 @@ pub mod pwm;
 /// Panics if [`MOTOR_REVOLUTIONS_DOUBLED`] overflows.
 #[handler]
 pub fn interrupt_handler() {
+    // Check motor encoder.
     if ENCODER.with(|encoder| {
         let Some(encoder) = encoder.as_mut() else {
             // A GPIO interrupt fired before the encoder was initialized.

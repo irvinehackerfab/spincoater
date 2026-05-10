@@ -45,8 +45,10 @@ postcard-rpc = { version = "0.12.1", features = ["embedded-io-async-0_6-server"]
 sc_messages = { path = "../../sc_messages"}
 
 # The dependencies below are used for the display.
+embedded-hal = "1.0.0"
 embedded-hal-bus = "0.3.0"
 embedded-graphics = "0.8.2"
+embedded-graphics-core = "0.4.1"
 mipidsi = "0.10.0"
 mousefood = { version = "0.5.0", default-features = false }
 ratatui = { version = "0.30.0", default-features = false, features = ["all-widgets"] }

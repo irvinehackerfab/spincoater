@@ -9,6 +9,7 @@ serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true, optional = true }
 postcard-rpc = { workspace = true }
 postcard-schema = { workspace = true, features = ["derive"] }
+embedded-graphics-core.workspace = true
 
 [features]
 std = ["dep:thiserror"]

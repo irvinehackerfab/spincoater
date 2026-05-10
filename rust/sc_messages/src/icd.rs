@@ -3,6 +3,7 @@ use postcard_rpc::{TopicDirection, endpoints, topics};
 
 use crate::{
     motion_profile::{Request as MotionProfileRequest, RequestResult, StateOrDisabled},
+    touchscreen::TouchPoint,
     vacuum_pump::Request as VacuumPumpRequest,
 };
 
@@ -34,4 +35,5 @@ topics! {
    | TopicTy                 | MessageTy       | Path                          |
    |-------------------------|-----------------|-------------------------------|
    | MotionProfileStateTopic | StateOrDisabled | "topics/motion_profile/state" |
+   | TouchPointTopic         | TouchPoint      | "topics/touch/point"          |
 }
