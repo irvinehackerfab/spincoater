@@ -42,7 +42,7 @@ use esp32::{
 };
 use ibm437::IBM437_9X14_REGULAR;
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
-use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
+use mousefood::{ColorTheme, EmbeddedBackend, EmbeddedBackendConfig};
 use postcard_rpc::server::{Dispatch, Server};
 use ratatui::Terminal;
 use sc_messages::{icd::BAUD_RATE, pwm::STOP_DUTY};
@@ -166,6 +166,7 @@ async fn main(spawner: Spawner) -> ! {
         let config = EmbeddedBackendConfig {
             // The default font is too small so we use a bigger (and more optimzied) one
             font_regular: IBM437_9X14_REGULAR,
+            color_theme: ColorTheme::tokyo_night(),
             ..EmbeddedBackendConfig::default()
         };
         let backend = EmbeddedBackend::new(display, config);
@@ -232,7 +233,8 @@ async fn main(spawner: Spawner) -> ! {
         peripherals.GPIO34,
         InputConfig::default().with_pull(Pull::Up),
     );
-    let touchscreen = Touchscreen::new(xpt_2046, pen_irq, server.sender());
+    let touchscreen = Touchscreen::new(xpt_2046, pen_irq, server.sender())
+        .expect("Failed to initialize the touchscreen");
 
     spawner.must_spawn(run_touchscreen(touchscreen));
 
