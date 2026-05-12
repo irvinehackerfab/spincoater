@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::{env, fs::File};
 
 use crate::app::event::{EventHandler, MCUEvent, TuiEvent};
-use crate::app::state::McuState;
+use crate::app::state::MotionProfileState;
 use chrono::Local;
 use color_eyre::{Result, eyre::OptionExt};
 use crossterm::event::Event;
@@ -47,7 +47,7 @@ pub struct App {
     /// The state of the commands section.
     commands_state: ListState,
     /// The current state, as reported by the MCU.
-    mcu_state: McuState,
+    mcu_state: Option<MotionProfileState>,
     /// The last [`MCU_LOG_CAPACITY`] commands received from the MCU since the app started.
     ///
     /// When max capacity is reached, the oldest messages are overridden.
@@ -69,7 +69,7 @@ impl App {
         Ok(Self {
             running: true,
             events,
-            mcu_state: McuState::default(),
+            mcu_state: None,
             commands_state: ListState::default().with_selected(Some(0)),
             mcu_logs: AllocRingBuffer::new(MCU_LOG_CAPACITY),
             motor_data_file: None,
@@ -208,7 +208,7 @@ impl App {
                 let _ = self.mcu_logs.enqueue(format!("[Log]: {msg}"));
             }
             MCUEvent::State(state) => {
-                self.mcu_state.motion_profile_state.clone_from(&state);
+                self.mcu_state.clone_from(&state);
                 match state {
                     Some(state) => self
                         .motor_data_file
@@ -228,7 +228,6 @@ impl App {
                 let _ = self.mcu_logs.enqueue("[Vacuum Pump]: Ok".to_string());
             }
             MCUEvent::Touch(touch_point) => {
-                self.mcu_state.touch_state.replace(touch_point);
                 let _ = self.mcu_logs.enqueue(format!("[Touch]: {touch_point:?}"));
                 self.touchscreen_data_file.serialize(touch_point)?;
             }
