@@ -3,13 +3,12 @@
 use crate::{
     LOOP_PERIOD, REQUEST_CHANNEL_LENGTH, REQUEST_RESPONSE_SIGNAL,
     gpio::{
-        encoder::{ENCODER_STATE, EncoderState},
-        pwm::{
-            K_P_INVERSE, RPM_TO_DUTY_DENOMINATOR, RPM_TO_DUTY_INTERCEPT, RPM_TO_DUTY_NUMERATOR,
-            SETPOINT_LIST_LENGTH, STATIC_DUTY,
-        },
+        encoder::{ENCODER_STATE, EncoderState, calculate_rpm},
+        pwm::{SETPOINT_LIST_LENGTH, STATIC_DUTY, linear_conversion},
     },
+    pid::{error, next_control_output},
     rpc::{HOST_DISCONNECTED, SEQUENCE_NUMBER, WireTx},
+    runners::sleep,
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver};
 use embassy_time::{Instant, Timer};
@@ -51,7 +50,7 @@ impl Runner {
     }
 
     /// Runs the main control loop.
-    pub async fn run(mut self) -> ! {
+    async fn run(mut self) -> ! {
         loop {
             self.setup().await;
             self.execute_motion_profile().await;
@@ -102,7 +101,7 @@ impl Runner {
         let mut setpoint_idx = 0;
         loop {
             // Sleep must be called at the start so LOOP_PERIOD time can pass before the current rpm is calculated.
-            previous_sleep_end = Self::sleep(previous_sleep_end).await;
+            previous_sleep_end = sleep(previous_sleep_end).await;
 
             // Check for stop requests.
             if let Ok(command) = self.from_server.try_receive() {
@@ -139,7 +138,7 @@ impl Runner {
             };
 
             // Feedback
-            let current_rpm = Self::calculate_rpm();
+            let current_rpm = calculate_rpm();
             let rpm_error = error(setpoint_rpm, current_rpm);
             let output = next_control_output(rpm_error);
             let duty_cycle = (*setpoint_duty_cycle).saturating_add_signed(output);
@@ -170,26 +169,6 @@ impl Runner {
             .to_server
             .publish::<MotionProfileStateTopic>(SEQUENCE_NUMBER, &None)
             .await;
-    }
-
-    /// Sleeps if less than [`LOOP_PERIOD`] time has passed since the last end of this function.
-    ///
-    /// Returns the instant at the end of this function call.
-    /// This value should be passed to the next call to this method.
-    async fn sleep(previous_sleep_end: Instant) -> Instant {
-        let elapsed_since_previous_sleep_end = previous_sleep_end.elapsed();
-        // Only sleep if less than LOOP_PERIOD time has passed since the previous loop start.
-        match LOOP_PERIOD.checked_sub(elapsed_since_previous_sleep_end) {
-            Some(time_to_sleep) => {
-                let before_sleep = Instant::now();
-                Timer::after(time_to_sleep).await;
-                // Manually calculating the end of the function makes this function immune to oversleep from the timer.
-                before_sleep
-                    .checked_add(time_to_sleep)
-                    .expect("This program will not run for 584558 years.")
-            }
-            None => Instant::now(),
-        }
     }
 
     /// Calculates the setpoint rpm and duty cycle for this timestep.
@@ -299,48 +278,6 @@ impl Runner {
         };
         Some(result)
     }
-
-    /// Calculates the current rpm as a rolling average.
-    ///
-    /// This function never fails. If the RPM is greater than [`u16::MAX`], [`u16::MAX`] is returned.
-    #[allow(clippy::cast_possible_truncation)]
-    fn calculate_rpm() -> u16 {
-        ENCODER_STATE.with(|state| {
-            state
-                .rpm_ring_buffer
-                .as_slice()
-                .iter()
-                .sum::<usize>()
-                .checked_div(state.rpm_ring_buffer.len())
-                .unwrap_or(0)
-        }) as u16
-    }
-}
-
-/// Uses the linear relationship between motor RPM and duty cycle to find the setpoint duty cycle.
-///
-/// This function never fails. If the duty cycle is greater than [`u16::MAX`], [`u16::MAX`] is returned.
-fn linear_conversion(setpoint_rpm: u16) -> DutyCycle {
-    // Everything here is in u32 to prevent overflow.
-    let setpoint_rpm = u32::from(setpoint_rpm);
-    // Ths arithmetic here is saturating because it will never exceed u32::MAX.
-    let duty = (setpoint_rpm.saturating_mul(RPM_TO_DUTY_NUMERATOR) / RPM_TO_DUTY_DENOMINATOR)
-        .saturating_add(RPM_TO_DUTY_INTERCEPT);
-    duty.into()
-}
-
-/// Calculates the difference between the setpoint and current RPM.
-///
-/// This function never fails. The parameters and result are all truncated to fit in an [`i16`].
-fn error(setpoint_rpm: u16, current_rpm: u16) -> i16 {
-    let setpoint_rpm = i16::try_from(setpoint_rpm).unwrap_or(i16::MAX);
-    let current_rpm = i16::try_from(current_rpm).unwrap_or(i16::MAX);
-    setpoint_rpm.saturating_sub(current_rpm)
-}
-
-/// Returns the output of a basic P controller.
-fn next_control_output(error: i16) -> i16 {
-    error / K_P_INVERSE
 }
 
 /// Runs the [`Runner`] forever.

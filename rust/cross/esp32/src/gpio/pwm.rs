@@ -1,7 +1,10 @@
 //! This module contains PWM output functionality.
 use esp_hal::time::Rate;
 use heapless::Vec;
-use sc_messages::motion_profile::{MAX_SETPOINTS, Setpoint};
+use sc_messages::{
+    motion_profile::{MAX_SETPOINTS, Setpoint},
+    pwm::DutyCycle,
+};
 use static_cell::ConstStaticCell;
 
 /// The current motor controller reads PWM at 50 Hz.
@@ -58,7 +61,15 @@ pub const RPM_TO_DUTY_INTERCEPT: u32 = 5_018;
 /// This duty cycle is guaranteed to make the motor start spinning.
 pub const STATIC_DUTY: u16 = 5_065;
 
-/// The inverse of the proportional gain.
+/// Uses the linear relationship between motor RPM and duty cycle to find the setpoint duty cycle.
 ///
-/// The non-inverse of `K_P` is in units of duty cycle per motor RPM error.
-pub const K_P_INVERSE: i16 = 16;
+/// This function never fails. If the duty cycle is greater than [`u16::MAX`], [`u16::MAX`] is returned.
+#[must_use]
+pub fn linear_conversion(setpoint_rpm: u16) -> DutyCycle {
+    // Everything here is in u32 to prevent overflow.
+    let setpoint_rpm = u32::from(setpoint_rpm);
+    // Ths arithmetic here is saturating because it will never exceed u32::MAX.
+    let duty = (setpoint_rpm.saturating_mul(RPM_TO_DUTY_NUMERATOR) / RPM_TO_DUTY_DENOMINATOR)
+        .saturating_add(RPM_TO_DUTY_INTERCEPT);
+    duty.into()
+}

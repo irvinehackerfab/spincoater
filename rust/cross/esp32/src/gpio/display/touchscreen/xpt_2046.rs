@@ -2,14 +2,13 @@
 
 use core::convert::From;
 
+use embedded_graphics_core::geometry::Point;
 use embedded_hal::spi::{ErrorType, Operation, SpiDevice};
-use sc_messages::touchscreen::TouchPoint;
-
 /// The time (in nanoseconds) we must wait before the first rising edge of the clock.
 const T_CSS: u32 = 100;
 
 /// The length of the word buffer.
-const BUFFER_LENGTH: usize = 9;
+const BUFFER_LENGTH: usize = 5;
 
 /// The control byte we send when we want the X position.
 ///
@@ -31,25 +30,25 @@ const GET_X_POSITION: u8 = 0b1101_0000;
 /// - PD1-PD0: 00. This is necessary if we want both the ADC on for taking measurements, and `PEN_IRQ` interrupts enabled. (Table 8)
 const GET_Y_POSITION: u8 = 0b1001_0000;
 
-/// The control byte we send when we want Z1.
-///
-/// Reasoning:
-/// - S bit: Always high.
-/// - A2-A0: 011 (Table 5)
-/// - Mode: Low because we want 12 bit resolution instead of 8 bit. (Page 21)
-/// - SER/DFR: Low because we want differential mode, which is "preferred" for X/Y/Z measurements. (Page 22)
-/// - PD1-PD0: 00. This is necessary if we want both the ADC on for taking measurements, and `PEN_IRQ` interrupts enabled. (Table 8)
-const GET_Z1_POSITION: u8 = 0b1011_0000;
+// /// The control byte we send when we want Z1.
+// ///
+// /// Reasoning:
+// /// - S bit: Always high.
+// /// - A2-A0: 011 (Table 5)
+// /// - Mode: Low because we want 12 bit resolution instead of 8 bit. (Page 21)
+// /// - SER/DFR: Low because we want differential mode, which is "preferred" for X/Y/Z measurements. (Page 22)
+// /// - PD1-PD0: 00. This is necessary if we want both the ADC on for taking measurements, and `PEN_IRQ` interrupts enabled. (Table 8)
+// const GET_Z1_POSITION: u8 = 0b1011_0000;
 
-/// The control byte we send when we want Z2.
-///
-/// Reasoning:
-/// - S bit: Always high.
-/// - A2-A0: 100 (Table 5)
-/// - Mode: Low because we want 12 bit resolution instead of 8 bit. (Page 21)
-/// - SER/DFR: Low because we want differential mode, which is "preferred" for X/Y/Z measurements. (Page 22)
-/// - PD1-PD0: 00. This is necessary if we want both the ADC on for taking measurements, and `PEN_IRQ` interrupts enabled. (Table 8)
-const GET_Z2_POSITION: u8 = 0b1100_0000;
+// /// The control byte we send when we want Z2.
+// ///
+// /// Reasoning:
+// /// - S bit: Always high.
+// /// - A2-A0: 100 (Table 5)
+// /// - Mode: Low because we want 12 bit resolution instead of 8 bit. (Page 21)
+// /// - SER/DFR: Low because we want differential mode, which is "preferred" for X/Y/Z measurements. (Page 22)
+// /// - PD1-PD0: 00. This is necessary if we want both the ADC on for taking measurements, and `PEN_IRQ` interrupts enabled. (Table 8)
+// const GET_Z2_POSITION: u8 = 0b1100_0000;
 
 /// Since we can't easily split reads into multiple commands, we need to perform simultaneous reads and writes.
 /// If we shift first command right by 3 bits and read the 5th bit of the X position at the same time as we propagate the second S,
@@ -60,10 +59,6 @@ const FULL_COMMAND: [u8; BUFFER_LENGTH] = [
     GET_X_POSITION << 5,
     GET_Y_POSITION >> 3,
     GET_Y_POSITION << 5,
-    GET_Z1_POSITION >> 3,
-    GET_Z1_POSITION << 5,
-    GET_Z2_POSITION >> 3,
-    GET_Z2_POSITION << 5,
     0,
 ];
 
@@ -73,19 +68,22 @@ const FULL_COMMAND: [u8; BUFFER_LENGTH] = [
 const INIT_COMMAND: [u8; 3] = [0x80, 0, 0];
 
 /// The constant that converts values from range 330..3701 to 0..3371.
-const MIN_X: u32 = 330;
+const MIN_X: i32 = 330;
 
 /// The constant that converts values from range 364..3722 to 0..3358.
-const MIN_Y: u32 = 364;
+const MIN_Y: i32 = 364;
 
 /// The numerator that converts values from range 0..3371 to 0..4095.
-const LERP_NUMERATOR: u32 = 4_095;
+const LERP_NUMERATOR: i32 = 4_095;
 
 /// The denominator that converts values from range 0..3371 to 0..4095.
-const X_DENOMINATOR: u32 = 3_371;
+const X_DENOMINATOR: i32 = 3_371;
 
 /// The denominator that converts values from range 0..3358 to 0..4095.
-const Y_DENOMINATOR: u32 = 3_358;
+const Y_DENOMINATOR: i32 = 3_358;
+
+/// The highest possible x or y value.
+pub const MAX_VALUE: u16 = 4095;
 
 /// The SPI driver for the XPT2046 touchscreen.
 pub struct Xpt2046<D> {
@@ -129,38 +127,37 @@ where
     ///
     /// # Errors
     /// Returns an error if the SPI transaction fails.
-    pub fn point(&mut self) -> Result<TouchPoint, <D as ErrorType>::Error> {
+    pub fn point(&mut self) -> Result<Point, <D as ErrorType>::Error> {
         // I'm ignoring the propagation delay "tDO". Hopefully that's ok.
         self.spi.transaction(&mut [
             Operation::DelayNs(T_CSS),
             Operation::Transfer(&mut self.buffer, &FULL_COMMAND),
         ])?;
 
-        let x = u32::from(self.buffer[1]) << 8 | u32::from(self.buffer[2]);
+        let x = i32::from(self.buffer[1]) << 8 | i32::from(self.buffer[2]);
         let x = lerp_x(x);
 
-        let y = u32::from(self.buffer[3]) << 8 | u32::from(self.buffer[4]);
+        let y = i32::from(self.buffer[3]) << 8 | i32::from(self.buffer[4]);
         let y = lerp_y(y);
 
-        let z1 = u16::from(self.buffer[5]) << 8 | u16::from(self.buffer[6]);
-        let z2 = u16::from(self.buffer[7]) << 8 | u16::from(self.buffer[8]);
-
-        Ok(TouchPoint::new(x, y, z1, z2))
+        Ok(Point::new(x, y))
     }
 }
 
 /// Linearly interpolates the x value from 330..3701 to 0..4095.
-fn lerp_x(x: u32) -> u16 {
+fn lerp_x(x: i32) -> i32 {
     x.saturating_sub(MIN_X)
+        .max(0)
         .saturating_mul(LERP_NUMERATOR)
         .strict_div(X_DENOMINATOR)
-        .min(4095) as u16
+        .min(4095)
 }
 
 /// Linearly interpolates the y value from 364..3722 to 0..4095.
-fn lerp_y(y: u32) -> u16 {
+fn lerp_y(y: i32) -> i32 {
     y.saturating_sub(MIN_Y)
+        .max(0)
         .saturating_mul(LERP_NUMERATOR)
         .strict_div(Y_DENOMINATOR)
-        .min(4095) as u16
+        .min(4095)
 }

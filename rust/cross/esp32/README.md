@@ -35,20 +35,6 @@ The ESP-Prog-2 can be used as both a JTAG and UART adapter. The pins on the ESP-
   - ESP_TDI: **12**
   - NC: Not connected to anything
 
-## Display Pins
-If we ever use the display, its [pins](https://protosupplies.com/wp-content/uploads/2020/07/TFT-LCD-28-240x320-RGB-ILI9341-with-Touchscreen-Connections-Top-Side.jpg) will be connected as follows:
-- Vcc: Powered by power PCB. Not connected to DevKitC.
-- GND: Grounded by power PCB. Not connected to DevKitC.
-- CS (Display Chip Select): **19**
-- RESET: **18**
-- DC (Data/Command): **25**
-- MOSI and T_MOSI (Master Out Slave In): **33**
-- SCK and T_CLK (Clock): **32**
-- LED: Held at a constant 3.3V by the power PCB because the display should always be on.
-- MISO and T_MISO (Master In Slave Out): **35**
-- T_CS (Touch Chip Select): **16**
-- T_IRQ (Touch Interrupt Request): **34**
-
 # Binaries
 ## `pin_usage_checker`
 This is not a program. Rather, it contains a function that declares variables for every pin we might use.
@@ -58,14 +44,36 @@ This should be kept up to date with our pin layout, as Rust's borrow checker wil
 If your editor's rust-analyzer is functioning properly, it will notify you if you create pin conflicts.
 
 ## `pwm`
-This is a basic program that initializes PWM on pin **26** and sets it to a constant duty cycle of 5% with a frequency of 50hz.
+This is a basic program that initializes PWM on pin **26** and sets it to a constant duty cycle of 7.5% with a frequency of 50hz.
 
 This is useful if you ever need to do a simple check to make sure our current ESC isn't misbehaving.
 
 Run with `cargo run --release --bin pwm`
 
 ## `spincoater`
-This program does the following:
+This program lets you run the spincoater at a single plate RPM value for a single time in seconds using the touchscreen. It does the following:
+- Initializes PWM on pin **26**
+  - Starts with a constant duty cycle of 7.5% at a frequency of 50hz.
+- Records hall effect sensor input on pin **27**
+- Controls the vacuum pump on pin **17**
+  - Active high
+- Initializes the display with the [display's pins](https://protosupplies.com/wp-content/uploads/2020/07/TFT-LCD-28-240x320-RGB-ILI9341-with-Touchscreen-Connections-Top-Side.jpg) connected as follows:
+  - Vcc: Powered by power PCB. Not connected to DevKitC.
+  - GND: Grounded by power PCB. Not connected to DevKitC.
+  - CS (Display Chip Select): **19**
+  - RESET: **18**
+  - DC (Data/Command): **25**
+  - MOSI and T_MOSI (Master Out Slave In): **33**
+  - SCK and T_CLK (Clock): **32**
+  - LED: Held at a constant 3.3V by the power PCB because the display should always be on.
+  - MISO and T_MISO (Master In Slave Out): **35**
+  - T_CS (Touch Chip Select): **16**
+  - T_IRQ (Touch Interrupt Request): **34**
+
+Run with `cargo run --bin spincoater`.
+
+## `spincoater_with_pc`
+This program lets you run the spincoater by sending commands to it from a PC. It does the following:
 - Enables UART communication over the pins:
   - TX: **1 (TX)**
   - RX: **3 (RX)**
@@ -76,9 +84,9 @@ This program does the following:
 - Controls the vacuum pump on pin **17**
   - Active high
 
-Run with `cargo run --bin spincoater`.
+Run with `cargo run --bin spincoater_with_pc`.
 
 ### UART Communication over an Adapter
 You can perform UART communication using pins other than TX and RX. This would allow you to keep `espflash`'s RTT monitor open while running the program. However, it requires a separate UART-to-USB adapter, such as the [ESP-Prog-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#).
 
-The `spincoater` program has a cargo feature that uses pins **23** and **22** for TX and RX instead. You can run it with `cargo run --bin spincoater -F uart_over_adapter`.
+The `spincoater` program has a cargo feature that uses pins **23** and **22** for TX and RX instead. You can run it with `cargo run --bin spincoater_with_pc -F uart_over_adapter`.

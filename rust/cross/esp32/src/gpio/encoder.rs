@@ -6,6 +6,7 @@ use core::sync::atomic::AtomicU32;
 use esp_hal::{gpio::Input, time::Instant};
 use esp_sync::NonReentrantMutex;
 use heapless::HistoryBuf;
+use sc_messages::{MOTOR_REVOLUTIONS, PLATE_REVOLUTIONS};
 
 /// Provides the interrupt handler access to the encoder.
 pub static ENCODER: NonReentrantMutex<Option<Input>> = NonReentrantMutex::new(None);
@@ -53,8 +54,6 @@ impl EncoderState {
         reason = "It's impossible for the motor RPM to exceed u16::MAX."
     )]
     pub fn calculate_rpm(&mut self) {
-        const MAXIMUM_ALLOWED_RPM_DIFFERENCE: usize = 1_000;
-
         let time_since_last_interrupt = self.previous_time.elapsed().as_micros();
         // 1 interrupt * (1 motor revolution / 2 interrupts) * 1/(`time_since_last_interrupt` μs) * (10^6 μs / 1 s) * (60 s / 1 min)
         // = 30,000,000 / `time_since_last_interrupt`
@@ -68,6 +67,7 @@ impl EncoderState {
         // Simple filter to remove outliers
         match self.rpm_ring_buffer.recent() {
             Some(previous_rpm) => {
+                const MAXIMUM_ALLOWED_RPM_DIFFERENCE: usize = 1_000;
                 if rpm.abs_diff(*previous_rpm) < MAXIMUM_ALLOWED_RPM_DIFFERENCE {
                     self.rpm_ring_buffer.write(rpm);
                 }
@@ -82,4 +82,42 @@ impl EncoderState {
         self.previous_time = Instant::now();
         self.rpm_ring_buffer.clear();
     }
+}
+
+/// Calculates the current rpm as a rolling average.
+///
+/// This function never fails. If the RPM is greater than [`u16::MAX`], [`u16::MAX`] is returned.
+#[allow(clippy::cast_possible_truncation)]
+pub fn calculate_rpm() -> u16 {
+    ENCODER_STATE.with(|state| {
+        state
+            .rpm_ring_buffer
+            .as_slice()
+            .iter()
+            .sum::<usize>()
+            .checked_div(state.rpm_ring_buffer.len())
+            .unwrap_or(0)
+    }) as u16
+}
+
+/// Converts from plate revolutions to motor revolutions.
+///
+/// The return value is truncated to fit in a [`u16`].
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+pub fn plate_to_motor_revolutions(rpm: u16) -> u16 {
+    // Operate in u32 to prevent overflow
+    let rpm = u32::from(rpm);
+    rpm.saturating_mul(MOTOR_REVOLUTIONS)
+        .strict_div(PLATE_REVOLUTIONS) as u16
+}
+
+/// Converts from motor revolutions to plate revolutions.
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+pub fn motor_to_plate_revolutions(rpm: u16) -> u16 {
+    // Operate in u32 to prevent overflow
+    let rpm = u32::from(rpm);
+    rpm.saturating_mul(PLATE_REVOLUTIONS)
+        .strict_div(MOTOR_REVOLUTIONS) as u16
 }

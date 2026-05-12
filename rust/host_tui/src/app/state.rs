@@ -3,11 +3,12 @@
 use std::time::Duration;
 
 use sc_messages::pwm::{DutyCycle, PERIOD};
+use sc_messages::{MOTOR_REVOLUTIONS, PLATE_REVOLUTIONS};
 use sc_messages::{motion_profile, touchscreen::TouchPoint};
 use serde::{Deserialize, Serialize};
 
 /// The conversion factor from motor revolutions to plate revolutions.
-const MOTOR_TO_PLATE_CONVERSION: f64 = 30.0 / 72.0;
+const MOTOR_TO_PLATE_CONVERSION: f64 = PLATE_REVOLUTIONS as f64 / MOTOR_REVOLUTIONS as f64;
 
 /// A wrapper around both [`MotionProfileState`] and [`TouchPoint`].
 #[derive(Debug, Clone, Default)]

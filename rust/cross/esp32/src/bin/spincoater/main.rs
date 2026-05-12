@@ -10,7 +10,6 @@
 use core::cell::RefCell;
 
 use embassy_executor::Spawner;
-use embassy_time::Timer;
 use embedded_hal_bus::spi::RefCellDevice;
 use esp_backtrace as _;
 use esp_hal::{
@@ -22,30 +21,26 @@ use esp_hal::{
     spi::master::{Config, Spi},
     time::Rate,
     timer::timg::TimerGroup,
-    uart::Uart,
 };
-use esp_println::println;
 use esp32::{
-    REQUEST_CHANNEL, SECOND_CORE_STACK,
+    SECOND_CORE_STACK,
     gpio::{
         display::{
             DISPLAY, ORIENTATION, SPI, SPI_BUFFER,
-            terminal::{TERMINAL, channel::TERMINAL_CHANNEL, update_terminal},
+            terminal::{TERMINAL, TerminalState, channel::TERMINAL_CHANNEL, update_terminal},
             touchscreen::{Touchscreen, run_touchscreen, xpt_2046::Xpt2046},
         },
         encoder::ENCODER,
         interrupt_handler,
-        pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
+        pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER},
     },
-    motion_profile::{Runner, run},
-    rpc::{Context, Dispatcher, FRAME_BUFFER, WIRE_STORAGE},
+    runners::rpm::{Runner, channel::RUNNER_CHANNEL},
 };
 use ibm437::IBM437_9X14_REGULAR;
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
 use mousefood::{ColorTheme, EmbeddedBackend, EmbeddedBackendConfig};
-use postcard_rpc::server::{Dispatch, Server};
 use ratatui::Terminal;
-use sc_messages::{icd::BAUD_RATE, pwm::STOP_DUTY};
+use sc_messages::pwm::STOP_DUTY;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -124,6 +119,9 @@ async fn main(spawner: Spawner) -> ! {
     mcpwm.timer0.start(timer_clock_cfg);
     pwm_pin.set_timestamp(STOP_DUTY);
 
+    // Initialize vacuum pump pin
+    let vacuum_pump_pin = Output::new(peripherals.GPIO17, Level::Low, OutputConfig::default());
+
     // Initialize SPI
     let spi = SPI.init_with(|| {
         // See https://esp32.implrust.com/tft-display/circuit.html for a tutorial.
@@ -173,56 +171,15 @@ async fn main(spawner: Spawner) -> ! {
         Terminal::new(backend).expect("Failed to create terminal")
     });
 
-    // Setup communication between tasks
+    // Setup terminal
     let terminal_channel = TERMINAL_CHANNEL.take();
 
-    // Initialize vacuum pump pin
-    let vacuum_pump_pin = Output::new(peripherals.GPIO17, Level::Low, OutputConfig::default());
+    let runner_channel = RUNNER_CHANNEL.take();
 
-    // Setup communication between tasks
-    let request_channel = REQUEST_CHANNEL.take();
-
-    // Initialize the setpoint list with a starting setpoint of (0, 0).
-    let setpoints = SETPOINTS.take();
-
-    // Setup context
-    let context = Context::new(request_channel.sender(), vacuum_pump_pin);
-
-    // Setup UART and postcard-rpc after we're done with the spawner
-    let config = esp_hal::uart::Config::default().with_baudrate(BAUD_RATE);
-    // Select pins based on the cargo feature
-    cfg_select! {
-        feature = "uart_over_adapter" => {
-            let uart = Uart::new(peripherals.UART1, config)
-                .expect("Failed to initialize UART")
-                .with_tx(peripherals.GPIO23)
-                .with_rx(peripherals.GPIO22)
-                .into_async();
-        }
-        _ => {
-            println!("Taking control of the UART port. Please close RTT and open the host PC program.");
-            // We have to wait for the print statement to arrive at `espflash`'s RTT monitor before taking control.
-            Timer::after_millis(100).await;
-            let uart = Uart::new(peripherals.UART1, config)
-                .expect("Failed to initialize UART")
-                .with_tx(peripherals.GPIO1)
-                .with_rx(peripherals.GPIO3)
-                .into_async();
-        }
-    }
-    let (rx, tx) = uart.split();
-    let dispatcher = Dispatcher::new(context, ());
-    let (wire_rx, wire_tx) = WIRE_STORAGE
-        .init(rx, tx)
-        .expect("Failed to create wire RX and TX");
-    let frame_buffer = FRAME_BUFFER.take();
-    let vkk = dispatcher.min_key_len();
-    let mut server = Server::new(
-        wire_tx,
-        wire_rx,
-        frame_buffer.as_mut_slice(),
-        dispatcher,
-        vkk,
+    let terminal_state = TerminalState::new(
+        vacuum_pump_pin,
+        terminal_channel.receiver(),
+        runner_channel.sender(),
     );
 
     // Initialize the touchscreen
@@ -233,26 +190,18 @@ async fn main(spawner: Spawner) -> ! {
         peripherals.GPIO34,
         InputConfig::default().with_pull(Pull::Up),
     );
-    let touchscreen = Touchscreen::new(xpt_2046, pen_irq, server.sender())
+    let touchscreen = Touchscreen::new(xpt_2046, pen_irq, terminal_channel.sender())
         .expect("Failed to initialize the touchscreen");
 
     spawner.must_spawn(run_touchscreen(touchscreen));
 
-    spawner.must_spawn(update_terminal(
-        terminal,
-        server.sender(),
-        terminal_channel.receiver(),
-    ));
+    spawner.must_spawn(update_terminal(terminal_state, terminal));
 
     let runner = Runner::new(
-        setpoints,
         pwm_pin,
-        request_channel.receiver(),
-        server.sender(),
+        runner_channel.receiver(),
+        terminal_channel.sender(),
     );
-    spawner.must_spawn(run(runner));
 
-    loop {
-        let _ = server.run().await;
-    }
+    runner.run().await
 }

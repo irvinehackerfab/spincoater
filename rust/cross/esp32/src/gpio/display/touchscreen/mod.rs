@@ -1,6 +1,7 @@
 //! This module contains the functionality for the touchscreen.
 
 use embassy_executor::task;
+
 use embassy_time::{Duration, Timer};
 use embedded_hal::spi::ErrorType;
 use embedded_hal_bus::spi::RefCellDevice;
@@ -10,12 +11,11 @@ use esp_hal::{
     gpio::{Input, Output},
     spi::master::Spi,
 };
-use postcard_rpc::server::Sender;
-use sc_messages::icd::TouchPointTopic;
+use sc_messages::touchscreen::TouchPoint;
 
-use crate::{
-    gpio::display::touchscreen::xpt_2046::Xpt2046,
-    rpc::{SEQUENCE_NUMBER, WireTx},
+use crate::gpio::display::{
+    terminal::channel::{TerminalSender, TuiEvent},
+    touchscreen::xpt_2046::Xpt2046,
 };
 
 pub mod xpt_2046;
@@ -30,7 +30,7 @@ const DEBOUNCE: Duration = Duration::from_millis(250);
 pub struct Touchscreen<'a> {
     xpt_2046: Xpt2046<Device<'a>>,
     pen_irq: Input<'a>,
-    to_server: Sender<WireTx>,
+    to_terminal: TerminalSender,
 }
 
 impl<'a> Touchscreen<'a> {
@@ -41,13 +41,13 @@ impl<'a> Touchscreen<'a> {
     pub fn new(
         mut xpt_2046: Xpt2046<Device<'a>>,
         pen_irq: Input<'a>,
-        to_server: Sender<WireTx>,
+        to_terminal: TerminalSender,
     ) -> Result<Self, <Device<'a> as ErrorType>::Error> {
         xpt_2046.init()?;
         Ok(Self {
             xpt_2046,
             pen_irq,
-            to_server,
+            to_terminal,
         })
     }
 
@@ -61,14 +61,13 @@ impl<'a> Touchscreen<'a> {
             // That is why we are free to stop listening after the falling edge.
             self.pen_irq.wait_for_falling_edge().await;
             let Ok(point) = self.xpt_2046.point() else {
-                let _ = self.to_server.log_str("Failed to get touch point.").await;
                 continue;
             };
-            // Filter out screen releases by detecting for x = 0
+            let point = TouchPoint::from(point);
+            // Filter out screen releases by detecting x = 0
             if point.x != 0 {
-                let _ = self
-                    .to_server
-                    .publish::<TouchPointTopic>(SEQUENCE_NUMBER, &point)
+                self.to_terminal
+                    .send(TuiEvent::Touch(point.transpose()))
                     .await;
                 // Attempt to filter out spurious interrupts
                 Timer::after(DEBOUNCE).await;
@@ -76,29 +75,28 @@ impl<'a> Touchscreen<'a> {
         }
     }
 
-    /// Runs the touchscreen loop, getting touch points while the touchscreen is pressed.
-    async fn handle_any_contact(&mut self) {
-        loop {
-            // Wait for any touch.
-            // It is recommended that the processor mask the interrupt PENIRQ is associated with whenever the processor sends
-            // a control byte to the XPT2046. This prevents false triggering of interrupts when the PENIRQ output is disabled in
-            // the cases discussed in page 25 of https://www.buydisplay.com/download/ic/XPT2046.pdf.
-            // That is why we are free to stop listening after it sees low.
-            self.pen_irq.wait_for_low().await;
-            let Ok(point) = self.xpt_2046.point() else {
-                let _ = self.to_server.log_str("Failed to get touch point.").await;
-                continue;
-            };
-            let _ = self
-                .to_server
-                .publish::<TouchPointTopic>(SEQUENCE_NUMBER, &point)
-                .await;
-        }
-    }
+    // /// Runs the touchscreen loop, getting touch points while the touchscreen is pressed.
+    // async fn handle_any_contact(&mut self) {
+    //     loop {
+    //         // Wait for any touch.
+    //         // It is recommended that the processor mask the interrupt PENIRQ is associated with whenever the processor sends
+    //         // a control byte to the XPT2046. This prevents false triggering of interrupts when the PENIRQ output is disabled in
+    //         // the cases discussed in page 25 of https://www.buydisplay.com/download/ic/XPT2046.pdf.
+    //         // That is why we are free to stop listening after it sees low.
+    //         self.pen_irq.wait_for_low().await;
+    //         let Ok(point) = self.xpt_2046.point() else {
+    //             continue;
+    //         };
+    //         let point = TouchPoint::from(point);
+    //         self.to_terminal
+    //             .send(TuiEvent::Touch(point.transpose()))
+    //             .await;
+    //     }
+    // }
 }
 
 /// Runs the touchscreen loop.
 #[task]
 pub async fn run_touchscreen(mut touchscreen: Touchscreen<'static>) {
-    touchscreen.handle_any_contact().await;
+    touchscreen.handle_presses().await;
 }

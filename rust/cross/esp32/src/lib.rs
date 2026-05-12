@@ -8,6 +8,11 @@
 )]
 #![warn(clippy::large_stack_frames)]
 
+pub mod gpio;
+pub mod pid;
+pub mod rpc;
+pub mod runners;
+
 use embassy_sync::{
     blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
     channel::Channel,
@@ -20,10 +25,6 @@ use sc_messages::motion_profile::{Request, RequestRefused};
 use static_cell::{ConstStaticCell, StaticCell};
 
 use crate::gpio::pwm::SETPOINT_LIST_LENGTH;
-
-pub mod gpio;
-pub mod motion_profile;
-pub mod rpc;
 
 /// The stack of the second core.
 pub static SECOND_CORE_STACK: ConstStaticCell<Stack<8192>> = ConstStaticCell::new(Stack::new());

@@ -82,7 +82,7 @@ test = false
 bench = false
 
 [[bin]]
-name = "spincoater"
+name = "spincoater_with_pc"
 test = false
 bench = false
 
