@@ -16,14 +16,14 @@ pub struct TouchPoint {
 impl TouchPoint {
     /// Creates a touchpoint.
     #[must_use]
-    pub fn new(x: u16, y: u16) -> Self {
+    pub const fn new(x: u16, y: u16) -> Self {
         Self { x, y }
     }
 
     /// Swaps x and y.
     /// Useful for landscape displays.
     #[must_use]
-    pub fn transpose(self) -> Self {
+    pub const fn transpose(self) -> Self {
         Self {
             x: self.y,
             y: self.x,
