@@ -116,7 +116,7 @@ where
     ///
     /// # Errors
     /// Returns an error if the SPI transaction fails.
-    pub fn init(&mut self) -> Result<(), <D as ErrorType>::Error> {
+    pub fn enable_interrupt(&mut self) -> Result<(), <D as ErrorType>::Error> {
         self.spi
             .transaction(&mut [Operation::DelayNs(T_CSS), Operation::Write(&INIT_COMMAND)])
     }

@@ -13,11 +13,7 @@ pub mod pid;
 pub mod rpc;
 pub mod runners;
 
-use embassy_sync::{
-    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
-    channel::Channel,
-    signal::Signal,
-};
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, signal::Signal};
 use embassy_time::Duration;
 use esp_hal::system::Stack;
 use esp_rtos::embassy::InterruptExecutor;
@@ -50,9 +46,7 @@ pub static REQUEST_CHANNEL: ConstStaticCell<
 
 /// Used for passing request responses from the request handler to the server.
 ///
-/// This uses [`CriticalSectionRawMutex`] because the signal must be [`Sync`] because
-/// the static is shared between cores.
-///
 /// This is a signal because the server always waits for one response after sending a request.
-pub static REQUEST_RESPONSE_SIGNAL: Signal<CriticalSectionRawMutex, Result<(), RequestRefused>> =
-    Signal::new();
+pub static REQUEST_RESPONSE_SIGNAL: ConstStaticCell<
+    Signal<NoopRawMutex, Result<(), RequestRefused>>,
+> = ConstStaticCell::new(Signal::new());

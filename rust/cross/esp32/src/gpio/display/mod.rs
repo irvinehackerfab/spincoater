@@ -15,7 +15,7 @@ use mipidsi::{
 use static_cell::{ConstStaticCell, StaticCell};
 
 /// The buffer used for display pixels.
-pub static SPI_BUFFER: ConstStaticCell<[u8; 1024]> = ConstStaticCell::new([0u8; 1024]);
+pub static SPI_BUFFER: ConstStaticCell<[u8; 8192]> = ConstStaticCell::new([0u8; _]);
 
 /// The entire type of the display as a type alias, so it can be reused.
 pub type DisplayType = Display<

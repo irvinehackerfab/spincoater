@@ -146,13 +146,15 @@ async fn main(spawner: Spawner) -> ! {
     let terminal = TERMINAL.init_with(|| {
         let display = DISPLAY.init_with(|| {
             // Chip Select. This tells the display when it should listen to SPI commands. Keep it low (active) when sending data.
-            // [`ExclusiveDevice::new_no_delay`] says to have an initial output of high.
+            // [`RefCellDevice::new`] says to have an initial output of high.
             let cs = Output::new(peripherals.GPIO19, Level::High, OutputConfig::default());
             // Data/Command control pin. Set high to send data, low to send commands. Used to switch between writing commands and pixel data.
             let dc = Output::new(peripherals.GPIO25, Level::Low, OutputConfig::default());
             // Resets the display. Useful during startup to make sure the display starts in a known state.
-            // Starts off low because [`Ili9341::new`] sets the reset low, then high
-            let reset = Output::new(peripherals.GPIO18, Level::Low, OutputConfig::default());
+            // According to [mipidsi::Builder::reset_pin], this should start high.
+            // However, according to page 225 of https://www.lcdwiki.com/res/MSP2807/ILI9341%20Datasheet.pdf
+            // the starting state doesn't matter.
+            let reset = Output::new(peripherals.GPIO18, Level::High, OutputConfig::default());
             let spi_device = RefCellDevice::new(spi, cs, Delay::new()).expect("cs is already high");
             let interface = SpiInterface::new(spi_device, dc, SPI_BUFFER.take());
             mipidsi::Builder::new(ILI9341Rgb565, interface)
@@ -188,6 +190,7 @@ async fn main(spawner: Spawner) -> ! {
     let xpt_2046 = Xpt2046::new(spi_device);
     let pen_irq = Input::new(
         peripherals.GPIO34,
+        // pull up because active low
         InputConfig::default().with_pull(Pull::Up),
     );
     let touchscreen = Touchscreen::new(xpt_2046, pen_irq, terminal_channel.sender())

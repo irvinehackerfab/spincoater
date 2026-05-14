@@ -20,7 +20,7 @@ use esp_hal::{
 };
 use esp_println::println;
 use esp32::{
-    REQUEST_CHANNEL, SECOND_CORE_STACK,
+    REQUEST_CHANNEL, REQUEST_RESPONSE_SIGNAL, SECOND_CORE_STACK,
     gpio::{
         encoder::ENCODER,
         interrupt_handler,
@@ -118,8 +118,10 @@ async fn main(spawner: Spawner) -> ! {
     // Initialize the setpoint list with a starting setpoint of (0, 0).
     let setpoints = SETPOINTS.take();
 
+    let server_signal = REQUEST_RESPONSE_SIGNAL.take();
+
     // Setup context
-    let context = Context::new(request_channel.sender(), vacuum_pump_pin);
+    let context = Context::new(request_channel.sender(), server_signal, vacuum_pump_pin);
 
     // Setup UART and postcard-rpc after we're done with the spawner
     let config = esp_hal::uart::Config::default().with_baudrate(BAUD_RATE);
@@ -163,6 +165,7 @@ async fn main(spawner: Spawner) -> ! {
         pwm_pin,
         request_channel.receiver(),
         server.sender(),
+        server_signal,
     );
     spawner.must_spawn(run(runner));
 

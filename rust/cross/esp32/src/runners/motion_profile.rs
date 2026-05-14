@@ -1,7 +1,7 @@
 //! This module contains the functionality for running motion profiles sent by the host PC.
 
 use crate::{
-    LOOP_PERIOD, REQUEST_CHANNEL_LENGTH, REQUEST_RESPONSE_SIGNAL,
+    LOOP_PERIOD, REQUEST_CHANNEL_LENGTH,
     gpio::{
         encoder::{ENCODER_STATE, EncoderState, calculate_rpm},
         pwm::{SETPOINT_LIST_LENGTH, STATIC_DUTY, linear_conversion},
@@ -10,7 +10,7 @@ use crate::{
     rpc::{HOST_DISCONNECTED, SEQUENCE_NUMBER, WireTx},
     runners::sleep,
 };
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver};
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver, signal::Signal};
 use embassy_time::{Instant, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::Vec;
@@ -27,6 +27,7 @@ pub struct Runner {
     pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
     from_server: Receiver<'static, NoopRawMutex, Request, REQUEST_CHANNEL_LENGTH>,
     to_server: Sender<WireTx>,
+    server_request_responder: &'static Signal<NoopRawMutex, Result<(), RequestRefused>>,
 }
 
 impl Runner {
@@ -35,12 +36,14 @@ impl Runner {
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
         from_server: Receiver<'static, NoopRawMutex, Request, REQUEST_CHANNEL_LENGTH>,
         to_server: Sender<WireTx>,
+        server_request_responder: &'static Signal<NoopRawMutex, Result<(), RequestRefused>>,
     ) -> Self {
         Self {
             setpoints,
             pwm_pin,
             from_server,
             to_server,
+            server_request_responder,
         }
     }
 
@@ -68,21 +71,24 @@ impl Runner {
         loop {
             match self.from_server.receive().await {
                 Request::Add(setpoint) => match self.setpoints.push(setpoint.clone()) {
-                    Ok(()) => REQUEST_RESPONSE_SIGNAL.signal(Ok(())),
-                    Err(_) => REQUEST_RESPONSE_SIGNAL.signal(Err(RequestRefused::TooManySetpoints)),
+                    Ok(()) => self.server_request_responder.signal(Ok(())),
+                    Err(_) => self
+                        .server_request_responder
+                        .signal(Err(RequestRefused::TooManySetpoints)),
                 },
                 Request::ClearSetpoints => {
                     self.clear();
-                    REQUEST_RESPONSE_SIGNAL.signal(Ok(()));
+                    self.server_request_responder.signal(Ok(()));
                 }
                 Request::Start => {
-                    REQUEST_RESPONSE_SIGNAL.signal(Ok(()));
+                    self.server_request_responder.signal(Ok(()));
                     // `postcard_rpc` sometimes sends setpoints out of order, so we have to sort them.
                     self.setpoints.sort();
                     break;
                 }
                 Request::Stop => {
-                    REQUEST_RESPONSE_SIGNAL.signal(Err(RequestRefused::NotRunning));
+                    self.server_request_responder
+                        .signal(Err(RequestRefused::NotRunning));
                 }
             }
         }
@@ -107,10 +113,11 @@ impl Runner {
             if let Ok(command) = self.from_server.try_receive() {
                 match command {
                     Request::Add(_) | Request::ClearSetpoints | Request::Start => {
-                        REQUEST_RESPONSE_SIGNAL.signal(Err(RequestRefused::Running));
+                        self.server_request_responder
+                            .signal(Err(RequestRefused::Running));
                     }
                     Request::Stop => {
-                        REQUEST_RESPONSE_SIGNAL.signal(Ok(()));
+                        self.server_request_responder.signal(Ok(()));
                         self.pwm_pin.set_timestamp(STOP_DUTY);
                         let _ = self
                             .to_server

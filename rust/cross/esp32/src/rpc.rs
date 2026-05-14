@@ -1,13 +1,10 @@
-use embassy_sync::{
-    blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex},
-    channel::Sender,
-    signal::Signal,
-};
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Sender, signal::Signal};
 use esp_hal::{
     Async,
     gpio::Output,
     uart::{UartRx, UartTx},
 };
+use esp_sync::RawMutex;
 use postcard_rpc::{
     define_dispatch,
     header::{VarHeader, VarSeq},
@@ -26,7 +23,7 @@ use sc_messages::{
 };
 use static_cell::ConstStaticCell;
 
-use crate::{REQUEST_CHANNEL_LENGTH, REQUEST_RESPONSE_SIGNAL};
+use crate::REQUEST_CHANNEL_LENGTH;
 
 /// The size of the buffers used by postcard-rpc.
 pub const BUFFER_SIZE: usize = 2048;
@@ -39,7 +36,7 @@ pub static FRAME_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> =
 pub static WIRE_STORAGE: WireStorage<
     UartRx<'static, Async>,
     UartTx<'static, Async>,
-    CriticalSectionRawMutex,
+    RawMutex,
     BUFFER_SIZE,
     BUFFER_SIZE,
 > = WireStorage::new();
@@ -49,9 +46,9 @@ pub static WIRE_STORAGE: WireStorage<
 pub const SEQUENCE_NUMBER: VarSeq = VarSeq::Seq2(0);
 
 /// This signal is sent to the motion profile runner whenever the host notifies that it is disconnecting.
-pub static HOST_DISCONNECTED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+pub static HOST_DISCONNECTED: Signal<RawMutex, ()> = Signal::new();
 
-pub type WireTx = EioWireTx<CriticalSectionRawMutex, UartTx<'static, Async>>;
+pub type WireTx = EioWireTx<RawMutex, UartTx<'static, Async>>;
 
 pub type WireRx = EioWireRx<UartRx<'static, Async>>;
 
@@ -59,6 +56,7 @@ pub type WireRx = EioWireRx<UartRx<'static, Async>>;
 pub struct Context {
     /// Used to pass the commands to the runner.
     to_runner: Sender<'static, NoopRawMutex, motion_profile::Request, REQUEST_CHANNEL_LENGTH>,
+    from_runner: &'static Signal<NoopRawMutex, Result<(), RequestRefused>>,
     /// Used to control the vacuum pump.
     vacuum_pump_pin: Output<'static>,
 }
@@ -68,10 +66,12 @@ impl Context {
     #[must_use]
     pub fn new(
         to_runner: Sender<'static, NoopRawMutex, motion_profile::Request, REQUEST_CHANNEL_LENGTH>,
+        from_runner: &'static Signal<NoopRawMutex, Result<(), RequestRefused>>,
         vacuum_pump_pin: Output<'static>,
     ) -> Self {
         Self {
             to_runner,
+            from_runner,
             vacuum_pump_pin,
         }
     }
@@ -86,7 +86,7 @@ async fn handle_motion_profile_request(
     request: motion_profile::Request,
 ) -> Result<(), RequestRefused> {
     context.to_runner.send(request).await;
-    REQUEST_RESPONSE_SIGNAL.wait().await
+    context.from_runner.wait().await
 }
 
 /// Handles vacuum pump requests immediately.
@@ -108,7 +108,7 @@ fn handle_host_disconnect(_: &mut Context, _: VarHeader, _: (), _: &server::Send
 define_dispatch! {
     app: Dispatcher;
     spawn_fn: spawn_fn;
-    tx_impl: EioWireTx<CriticalSectionRawMutex, UartTx<'static, Async>>;
+    tx_impl: WireTx;
     spawn_impl: ();
     context: Context;
 

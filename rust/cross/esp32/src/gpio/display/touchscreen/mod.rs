@@ -17,6 +17,7 @@ use crate::gpio::display::{
     terminal::channel::{TerminalSender, TuiEvent},
     touchscreen::xpt_2046::Xpt2046,
 };
+use esp_println::println;
 
 pub mod xpt_2046;
 
@@ -43,7 +44,7 @@ impl<'a> Touchscreen<'a> {
         pen_irq: Input<'a>,
         to_terminal: TerminalSender,
     ) -> Result<Self, <Device<'a> as ErrorType>::Error> {
-        xpt_2046.init()?;
+        xpt_2046.enable_interrupt()?;
         Ok(Self {
             xpt_2046,
             pen_irq,
@@ -58,12 +59,15 @@ impl<'a> Touchscreen<'a> {
             // It is recommended that the processor mask the interrupt PENIRQ is associated with whenever the processor sends
             // a control byte to the XPT2046. This prevents false triggering of interrupts when the PENIRQ output is disabled in
             // the cases discussed in page 25 of https://www.buydisplay.com/download/ic/XPT2046.pdf.
-            // That is why we are free to stop listening after the falling edge.
+            // That is why we are free to use this method, which stops listening after the falling edge.
             self.pen_irq.wait_for_falling_edge().await;
-            let Ok(point) = self.xpt_2046.point() else {
-                continue;
+            let point = match self.xpt_2046.point() {
+                Ok(point) => TouchPoint::from(point),
+                Err(err) => {
+                    println!("Error getting touch point: {err:?}");
+                    continue;
+                }
             };
-            let point = TouchPoint::from(point);
             // Filter out screen releases by detecting x = 0
             if point.x != 0 {
                 self.to_terminal
@@ -82,12 +86,15 @@ impl<'a> Touchscreen<'a> {
     //         // It is recommended that the processor mask the interrupt PENIRQ is associated with whenever the processor sends
     //         // a control byte to the XPT2046. This prevents false triggering of interrupts when the PENIRQ output is disabled in
     //         // the cases discussed in page 25 of https://www.buydisplay.com/download/ic/XPT2046.pdf.
-    //         // That is why we are free to stop listening after it sees low.
+    //         // That is why we are free to use this method, which stops listening after it sees low.
     //         self.pen_irq.wait_for_low().await;
-    //         let Ok(point) = self.xpt_2046.point() else {
-    //             continue;
+    //         let point = match self.xpt_2046.point() {
+    //             Ok(point) => TouchPoint::from(point),
+    //             Err(err) => {
+    //                 println!("Error getting touch point: {err:?}");
+    //                 continue;
+    //             }
     //         };
-    //         let point = TouchPoint::from(point);
     //         self.to_terminal
     //             .send(TuiEvent::Touch(point.transpose()))
     //             .await;
