@@ -15,7 +15,6 @@ use esp_hal::{
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     timer::timg::TimerGroup,
 };
-use esp_println::println;
 use esp32::gpio::pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER};
 use panic_rtt_target as _;
 use rtt_target::rtt_init_defmt;

@@ -44,7 +44,7 @@ sc_messages = { path = "../../sc_messages"}
 
 # The dependencies below are used for the display.
 embedded-hal = "1.0.0"
-embedded-hal-bus = "0.3.0"
+embedded-hal-bus = { version = "0.3.0", features = ["defmt-03"] }
 embedded-graphics = { version = "0.8.2", features = ["defmt"] }
 embedded-graphics-core = "0.4.1"
 mipidsi = { version = "0.10.0", features = ["defmt"] }

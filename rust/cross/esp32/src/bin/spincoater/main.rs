@@ -40,6 +40,7 @@ use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
 use mousefood::{ColorTheme, EmbeddedBackend, EmbeddedBackendConfig};
 use panic_rtt_target as _;
 use ratatui::Terminal;
+use rtt_target::rtt_init_defmt;
 use sc_messages::pwm::STOP_DUTY;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.

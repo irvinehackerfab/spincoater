@@ -17,7 +17,7 @@ use crate::gpio::display::{
     terminal::channel::{TerminalSender, TuiEvent},
     touchscreen::xpt_2046::Xpt2046,
 };
-use defmt::info;
+use defmt::error;
 
 pub mod xpt_2046;
 
@@ -64,7 +64,7 @@ impl<'a> Touchscreen<'a> {
             let point = match self.xpt_2046.point() {
                 Ok(point) => TouchPoint::from(point),
                 Err(err) => {
-                    info!("Error getting touch point: {err:?}");
+                    error!("Error getting touch point: {:?}", err);
                     continue;
                 }
             };

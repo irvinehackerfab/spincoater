@@ -30,6 +30,7 @@ use esp32::{
 };
 use panic_rtt_target as _;
 use postcard_rpc::server::{Dispatch, Server};
+use rtt_target::rtt_init_defmt;
 use sc_messages::{icd::BAUD_RATE, pwm::STOP_DUTY};
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
