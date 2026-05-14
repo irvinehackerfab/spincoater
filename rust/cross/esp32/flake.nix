@@ -37,6 +37,12 @@
             rust-analyzer
           ];
 
+          # Ask rust-analyzer to use stable toolchain.
+          # It still uses the esp toolchain,
+          # but if you do this AND symlink the stable rust-analyzer to the esp toolchain folder,
+          # it will agree to use the stable rust-analyzer.
+          RUSTUP_TOOLCHAIN = "stable";
+
           shellHook = ''
             echo "[ESP32 dev shell]"
             # --- Explicit toolchain exports (user-specific paths) ---
@@ -74,6 +80,10 @@
 
             # Small helper: remind about CARGO_BUILD_TARGET
             echo "CARGO_BUILD_TARGET=$CARGO_BUILD_TARGET"
+
+            # Fix rust-analyzer
+            # https://github.com/esp-rs/espup/issues/254
+            ln -s rust-analyzer ~/.rustup/toolchains/esp/bin/
           '';
         };
       }
