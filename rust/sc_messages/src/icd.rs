@@ -1,13 +1,9 @@
 //! The [interface control document](https://en.wikipedia.org/wiki/Interface_control_document) for the microcontrollers and host PC.
-use postcard_rpc::{TopicDirection, endpoints, topics};
+use postcard_rpc::{endpoints, topics, TopicDirection};
 
 use crate::{
-<<<<<<< HEAD
-    motion_profile::{Request as MotionProfileRequest, RequestResult, State},
-=======
     motion_profile::{Request as MotionProfileRequest, RequestResult, StateOrDisabled},
     touchscreen::TouchPoint,
->>>>>>> main
     vacuum_pump::Request as VacuumPumpRequest,
 };
 
@@ -26,13 +22,6 @@ endpoints! {
 }
 
 topics! {
-<<<<<<< HEAD
-   list = TOPICS_LIST;
-   direction = TopicDirection::ToClient;
-   | TopicTy                 | MessageTy | Path                          |
-   |-------------------------|-----------|-------------------------------|
-   | MotionProfileStateTopic | State     | "topics/motion_profile/state" |
-=======
     list = TOPICS_TO_SERVER_LIST;
     direction = TopicDirection::ToServer;
     | TopicTy                 | MessageTy       | Path                          |
@@ -47,5 +36,4 @@ topics! {
    |-------------------------|-----------------|-------------------------------|
    | MotionProfileStateTopic | StateOrDisabled | "topics/motion_profile/state" |
    | TouchPointTopic         | TouchPoint      | "topics/touch/point"          |
->>>>>>> main
 }

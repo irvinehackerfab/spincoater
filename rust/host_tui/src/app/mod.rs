@@ -8,12 +8,8 @@ use std::io::{self};
 use std::path::PathBuf;
 use std::{env, fs::File};
 
-<<<<<<< HEAD
-use crate::app::event::{EventHandler, TuiEvent, UsbEvent};
-=======
 use crate::app::event::{EventHandler, MCUEvent, TuiEvent};
 use crate::app::state::MotionProfileState;
->>>>>>> main
 use chrono::Local;
 use color_eyre::{Result, eyre::OptionExt};
 use crossterm::event::Event;
@@ -27,10 +23,6 @@ use ratatui::{
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 use sc_messages::motion_profile::{self, Setpoint};
-<<<<<<< HEAD
-use sc_messages::pwm::DutyCycle;
-=======
->>>>>>> main
 use sc_messages::vacuum_pump;
 
 /// The maximum number of MCU logs kept in the TUI at a time.
@@ -54,30 +46,17 @@ pub struct App {
     events: EventHandler,
     /// The state of the commands section.
     commands_state: ListState,
-<<<<<<< HEAD
-    /// The current plate RPM, as reported by the MCU.
-    current_rpm: u16,
-    /// The current setpoint plate RPM, as reported by the MCU.
-    setpoint_rpm: u16,
-    /// The current duty cycle, as reported by the MCU.
-    duty_cycle: DutyCycle,
-=======
     /// The current state, as reported by the MCU.
     mcu_state: Option<MotionProfileState>,
->>>>>>> main
     /// The last [`MCU_LOG_CAPACITY`] commands received from the MCU since the app started.
     ///
     /// When max capacity is reached, the oldest messages are overridden.
     mcu_logs: AllocRingBuffer<String>,
     /// The motor data file.
-<<<<<<< HEAD
-    motor_data_file: Writer<File>,
-=======
     /// This is only [`Some`] when a motion profile is running.
     motor_data_file: Option<Writer<File>>,
     /// The touchscreen data file.
     touchscreen_data_file: Writer<File>,
->>>>>>> main
 }
 
 impl App {
@@ -87,27 +66,6 @@ impl App {
     /// Returns an error if opening the log file fails.
     pub async fn new(client: HostClient<WireError>) -> Result<Self> {
         let events = EventHandler::new(client).await?;
-<<<<<<< HEAD
-        let date = Local::now().date_naive().to_string();
-        let motor_data_file = Self::open_log_file(&date)?;
-
-        Ok(Self {
-            running: true,
-            events,
-            current_rpm: 0,
-            setpoint_rpm: 0,
-            duty_cycle: DutyCycle::try_from(0)?,
-            commands_state: ListState::default().with_selected(Some(0)),
-            mcu_logs: AllocRingBuffer::new(MCU_LOG_CAPACITY),
-            motor_data_file,
-        })
-    }
-
-    /// Opens the motor data log file.
-    fn open_log_file(date: &str) -> Result<Writer<File>> {
-        const LOG_DIR: &str = "motor_data";
-
-=======
         Ok(Self {
             running: true,
             events,
@@ -121,7 +79,6 @@ impl App {
 
     /// Opens a log file.
     fn open_log_file(sub_dir: &str) -> Result<Writer<File>> {
->>>>>>> main
         let mut dir = env::current_dir()?;
         dir.push(LOG_DIR);
         dir.push(sub_dir);
@@ -181,11 +138,7 @@ impl App {
                     // We're only concerned with key presses right now.
                     _ => {}
                 },
-<<<<<<< HEAD
-                TuiEvent::Usb(usb_event) => self.handle_usb_event(usb_event)?,
-=======
                 TuiEvent::MCU(usb_event) => self.handle_mcu_event(usb_event)?,
->>>>>>> main
             }
         }
         Ok(())
@@ -223,18 +176,12 @@ impl App {
                     .events
                     .send_motion_profile_request(motion_profile::Request::ClearSetpoints),
                 // Start the motion profile.
-<<<<<<< HEAD
-                2 => self
-                    .events
-                    .send_motion_profile_request(motion_profile::Request::Start),
-=======
                 2 => {
                     self.motor_data_file
                         .replace(Self::open_log_file(MOTOR_DATA_SUB_DIR)?);
                     self.events
                         .send_motion_profile_request(motion_profile::Request::Start);
                 }
->>>>>>> main
                 // Stop the motion profile.
                 3 => self
                     .events
@@ -255,25 +202,6 @@ impl App {
         Ok(())
     }
 
-<<<<<<< HEAD
-    fn handle_usb_event(&mut self, usb_event: UsbEvent) -> Result<()> {
-        match usb_event {
-            UsbEvent::Log(msg) => {
-                let _ = self.mcu_logs.enqueue(format!("[Log]: {msg}"));
-            }
-            UsbEvent::State(state) => {
-                self.current_rpm = state.current_rpm;
-                self.setpoint_rpm = state.setpoint_rpm;
-                self.duty_cycle = state.duty_cycle;
-                self.motor_data_file.serialize(state)?;
-            }
-            UsbEvent::MotionProfileRequestResponse(response) => {
-                let _ = self.mcu_logs.enqueue(format!("{response}"));
-            }
-            UsbEvent::VacuumPumpRequestResponse => {
-                let _ = self.mcu_logs.enqueue("[Vacuum Pump]: Ok".to_string());
-            }
-=======
     fn handle_mcu_event(&mut self, mcu_event: MCUEvent) -> Result<()> {
         match mcu_event {
             MCUEvent::Log(msg) => {
@@ -303,18 +231,14 @@ impl App {
                 let _ = self.mcu_logs.enqueue(format!("[Touch]: {touch_point:?}"));
                 self.touchscreen_data_file.serialize(touch_point)?;
             }
->>>>>>> main
         }
         Ok(())
     }
 
     /// Loads a motion profile from a CSV [`PathBuf`] and sends it.
-<<<<<<< HEAD
-=======
     ///
     /// Note that [`postcard_rpc`] makes no guarantee about the order in which setpoints are sent,
     /// but the MCU sorts them before execution.
->>>>>>> main
     fn send_motion_profile(&mut self, path: PathBuf) -> Result<()> {
         let file = csv::Reader::from_path(path)?;
         for result in file.into_deserialize() {

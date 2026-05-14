@@ -4,9 +4,6 @@
 pub mod icd;
 pub mod motion_profile;
 pub mod pwm;
-<<<<<<< HEAD
-pub mod vacuum_pump;
-=======
 pub mod touchscreen;
 pub mod vacuum_pump;
 
@@ -15,4 +12,3 @@ pub const MOTOR_REVOLUTIONS: u32 = 72;
 
 /// The number of plate revolutions per [`MOTOR_REVOLUTIONS`] motor revolutions.
 pub const PLATE_REVOLUTIONS: u32 = 30;
->>>>>>> main

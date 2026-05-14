@@ -27,7 +27,7 @@
             espup
 
             # Flashing / runner tools
-            espflash
+            probe-rs-tools
             ldproxy
 
             # Code generator

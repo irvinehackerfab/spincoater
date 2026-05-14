@@ -16,11 +16,7 @@ ratatui = "0.30.0"
 color-eyre = "0.6.5"
 crossterm = "0.29.0"
 futures = "0.3.32"
-<<<<<<< HEAD
-tokio = "1.52.1"
-=======
 tokio = "1.52.2"
->>>>>>> main
 chrono = "0.4.44"
 ringbuffer = "0.16.0"
 thiserror = "2.0.18"
@@ -34,14 +30,10 @@ postcard-rpc = "0.12.1"
 postcard-schema = "0.2.5"
 # For querying the available ports
 tokio-serial = "5.4.5"
-<<<<<<< HEAD
-
-=======
 # For linear regression of RPM values and duty cycle values
 linreg = "0.2.0"
 # For touchscreen
 embedded-graphics-core = "0.4.1"
->>>>>>> main
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

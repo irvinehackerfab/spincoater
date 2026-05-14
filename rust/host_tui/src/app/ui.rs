@@ -1,19 +1,14 @@
 //! This module describes the UI layout of the terminal.
 
+use crate::app::App;
 use ratatui::{
-    Frame,
     layout::{Constraint, HorizontalAlignment, Layout, Rect},
     style::{Style, Stylize},
     text::{Line, Text},
     widgets::{Block, BorderType, List, ListItem, ListState, Paragraph},
+    Frame,
 };
 use ringbuffer::RingBuffer;
-<<<<<<< HEAD:rust/host_tui/src/app/ui/mod.rs
-use sc_messages::pwm::PERIOD;
-=======
->>>>>>> main:rust/host_tui/src/app/ui.rs
-
-use crate::app::App;
 
 impl App {
     /// Renders the user interface widgets.
@@ -83,28 +78,12 @@ impl App {
             .title(" MCU State ")
             .title_alignment(HorizontalAlignment::Center)
             .border_type(BorderType::Rounded);
-
-<<<<<<< HEAD:rust/host_tui/src/app/ui/mod.rs
-        let paragraph = Paragraph::new(Text::from_iter([
-            Line::raw(format!("Current RPM: {}", self.current_rpm)),
-            Line::raw(format!("Setpoint RPM: {}", self.setpoint_rpm)),
-            Line::raw(format!("Duty Cycle (0..{}): {}", PERIOD, self.duty_cycle)),
-            Line::raw(format!(
-                "Duty Cycle (0.0..1.0): {}",
-                f32::from(*self.duty_cycle) / f32::from(PERIOD)
-            )),
-        ]))
-        .block(block);
-
-        frame.render_widget(paragraph, area);
-=======
         if let Some(state) = &self.mcu_state {
             state.render(block, area, frame);
         } else {
             let paragraph = Paragraph::new("No MCU State.").block(block);
             frame.render_widget(paragraph, area);
         }
->>>>>>> main:rust/host_tui/src/app/ui.rs
     }
 
     fn render_logs(&self, area: Rect, frame: &mut Frame) {

@@ -10,28 +10,16 @@ use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
 /// The value corresponding to 100% of the PWM period.
-<<<<<<< HEAD
-/// See [`../cross/mc_esp32/src/pwm/mod.rs`] for an explanation on the choice for this value.
-pub const PERIOD: u16 = u16::MAX - 1_535;
-
-/// The current motor controller reads 10% of [`PERIOD`] as 100% power.
-pub const MAX_POWER_DUTY: DutyCycle = DutyCycle(PERIOD / 10);
-=======
 /// See [`../cross/esp32/src/pwm/mod.rs`] for an explanation on the choice for this value.
 pub const PERIOD: u16 = u16::MAX - 1_535;
 
 /// The current motor controller reads 10% of [`PERIOD`] as 100% power.
 pub const MAX_POWER_DUTY: u16 = PERIOD / 10;
->>>>>>> main
 
 /// The current motor controller reads 7.5% of [`PERIOD`] as 0% power.
 ///
 /// 0% power means neutral.
-<<<<<<< HEAD
-pub const STOP_DUTY: DutyCycle = DutyCycle(PERIOD / 40 * 3);
-=======
 pub const STOP_DUTY: u16 = PERIOD / 40 * 3;
->>>>>>> main
 
 /// A duty cycle.
 /// 0-100% is encoded as 0..[`PERIOD`].
@@ -46,20 +34,6 @@ impl Deref for DutyCycle {
     }
 }
 
-<<<<<<< HEAD
-impl TryFrom<u16> for DutyCycle {
-    type Error = OutOfRange;
-
-    /// Attempt to wrap a [`u16`] in [`DutyCycle`].
-    ///
-    /// This fails if the value is greater than [`PERIOD`].
-    fn try_from(value: u16) -> Result<DutyCycle, OutOfRange> {
-        if value <= PERIOD {
-            Ok(Self(value))
-        } else {
-            Err(OutOfRange(value))
-        }
-=======
 impl From<u16> for DutyCycle {
     /// Wraps a [`u16`] in [`DutyCycle`].
     ///
@@ -76,7 +50,6 @@ impl From<u32> for DutyCycle {
     #[allow(clippy::cast_possible_truncation)]
     fn from(value: u32) -> Self {
         Self((value as u16).min(MAX_POWER_DUTY))
->>>>>>> main
     }
 }
 
