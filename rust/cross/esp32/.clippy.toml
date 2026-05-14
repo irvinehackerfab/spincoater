@@ -1,0 +1,2 @@
+# This lint is disabled because we're using libraries that create these warnings.
+# stack-size-threshold = 1024

@@ -25,6 +25,12 @@ target/
 # Ignore .DS_Store file in mac
 **/.DS_Store
 
+<<<<<<< HEAD
 sc_logs/
 
 motor_data/
+=======
+.direnv/
+
+logs/
+>>>>>>> main

@@ -8,7 +8,10 @@ use ratatui::{
     widgets::{Block, BorderType, List, ListItem, ListState, Paragraph},
 };
 use ringbuffer::RingBuffer;
+<<<<<<< HEAD:rust/host_tui/src/app/ui/mod.rs
 use sc_messages::pwm::PERIOD;
+=======
+>>>>>>> main:rust/host_tui/src/app/ui.rs
 
 use crate::app::App;
 
@@ -75,12 +78,13 @@ impl App {
         frame.render_stateful_widget(list, area, list_state);
     }
 
-    fn render_state(&mut self, area: Rect, frame: &mut Frame) {
+    fn render_state(&self, area: Rect, frame: &mut Frame) {
         let block = Block::bordered()
             .title(" MCU State ")
             .title_alignment(HorizontalAlignment::Center)
             .border_type(BorderType::Rounded);
 
+<<<<<<< HEAD:rust/host_tui/src/app/ui/mod.rs
         let paragraph = Paragraph::new(Text::from_iter([
             Line::raw(format!("Current RPM: {}", self.current_rpm)),
             Line::raw(format!("Setpoint RPM: {}", self.setpoint_rpm)),
@@ -93,9 +97,17 @@ impl App {
         .block(block);
 
         frame.render_widget(paragraph, area);
+=======
+        if let Some(state) = &self.mcu_state {
+            state.render(block, area, frame);
+        } else {
+            let paragraph = Paragraph::new("No MCU State.").block(block);
+            frame.render_widget(paragraph, area);
+        }
+>>>>>>> main:rust/host_tui/src/app/ui.rs
     }
 
-    fn render_logs(&mut self, area: Rect, frame: &mut Frame) {
+    fn render_logs(&self, area: Rect, frame: &mut Frame) {
         let info_block = Block::bordered()
             .title("MCU Logs")
             .title_alignment(HorizontalAlignment::Center)

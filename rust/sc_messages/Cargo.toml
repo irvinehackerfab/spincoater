@@ -9,6 +9,10 @@ serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true, optional = true }
 postcard-rpc = { workspace = true }
 postcard-schema = { workspace = true, features = ["derive"] }
+<<<<<<< HEAD
+=======
+embedded-graphics-core.workspace = true
+>>>>>>> main
 
 [features]
 std = ["dep:thiserror"]

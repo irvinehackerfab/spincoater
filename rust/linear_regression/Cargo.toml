@@ -1,0 +1,17 @@
+[package]
+name = "linear_regression"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+color-eyre.workspace = true
+rfd.workspace = true
+csv.workspace = true
+linreg.workspace = true
+
+host_tui = { path = "../host_tui"}
+
+
+[lints]
+workspace = true
