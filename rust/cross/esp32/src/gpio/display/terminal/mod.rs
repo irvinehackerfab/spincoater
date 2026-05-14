@@ -2,7 +2,6 @@
 pub mod channel;
 pub mod ui;
 
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver};
 use esp_hal::gpio::Output;
 use mousefood::{EmbeddedBackend, prelude::Rgb565};
 use ratatui::Terminal;
@@ -12,7 +11,7 @@ use static_cell::StaticCell;
 use crate::{
     gpio::display::{
         DisplayType,
-        terminal::channel::{TERMINAL_CHANNEL_SIZE, TerminalReceiver, TuiEvent},
+        terminal::channel::{TerminalReceiver, TuiEvent},
         touchscreen::xpt_2046::MAX_VALUE,
     },
     runners::rpm::channel::{RunAt, RunnerRequest, RunnerSender},
@@ -34,7 +33,7 @@ pub struct TerminalState {
     /// The vacuum pump pin.
     vacuum_pump_pin: Output<'static>,
     /// A receiver of events.
-    from_all: Receiver<'static, NoopRawMutex, TuiEvent, TERMINAL_CHANNEL_SIZE>,
+    from_all: TerminalReceiver,
     /// A sender of requests to the runner.
     to_runner: RunnerSender,
     /// Whether the spincoater is running.
