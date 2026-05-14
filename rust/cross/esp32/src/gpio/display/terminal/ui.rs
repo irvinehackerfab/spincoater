@@ -36,11 +36,17 @@ impl TerminalState {
         let main_layout = Layout::vertical([Constraint::Ratio(1, 3); 3]);
         let [rpm_area, time_area, bottom_area] = main_area.layout(&main_layout);
         let rpm_block = Block::bordered()
-            .title(Line::from_iter(["RPM: ".to_span(), self.rpm.to_span()]))
+            .title(Line::from_iter([
+                "Plate RPM: ".to_span(),
+                self.rpm.to_span(),
+            ]))
             .title_alignment(HorizontalAlignment::Center);
 
         let time_block = Block::bordered()
-            .title(Line::from_iter(["Time: ".to_span(), self.time.to_span()]))
+            .title(Line::from_iter([
+                "Time (s): ".to_span(),
+                self.time.to_span(),
+            ]))
             .title_alignment(HorizontalAlignment::Center);
 
         if !self.is_running {
