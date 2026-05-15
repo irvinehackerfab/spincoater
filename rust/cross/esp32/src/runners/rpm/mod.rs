@@ -16,26 +16,30 @@ use crate::{
     runners::sleep,
 };
 use channel::{RunAt, RunnerReceiver, RunnerRequest};
-use embassy_time::{Instant, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
+use heapless::HistoryBuf;
 use sc_messages::pwm::STOP_DUTY;
-use heapless::Vec;
 use static_cell::ConstStaticCell;
 
 /// The size of the RPM vector.
 ///
 /// This is currently set to roughly 0.5 seconds worth of RPM readings at [`LOOP_PERIOD`].
-pub const RPM_VEC_SIZE: usize = 256;
+const RPM_VEC_SIZE: usize = 256;
 
 /// A list of rpm values for sending an average to the terminal.
-pub static RPM_BUFFER: ConstStaticCell<Vec<usize, RPM_VEC_SIZE>> = ConstStaticCell::new(Vec::new());
+pub static RPM_BUFFER: ConstStaticCell<HistoryBuf<usize, RPM_VEC_SIZE>> =
+    ConstStaticCell::new(HistoryBuf::new());
+
+/// The time between motor/time updates on the terminal.
+const LOG_PERIOD: Duration = Duration::from_millis(500);
 
 /// The runner that executes single RPM values.
 pub struct Runner {
     pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
     from_terminal: RunnerReceiver,
     to_terminal: TerminalSender,
-    rpm_buffer: &'static mut Vec<usize, RPM_VEC_SIZE>,
+    rpm_buffer: &'static mut HistoryBuf<usize, RPM_VEC_SIZE>,
 }
 
 impl Runner {
@@ -45,7 +49,7 @@ impl Runner {
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
         from_terminal: RunnerReceiver,
         to_terminal: TerminalSender,
-        rpm_buffer: &'static mut Vec<usize, RPM_VEC_SIZE>,
+        rpm_buffer: &'static mut HistoryBuf<usize, RPM_VEC_SIZE>,
     ) -> Self {
         Self {
             pwm_pin,
@@ -75,6 +79,7 @@ impl Runner {
     async fn execute(&mut self, run_at: RunAt) {
         let starting_time = Instant::now();
         let mut previous_sleep_end = starting_time;
+        let mut previous_log = starting_time;
         // Feedforward
         // First we need to convert from plate rpm to motor rpm.
         let setpoint_rpm = plate_to_motor_revolutions(run_at.rpm);
@@ -96,7 +101,7 @@ impl Runner {
             }
 
             // Feedback
-            let current_rpm = calculate_rpm();
+            let current_rpm = ENCODER_STATE.with(|state| calculate_rpm(&state.rpm_ring_buffer));
             let rpm_error = error(setpoint_rpm, current_rpm);
             let output = next_control_output(rpm_error);
             let duty_cycle = (*setpoint_duty_cycle).saturating_add_signed(output);
@@ -104,9 +109,14 @@ impl Runner {
             self.pwm_pin.set_timestamp(duty_cycle);
 
             // Logging
-            let plate_rpm = motor_to_plate_revolutions(current_rpm);
-            let state = RunAt::new(plate_rpm, time_since_start_secs);
-            self.to_terminal.send(TuiEvent::Runner(state)).await;
+            self.rpm_buffer
+                .write(usize::from(motor_to_plate_revolutions(current_rpm)));
+            if previous_log.elapsed() > LOG_PERIOD {
+                let average_rpm = calculate_rpm(self.rpm_buffer);
+                let state = RunAt::new(average_rpm, time_since_start_secs);
+                self.to_terminal.send(TuiEvent::Runner(state)).await;
+                previous_log = Instant::now();
+            }
         }
         self.pwm_pin.set_timestamp(STOP_DUTY);
         // Report that there is no more state.

@@ -145,7 +145,7 @@ impl Runner {
             };
 
             // Feedback
-            let current_rpm = calculate_rpm();
+            let current_rpm = ENCODER_STATE.with(|state| calculate_rpm(&state.rpm_ring_buffer));
             let rpm_error = error(setpoint_rpm, current_rpm);
             let output = next_control_output(rpm_error);
             let duty_cycle = (*setpoint_duty_cycle).saturating_add_signed(output);

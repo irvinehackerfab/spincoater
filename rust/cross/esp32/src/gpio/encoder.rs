@@ -15,7 +15,7 @@ pub static ENCODER: NonReentrantMutex<Option<Input>> = NonReentrantMutex::new(No
 pub static ENCODER_STATE: NonReentrantMutex<EncoderState> =
     NonReentrantMutex::new(EncoderState::new(Instant::EPOCH, HistoryBuf::new()));
 
-/// The length of [`RPM_RING_BUFFER`].
+/// The length of the RPM ring buffer for the interrupt handler.
 ///
 /// This is currently set to about the size that is necessary to store every RPM data point in
 /// 20 milliseconds.
@@ -87,17 +87,15 @@ impl EncoderState {
 /// Calculates the current rpm as a rolling average.
 ///
 /// This function never fails. If the RPM is greater than [`u16::MAX`], [`u16::MAX`] is returned.
+#[must_use]
 #[allow(clippy::cast_possible_truncation)]
-pub fn calculate_rpm() -> u16 {
-    ENCODER_STATE.with(|state| {
-        state
-            .rpm_ring_buffer
-            .as_slice()
-            .iter()
-            .sum::<usize>()
-            .checked_div(state.rpm_ring_buffer.len())
-            .unwrap_or(0)
-    }) as u16
+pub fn calculate_rpm<const N: usize>(rpm_ring_buffer: &HistoryBuf<usize, N>) -> u16 {
+    rpm_ring_buffer
+        .as_slice()
+        .iter()
+        .sum::<usize>()
+        .checked_div(rpm_ring_buffer.len())
+        .unwrap_or(0) as u16
 }
 
 /// Converts from plate revolutions to motor revolutions.

@@ -8,7 +8,7 @@ use embedded_hal::spi::{ErrorType, Operation, SpiDevice};
 const T_CSS: u32 = 100;
 
 /// The length of the word buffer.
-const BUFFER_LENGTH: usize = 5;
+const BUFFER_LENGTH: usize = 33;
 
 /// The control byte we send when we want the X position.
 ///
@@ -17,8 +17,18 @@ const BUFFER_LENGTH: usize = 5;
 /// - A2-A0: 101 (Table 5)
 /// - Mode: Low because we want 12 bit resolution instead of 8 bit. (Page 21)
 /// - SER/DFR: Low because we want differential mode, which is "preferred" for X/Y/Z measurements. (Page 22)
-/// - PD1-PD0: 00. This is necessary if we want both the ADC on for taking measurements, and `PEN_IRQ` interrupts enabled. (Table 8)
-const GET_X_POSITION: u8 = 0b1101_0000;
+/// - PD1-PD0: 01. This is necessary if we want the maximum measurement accuracy (Page 17).
+const GET_X_POSITION: u8 = 0b1101_0001;
+
+/// The control byte we send when we want the Y position.
+///
+/// Reasoning:
+/// - S bit: Always high.
+/// - A2-A0: 001 (Table 5)
+/// - Mode: Low because we want 12 bit resolution instead of 8 bit. (Page 21)
+/// - SER/DFR: Low because we want differential mode, which is "preferred" for X/Y/Z measurements. (Page 22)
+/// - PD1-PD0: 01. This is necessary if we want the maximum measurement accuracy (Page 17).
+const GET_Y_POSITION: u8 = 0b1001_0001;
 
 /// The control byte we send when we want the Y position.
 ///
@@ -28,7 +38,7 @@ const GET_X_POSITION: u8 = 0b1101_0000;
 /// - Mode: Low because we want 12 bit resolution instead of 8 bit. (Page 21)
 /// - SER/DFR: Low because we want differential mode, which is "preferred" for X/Y/Z measurements. (Page 22)
 /// - PD1-PD0: 00. This is necessary if we want both the ADC on for taking measurements, and `PEN_IRQ` interrupts enabled. (Table 8)
-const GET_Y_POSITION: u8 = 0b1001_0000;
+const GET_Y_POSITION_AND_POWER_DOWN: u8 = 0b1001_0000;
 
 // /// The control byte we send when we want Z1.
 // ///
@@ -50,17 +60,21 @@ const GET_Y_POSITION: u8 = 0b1001_0000;
 // /// - PD1-PD0: 00. This is necessary if we want both the ADC on for taking measurements, and `PEN_IRQ` interrupts enabled. (Table 8)
 // const GET_Z2_POSITION: u8 = 0b1100_0000;
 
+/// This macro exists to define the command in less code.
+macro_rules! get_x_y {
+    [$x:expr, $y:expr] => {
+        [$x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5,
+        GET_Y_POSITION_AND_POWER_DOWN >> 3,
+        GET_Y_POSITION_AND_POWER_DOWN << 5,
+        0]
+    };
+}
+
 /// Since we can't easily split reads into multiple commands, we need to perform simultaneous reads and writes.
 /// If we shift first command right by 3 bits and read the 5th bit of the X position at the same time as we propagate the second S,
 /// the data will be aligned to the 3rd and 5th bytes respectively.
 // (If you're in the esp32 repo, I drew a timing diagram for this transaction in the images folder.)
-const FULL_COMMAND: [u8; BUFFER_LENGTH] = [
-    GET_X_POSITION >> 3,
-    GET_X_POSITION << 5,
-    GET_Y_POSITION >> 3,
-    GET_Y_POSITION << 5,
-    0,
-];
+const FULL_COMMAND: [u8; BUFFER_LENGTH] = get_x_y![GET_X_POSITION, GET_Y_POSITION];
 
 /// Sending a control byte with PD0 low enables `PEN_IRQ`.
 /// We need 3 bytes because `PEN_IRQ` isn't enabled until the the end of the conversion,
@@ -134,11 +148,45 @@ where
             Operation::Transfer(&mut self.buffer, &FULL_COMMAND),
         ])?;
 
-        let x = i32::from(self.buffer[1]) << 8 | i32::from(self.buffer[2]);
-        let x = lerp_x(x);
+        macro_rules! get_x {
+            [$i:expr] => {
+                lerp_x(i32::from(self.buffer[$i]) << 8 | i32::from(self.buffer[$i+1]))
+            };
+        }
 
-        let y = i32::from(self.buffer[3]) << 8 | i32::from(self.buffer[4]);
-        let y = lerp_y(y);
+        macro_rules! get_y {
+            [$i:expr] => {
+                lerp_y(i32::from(self.buffer[$i]) << 8 | i32::from(self.buffer[$i+1]))
+            };
+        }
+
+        let x = [
+            get_x![1],
+            get_x![5],
+            get_x![9],
+            get_x![13],
+            get_x![17],
+            get_x![21],
+            get_x![25],
+            get_x![29],
+        ]
+        .iter()
+        .sum::<i32>()
+        .strict_div(8);
+
+        let y = [
+            get_y![3],
+            get_y![7],
+            get_y![11],
+            get_y![15],
+            get_y![19],
+            get_y![23],
+            get_y![27],
+            get_y![31],
+        ]
+        .iter()
+        .sum::<i32>()
+        .strict_div(8);
 
         Ok(Point::new(x, y))
     }
