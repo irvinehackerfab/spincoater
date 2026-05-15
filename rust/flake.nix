@@ -22,7 +22,10 @@
         pkgs = import nixpkgs {
           inherit system overlays;
         };
-        custom-rust-bin = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+        custom-rust-bin = pkgs.rust-bin.stable."1.95.0".default.override {
+          # Required by RFD
+          extensions = [ "rust-src" ];
+        };
       in
       {
         devShells.default = pkgs.mkShell {
@@ -34,14 +37,15 @@
             openssl
             # For Rusty File Dialogs
             wayland
-            dbus
             xdg-desktop-portal-gtk
-            zenity
           ];
 
           shellHook = ''
             alias ls=eza
             alias find=fd
+            # Required for DBus to work in COSMIC
+            # https://github.com/PolyMeilex/rfd/issues/305#issuecomment-3766284352
+            export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${pkgs.dbus.lib.outPath}/lib"
           '';
         };
       }
