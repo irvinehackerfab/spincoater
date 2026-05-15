@@ -34,7 +34,7 @@ use esp32::{
         interrupt_handler,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER},
     },
-    runners::rpm::{Runner, channel::RUNNER_CHANNEL},
+    runners::rpm::{RPM_BUFFER, Runner, channel::RUNNER_CHANNEL},
 };
 use ibm437::IBM437_9X14_REGULAR;
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
@@ -200,10 +200,13 @@ async fn main(spawner: Spawner) -> ! {
 
     spawner.must_spawn(update_terminal(terminal_state, terminal));
 
+    let rpm_buffer = RPM_BUFFER.take();
+
     let runner = Runner::new(
         pwm_pin,
         runner_channel.receiver(),
         terminal_channel.sender(),
+        rpm_buffer,
     );
 
     runner.run().await

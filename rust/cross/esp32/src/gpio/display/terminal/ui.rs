@@ -51,7 +51,6 @@ impl TerminalState {
 
         if !self.is_running {
             let rpm_block_inner = rpm_block.inner(rpm_area);
-            frame.render_widget(rpm_block, rpm_area);
 
             let rpm_layout = Layout::horizontal([Constraint::Ratio(1, 2); 2]);
             let [rpm_decrease_area, rpm_increase_area] = rpm_block_inner.layout(&rpm_layout);
@@ -65,7 +64,6 @@ impl TerminalState {
             frame.render_widget(rpm_increase_text, rpm_increase_area);
 
             let time_block_inner = time_block.inner(time_area);
-            frame.render_widget(time_block, time_area);
 
             let time_layout = Layout::horizontal([Constraint::Ratio(1, 2); 2]);
             let [time_decrease_area, time_increase_area] = time_block_inner.layout(&time_layout);
@@ -78,6 +76,9 @@ impl TerminalState {
             let time_increase_text = Paragraph::new("+1").centered().block(time_increase);
             frame.render_widget(time_increase_text, time_increase_area);
         }
+
+        frame.render_widget(rpm_block, rpm_area);
+        frame.render_widget(time_block, time_area);
 
         let bottom_layout = Layout::horizontal([Constraint::Ratio(1, 2); 2]);
         let [start_stop_area, vacuum_pump_area] = bottom_area.layout(&bottom_layout);

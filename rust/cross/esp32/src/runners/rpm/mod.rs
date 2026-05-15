@@ -18,12 +18,24 @@ use crate::{
 use channel::{RunAt, RunnerReceiver, RunnerRequest};
 use embassy_time::{Instant, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
+use sc_messages::pwm::STOP_DUTY;
+use heapless::Vec;
+use static_cell::ConstStaticCell;
+
+/// The size of the RPM vector.
+///
+/// This is currently set to roughly 0.5 seconds worth of RPM readings at [`LOOP_PERIOD`].
+pub const RPM_VEC_SIZE: usize = 256;
+
+/// A list of rpm values for sending an average to the terminal.
+pub static RPM_BUFFER: ConstStaticCell<Vec<usize, RPM_VEC_SIZE>> = ConstStaticCell::new(Vec::new());
 
 /// The runner that executes single RPM values.
 pub struct Runner {
     pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
     from_terminal: RunnerReceiver,
     to_terminal: TerminalSender,
+    rpm_buffer: &'static mut Vec<usize, RPM_VEC_SIZE>,
 }
 
 impl Runner {
@@ -33,11 +45,13 @@ impl Runner {
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
         from_terminal: RunnerReceiver,
         to_terminal: TerminalSender,
+        rpm_buffer: &'static mut Vec<usize, RPM_VEC_SIZE>,
     ) -> Self {
         Self {
             pwm_pin,
             from_terminal,
             to_terminal,
+            rpm_buffer,
         }
     }
 
@@ -94,6 +108,7 @@ impl Runner {
             let state = RunAt::new(plate_rpm, time_since_start_secs);
             self.to_terminal.send(TuiEvent::Runner(state)).await;
         }
+        self.pwm_pin.set_timestamp(STOP_DUTY);
         // Report that there is no more state.
         self.to_terminal.send(TuiEvent::RunnerFinished).await;
     }
