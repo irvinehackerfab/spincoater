@@ -2,4 +2,4 @@
 channel = "1.95.0"
 profile = "default"
 # Required for rusty file dialog
-components = [ "rust-src" ]
+components = [ "rust-src", "rust-analyzer" ]
