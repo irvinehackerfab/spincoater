@@ -25,6 +25,11 @@ target/
 # Ignore .DS_Store file in mac
 **/.DS_Store
 
+# Dev environment
 .direnv/
 
+# Host TUI logs
 logs/
+
+# Savepoint
+.checkpoint.error
