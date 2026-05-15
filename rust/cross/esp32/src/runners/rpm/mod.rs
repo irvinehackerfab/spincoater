@@ -3,7 +3,6 @@
 pub mod channel;
 
 use crate::{
-    LOOP_PERIOD,
     gpio::{
         display::terminal::channel::{TerminalSender, TuiEvent},
         encoder::{
@@ -16,16 +15,16 @@ use crate::{
     runners::sleep,
 };
 use channel::{RunAt, RunnerReceiver, RunnerRequest};
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{Duration, Instant};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::HistoryBuf;
-use sc_messages::pwm::STOP_DUTY;
+use sc_messages::pwm::{MAX_POWER_DUTY, STOP_DUTY};
 use static_cell::ConstStaticCell;
 
 /// The size of the RPM vector.
 ///
 /// This is currently set to roughly 0.5 seconds worth of RPM readings at [`LOOP_PERIOD`].
-const RPM_VEC_SIZE: usize = 256;
+const RPM_VEC_SIZE: usize = 64;
 
 /// A list of rpm values for sending an average to the terminal.
 pub static RPM_BUFFER: ConstStaticCell<HistoryBuf<usize, RPM_VEC_SIZE>> =
@@ -65,7 +64,6 @@ impl Runner {
             if let RunnerRequest::Run(run_at) = self.from_terminal.receive().await {
                 // Overcome static friction.
                 self.pwm_pin.set_timestamp(STATIC_DUTY);
-                Timer::after(LOOP_PERIOD).await;
                 // Since we are starting again, we must reset the encoder state.
                 ENCODER_STATE.with(EncoderState::reset);
                 self.execute(run_at).await;
@@ -104,7 +102,9 @@ impl Runner {
             let current_rpm = ENCODER_STATE.with(|state| calculate_rpm(&state.rpm_ring_buffer));
             let rpm_error = error(setpoint_rpm, current_rpm);
             let output = next_control_output(rpm_error);
-            let duty_cycle = (*setpoint_duty_cycle).saturating_add_signed(output);
+            let duty_cycle = (*setpoint_duty_cycle)
+                .saturating_add_signed(output)
+                .clamp(STOP_DUTY, MAX_POWER_DUTY);
 
             self.pwm_pin.set_timestamp(duty_cycle);
 

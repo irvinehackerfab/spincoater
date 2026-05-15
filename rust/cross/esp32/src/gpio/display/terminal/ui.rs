@@ -89,7 +89,9 @@ impl TerminalState {
             .block(start_stop_block);
         frame.render_widget(start_stop_text, start_stop_area);
 
-        let vacuum_pump_block = Block::bordered().title("Vacuum Pump");
+        let vacuum_pump_block = Block::bordered()
+            .title("Vacuum Pump")
+            .title_alignment(HorizontalAlignment::Center);
         match self.vacuum_pump_pin.output_level() {
             Level::High => {
                 let vacuum_pump_text = Paragraph::new("Disable")
