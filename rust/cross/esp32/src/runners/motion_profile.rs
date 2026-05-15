@@ -1,7 +1,7 @@
 //! This module contains the functionality for running motion profiles sent by the host PC.
 
 use crate::{
-    LOOP_PERIOD, REQUEST_CHANNEL_LENGTH,
+    REQUEST_CHANNEL_LENGTH,
     gpio::{
         encoder::{ENCODER_STATE, EncoderState, calculate_rpm},
         pwm::{SETPOINT_LIST_LENGTH, STATIC_DUTY, linear_conversion},
@@ -11,14 +11,14 @@ use crate::{
     runners::sleep,
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver, signal::Signal};
-use embassy_time::{Instant, Timer};
+use embassy_time::Instant;
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::Vec;
 use postcard_rpc::server::Sender;
 use sc_messages::{
     icd::MotionProfileStateTopic,
     motion_profile::{self, Request, RequestRefused, Setpoint},
-    pwm::{DutyCycle, STOP_DUTY},
+    pwm::{DutyCycle, MAX_POWER_DUTY, STOP_DUTY},
 };
 
 /// The runner that executes motion profiles.
@@ -94,7 +94,6 @@ impl Runner {
         }
         // Overcome static friction.
         self.pwm_pin.set_timestamp(STATIC_DUTY);
-        Timer::after(LOOP_PERIOD).await;
         // Since we are starting again, we must reset the encoder state.
         ENCODER_STATE.with(EncoderState::reset);
     }
@@ -148,7 +147,9 @@ impl Runner {
             let current_rpm = ENCODER_STATE.with(|state| calculate_rpm(&state.rpm_ring_buffer));
             let rpm_error = error(setpoint_rpm, current_rpm);
             let output = next_control_output(rpm_error);
-            let duty_cycle = (*setpoint_duty_cycle).saturating_add_signed(output);
+            let duty_cycle = (*setpoint_duty_cycle)
+                .saturating_add_signed(output)
+                .clamp(STOP_DUTY, MAX_POWER_DUTY);
 
             self.pwm_pin.set_timestamp(duty_cycle);
 

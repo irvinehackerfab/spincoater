@@ -67,7 +67,10 @@ impl EncoderState {
         // Simple filter to remove outliers
         match self.rpm_ring_buffer.recent() {
             Some(previous_rpm) => {
-                const MAXIMUM_ALLOWED_RPM_DIFFERENCE: usize = 1_000;
+                /// If you lower this, you risk being too strict and breaking the rpm calculation.
+                /// If too much time passes between non-spurious interrupts,
+                /// the rpm calculator will stop accepting valid rpms.
+                const MAXIMUM_ALLOWED_RPM_DIFFERENCE: usize = 5_000;
                 if rpm.abs_diff(*previous_rpm) < MAXIMUM_ALLOWED_RPM_DIFFERENCE {
                     self.rpm_ring_buffer.write(rpm);
                 }
