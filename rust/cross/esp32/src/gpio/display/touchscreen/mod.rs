@@ -9,7 +9,7 @@ use esp_hal::{
     Blocking,
     delay::Delay,
     gpio::{Input, Output},
-    spi::master::Spi,
+    spi::master::SpiDmaBus,
 };
 use sc_messages::touchscreen::TouchPoint;
 
@@ -22,7 +22,7 @@ use esp_println::println;
 pub mod xpt_2046;
 
 /// The type of SPI device the touchscreen uses.
-pub type Device<'a> = RefCellDevice<'a, Spi<'a, Blocking>, Output<'a>, Delay>;
+pub type Device<'a> = RefCellDevice<'a, SpiDmaBus<'a, Blocking>, Output<'a>, Delay>;
 
 /// The debounce time for the touchscreen in milliseconds.
 const DEBOUNCE: Duration = Duration::from_millis(250);

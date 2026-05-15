@@ -15,10 +15,12 @@ use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
     delay::Delay,
+    dma::{DmaRxBuf, DmaTxBuf},
+    dma_buffers,
     gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
     interrupt::software::SoftwareInterruptControl,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
-    spi::master::{Config, Spi},
+    spi::master::{Config, Spi, SpiDmaBus},
     time::Rate,
     timer::timg::TimerGroup,
 };
@@ -26,7 +28,7 @@ use esp32::{
     SECOND_CORE_STACK,
     gpio::{
         display::{
-            DISPLAY, ORIENTATION, SPI, SPI_BUFFER,
+            DISPLAY, ORIENTATION, SPI, SPI_BUFFER, SPI_BUFFER_SIZE,
             terminal::{TERMINAL, TerminalState, channel::TERMINAL_CHANNEL, update_terminal},
             touchscreen::{Touchscreen, run_touchscreen, xpt_2046::Xpt2046},
         },
@@ -137,7 +139,14 @@ async fn main(spawner: Spawner) -> ! {
         // Master Out Slave In. This is the SPI data line from the microcontroller to the display. Used to send pixel data and commands.
         .with_mosi(peripherals.GPIO33)
         // Serial Clock. SPI clock signal from the microcontroller. It synchronizes the data being sent.
-        .with_sck(peripherals.GPIO32);
+        .with_sck(peripherals.GPIO32)
+        .with_dma(peripherals.DMA_SPI2);
+        let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(SPI_BUFFER_SIZE);
+        let dma_rx_buf =
+            DmaRxBuf::new(rx_descriptors, rx_buffer).expect("Failed to create DMA RX buf");
+        let dma_tx_buf =
+            DmaTxBuf::new(tx_descriptors, tx_buffer).expect("Failed to create DMA TX buf");
+        let spi = SpiDmaBus::new(spi, dma_rx_buf, dma_tx_buf);
         RefCell::new(spi)
     });
 
