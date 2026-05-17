@@ -12,10 +12,11 @@ use esp_hal::{
     spi::master::SpiDmaBus,
 };
 use sc_messages::touchscreen::TouchPoint;
+use static_cell::ConstStaticCell;
 
 use crate::gpio::display::{
     terminal::channel::{TerminalSender, TuiEvent},
-    touchscreen::xpt_2046::Xpt2046,
+    touchscreen::xpt_2046::{BUFFER_SIZE, Xpt2046},
 };
 use esp_println::println;
 
@@ -27,9 +28,12 @@ pub type Device<'a> = RefCellDevice<'a, SpiDmaBus<'a, Blocking>, Output<'a>, Del
 /// The debounce time for the touchscreen in milliseconds.
 const DEBOUNCE: Duration = Duration::from_millis(250);
 
+/// The buffer for the XPT.
+pub static XPT_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new([0; _]);
+
 /// The touchscreen.
 pub struct Touchscreen<'a> {
-    xpt_2046: Xpt2046<Device<'a>>,
+    xpt_2046: Xpt2046<'a, Device<'a>>,
     pen_irq: Input<'a>,
     to_terminal: TerminalSender,
 }
@@ -40,7 +44,7 @@ impl<'a> Touchscreen<'a> {
     /// # Errors
     /// Returns an error if the pen interrupt could not be enabled.
     pub fn new(
-        mut xpt_2046: Xpt2046<Device<'a>>,
+        mut xpt_2046: Xpt2046<'a, Device<'a>>,
         pen_irq: Input<'a>,
         to_terminal: TerminalSender,
     ) -> Result<Self, <Device<'a> as ErrorType>::Error> {

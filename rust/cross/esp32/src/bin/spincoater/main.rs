@@ -30,7 +30,7 @@ use esp32::{
         display::{
             DISPLAY, ORIENTATION, SPI, SPI_BUFFER, SPI_BUFFER_SIZE,
             terminal::{TERMINAL, TerminalState, channel::TERMINAL_CHANNEL, update_terminal},
-            touchscreen::{Touchscreen, run_touchscreen, xpt_2046::Xpt2046},
+            touchscreen::{Touchscreen, XPT_BUFFER, run_touchscreen, xpt_2046::Xpt2046},
         },
         encoder::ENCODER,
         interrupt_handler,
@@ -196,7 +196,7 @@ async fn main(spawner: Spawner) -> ! {
     // Initialize the touchscreen
     let t_cs = Output::new(peripherals.GPIO16, Level::High, OutputConfig::default());
     let spi_device = RefCellDevice::new(spi, t_cs, Delay::new()).expect("cs is already high");
-    let xpt_2046 = Xpt2046::new(spi_device);
+    let xpt_2046 = Xpt2046::new(spi_device, XPT_BUFFER.take());
     let pen_irq = Input::new(
         peripherals.GPIO34,
         // pull up because active low

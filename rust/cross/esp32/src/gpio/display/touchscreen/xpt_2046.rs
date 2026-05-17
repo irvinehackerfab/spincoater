@@ -7,8 +7,8 @@ use embedded_hal::spi::{ErrorType, Operation, SpiDevice};
 /// The time (in nanoseconds) we must wait before the first rising edge of the clock.
 const T_CSS: u32 = 100;
 
-/// The length of the word buffer.
-const BUFFER_LENGTH: usize = 33;
+/// The size of the command buffer.
+pub const BUFFER_SIZE: usize = 33;
 
 /// The control byte we send when we want the X position.
 ///
@@ -74,7 +74,7 @@ macro_rules! get_x_y {
 /// If we shift first command right by 3 bits and read the 5th bit of the X position at the same time as we propagate the second S,
 /// the data will be aligned to the 3rd and 5th bytes respectively.
 // (If you're in the esp32 repo, I drew a timing diagram for this transaction in the images folder.)
-const FULL_COMMAND: [u8; BUFFER_LENGTH] = get_x_y![GET_X_POSITION, GET_Y_POSITION];
+const FULL_COMMAND: [u8; BUFFER_SIZE] = get_x_y![GET_X_POSITION, GET_Y_POSITION];
 
 /// Sending a control byte with PD0 low enables `PEN_IRQ`.
 /// We need 3 bytes because `PEN_IRQ` isn't enabled until the the end of the conversion,
@@ -100,29 +100,26 @@ const Y_DENOMINATOR: i32 = 3_358;
 pub const MAX_VALUE: u16 = 4095;
 
 /// The SPI driver for the XPT2046 touchscreen.
-pub struct Xpt2046<D> {
+pub struct Xpt2046<'a, D> {
     /// The SPI device.
     spi: D,
     /// The buffer for receiving words.
-    buffer: [u8; BUFFER_LENGTH],
+    buffer: &'a mut [u8; BUFFER_SIZE],
 }
 
-impl<D> Xpt2046<D> {
+impl<'a, D> Xpt2046<'a, D> {
     /// Creates a new touchscreen device.
     ///
     /// The SPI clock frequency should be <= 5 MHz.
     ///
     /// CPOL and CPHA must be 0.
     #[must_use]
-    pub fn new(spi: D) -> Self {
-        Self {
-            spi,
-            buffer: [0; BUFFER_LENGTH],
-        }
+    pub fn new(spi: D, buffer: &'a mut [u8; BUFFER_SIZE]) -> Self {
+        Self { spi, buffer }
     }
 }
 
-impl<D> Xpt2046<D>
+impl<D> Xpt2046<'_, D>
 where
     D: SpiDevice,
 {
@@ -145,48 +142,46 @@ where
         // I'm ignoring the propagation delay "tDO". Hopefully that's ok.
         self.spi.transaction(&mut [
             Operation::DelayNs(T_CSS),
-            Operation::Transfer(&mut self.buffer, &FULL_COMMAND),
+            Operation::Transfer(self.buffer, &FULL_COMMAND),
         ])?;
 
-        macro_rules! get_x {
+        macro_rules! get_i32 {
             [$i:expr] => {
-                lerp_x(i32::from(self.buffer[$i]) << 8 | i32::from(self.buffer[$i+1]))
+                i32::from(self.buffer[$i]) << 8 | i32::from(self.buffer[$i+1])
             };
         }
 
-        macro_rules! get_y {
-            [$i:expr] => {
-                lerp_y(i32::from(self.buffer[$i]) << 8 | i32::from(self.buffer[$i+1]))
-            };
-        }
+        let x = lerp_x(
+            [
+                get_i32![1],
+                get_i32![5],
+                get_i32![9],
+                get_i32![13],
+                get_i32![17],
+                get_i32![21],
+                get_i32![25],
+                get_i32![29],
+            ]
+            .iter()
+            .sum::<i32>()
+            .strict_div(8),
+        );
 
-        let x = [
-            get_x![1],
-            get_x![5],
-            get_x![9],
-            get_x![13],
-            get_x![17],
-            get_x![21],
-            get_x![25],
-            get_x![29],
-        ]
-        .iter()
-        .sum::<i32>()
-        .strict_div(8);
-
-        let y = [
-            get_y![3],
-            get_y![7],
-            get_y![11],
-            get_y![15],
-            get_y![19],
-            get_y![23],
-            get_y![27],
-            get_y![31],
-        ]
-        .iter()
-        .sum::<i32>()
-        .strict_div(8);
+        let y = lerp_y(
+            [
+                get_i32![3],
+                get_i32![7],
+                get_i32![11],
+                get_i32![15],
+                get_i32![19],
+                get_i32![23],
+                get_i32![27],
+                get_i32![31],
+            ]
+            .iter()
+            .sum::<i32>()
+            .strict_div(8),
+        );
 
         Ok(Point::new(x, y))
     }
