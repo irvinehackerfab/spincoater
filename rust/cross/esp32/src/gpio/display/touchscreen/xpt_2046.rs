@@ -145,45 +145,27 @@ where
             Operation::Transfer(self.buffer, &FULL_COMMAND),
         ])?;
 
-        macro_rules! get_i32 {
-            [$i:expr] => {
-                i32::from(self.buffer[$i]) << 8 | i32::from(self.buffer[$i+1])
-            };
-        }
-
         let x = lerp_x(
-            [
-                get_i32![1],
-                get_i32![5],
-                get_i32![9],
-                get_i32![13],
-                get_i32![17],
-                get_i32![21],
-                get_i32![25],
-                get_i32![29],
-            ]
-            .iter()
-            .sum::<i32>()
-            .strict_div(8),
+            (1..=29)
+                .step_by(4)
+                .map(|idx| self.get_i32(idx))
+                .sum::<i32>()
+                .strict_div(8),
         );
 
         let y = lerp_y(
-            [
-                get_i32![3],
-                get_i32![7],
-                get_i32![11],
-                get_i32![15],
-                get_i32![19],
-                get_i32![23],
-                get_i32![27],
-                get_i32![31],
-            ]
-            .iter()
-            .sum::<i32>()
-            .strict_div(8),
+            (3..=31)
+                .step_by(4)
+                .map(|idx| self.get_i32(idx))
+                .sum::<i32>()
+                .strict_div(8),
         );
 
         Ok(Point::new(x, y))
+    }
+
+    fn get_i32(&self, idx: usize) -> i32 {
+        i32::from(self.buffer[idx]) << 8 | i32::from(self.buffer[idx.strict_add(1)])
     }
 }
 
