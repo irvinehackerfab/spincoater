@@ -60,21 +60,11 @@ const GET_Y_POSITION_AND_POWER_DOWN: u8 = 0b1001_0000;
 // /// - PD1-PD0: 00. This is necessary if we want both the ADC on for taking measurements, and `PEN_IRQ` interrupts enabled. (Table 8)
 // const GET_Z2_POSITION: u8 = 0b1100_0000;
 
-/// This macro exists to define the command in less code.
-macro_rules! get_x_y {
-    [$x:expr, $y:expr] => {
-        [$x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5, $y >> 3, $y << 5, $x >> 3, $x << 5,
-        GET_Y_POSITION_AND_POWER_DOWN >> 3,
-        GET_Y_POSITION_AND_POWER_DOWN << 5,
-        0]
-    };
-}
-
 /// Since we can't easily split reads into multiple commands, we need to perform simultaneous reads and writes.
 /// If we shift first command right by 3 bits and read the 5th bit of the X position at the same time as we propagate the second S,
 /// the data will be aligned to the 3rd and 5th bytes respectively.
 // (If you're in the esp32 repo, I drew a timing diagram for this transaction in the images folder.)
-const FULL_COMMAND: [u8; BUFFER_SIZE] = get_x_y![GET_X_POSITION, GET_Y_POSITION];
+const FULL_COMMAND: [u8; BUFFER_SIZE] = full_command();
 
 /// Sending a control byte with PD0 low enables `PEN_IRQ`.
 /// We need 3 bytes because `PEN_IRQ` isn't enabled until the the end of the conversion,
@@ -185,4 +175,26 @@ fn lerp_y(y: i32) -> i32 {
         .saturating_mul(LERP_NUMERATOR)
         .strict_div(Y_DENOMINATOR)
         .min(4095)
+}
+
+/// Creates the full x-y command.
+const fn full_command() -> [u8; BUFFER_SIZE] {
+    let get_x_y = [[
+        GET_X_POSITION >> 3,
+        GET_X_POSITION << 5,
+        GET_Y_POSITION >> 3,
+        GET_Y_POSITION << 5,
+    ]; 7];
+    let end = [
+        GET_X_POSITION >> 3,
+        GET_X_POSITION << 5,
+        GET_Y_POSITION_AND_POWER_DOWN >> 3,
+        GET_Y_POSITION_AND_POWER_DOWN << 5,
+        0,
+    ];
+    let mut whole = [0u8; BUFFER_SIZE];
+    let (left, right) = whole.split_at_mut(get_x_y.as_flattened().len());
+    left.copy_from_slice(get_x_y.as_flattened());
+    right.copy_from_slice(&end);
+    whole
 }
