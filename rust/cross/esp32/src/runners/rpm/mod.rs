@@ -15,7 +15,7 @@ use crate::{
     runners::sleep,
 };
 use channel::{RunAt, RunnerReceiver, RunnerRequest};
-use embassy_time::{Duration, Instant};
+use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::HistoryBuf;
 use sc_messages::pwm::{MAX_POWER_DUTY, STOP_DUTY};
@@ -64,6 +64,7 @@ impl Runner {
             if let RunnerRequest::Run(run_at) = self.from_terminal.receive().await {
                 // Overcome static friction.
                 self.pwm_pin.set_timestamp(STATIC_DUTY);
+                Timer::after_millis(500).await;
                 // Since we are starting again, we must reset the encoder state.
                 ENCODER_STATE.with(EncoderState::reset);
                 self.execute(run_at).await;

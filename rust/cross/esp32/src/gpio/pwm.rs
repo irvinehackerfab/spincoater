@@ -48,7 +48,7 @@ pub static SETPOINTS: ConstStaticCell<Vec<Setpoint, SETPOINT_LIST_LENGTH>> =
 
 /// Since the relationship betwen motor RPM and PWM units is mostly linear, we can just use a conversion factor.
 /// This value was obtained from the `linear_regression` program.
-pub const RPM_TO_DUTY_NUMERATOR: u32 = 31_309;
+pub const RPM_TO_DUTY_NUMERATOR: u32 = 33_000;
 
 /// Since the relationship betwen motor RPM and PWM units is mostly linear, we can just use a conversion factor.
 /// This value was obtained from the `linear_regression` program.
