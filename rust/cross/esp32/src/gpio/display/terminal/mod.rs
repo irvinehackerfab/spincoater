@@ -41,9 +41,13 @@ pub struct TerminalState {
     /// The most recent touch input.
     touch_point: Option<TouchPoint>,
     /// The rpm setting in plate RPM.
-    rpm: u16,
+    target_rpm: u16,
     /// The time setting in seconds.
-    time: u16,
+    target_time: u16,
+    /// The current rpm in plate RPM.
+    rpm: Option<u16>,
+    /// The current time in seconds.
+    time: Option<u16>,
 }
 
 impl TerminalState {
@@ -60,8 +64,10 @@ impl TerminalState {
             to_runner,
             is_running: false,
             touch_point: None,
-            rpm: RPM,
-            time: TIME,
+            target_rpm: RPM,
+            target_time: TIME,
+            rpm: None,
+            time: None,
         }
     }
 
@@ -75,12 +81,14 @@ impl TerminalState {
             match self.from_all.receive().await {
                 TuiEvent::Touch(point) => self.handle_touch(point).await,
                 TuiEvent::Runner(run_at) => {
-                    self.rpm = run_at.rpm;
-                    self.time = run_at.time;
+                    self.rpm = Some(run_at.rpm);
+                    self.time = Some(run_at.time);
                 }
                 TuiEvent::RunnerFinished => {
-                    self.rpm = RPM;
-                    self.time = TIME;
+                    self.target_rpm = RPM;
+                    self.target_time = TIME;
+                    self.rpm = None;
+                    self.time = None;
                     self.is_running = false;
                 }
             }
@@ -107,20 +115,23 @@ impl TerminalState {
         } else {
             match (point.x, point.y) {
                 (0..MIDDLE, 0..FIRST_THIRD) => {
-                    self.rpm = self.rpm.saturating_sub(100);
+                    self.target_rpm = self.target_rpm.saturating_sub(100);
                 }
                 (MIDDLE.., 0..FIRST_THIRD) => {
-                    self.rpm = self.rpm.saturating_add(100);
+                    self.target_rpm = self.target_rpm.saturating_add(100);
                 }
                 (0..MIDDLE, FIRST_THIRD..SECOND_THIRD) => {
-                    self.time = self.time.saturating_sub(1);
+                    self.target_time = self.target_time.saturating_sub(1);
                 }
                 (MIDDLE.., FIRST_THIRD..SECOND_THIRD) => {
-                    self.time = self.time.saturating_add(1);
+                    self.target_time = self.target_time.saturating_add(1);
                 }
                 (0..MIDDLE, SECOND_THIRD..) => {
                     self.to_runner
-                        .send(RunnerRequest::Run(RunAt::new(self.rpm, self.time)))
+                        .send(RunnerRequest::Run(RunAt::new(
+                            self.target_rpm,
+                            self.target_time,
+                        )))
                         .await;
                     self.is_running = true;
                 }

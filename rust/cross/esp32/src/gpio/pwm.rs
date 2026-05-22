@@ -48,18 +48,15 @@ pub static SETPOINTS: ConstStaticCell<Vec<Setpoint, SETPOINT_LIST_LENGTH>> =
 
 /// Since the relationship betwen motor RPM and PWM units is mostly linear, we can just use a conversion factor.
 /// This value was obtained from the `linear_regression` program.
-pub const RPM_TO_DUTY_NUMERATOR: u32 = 33_000;
+pub const RPM_TO_DUTY_NUMERATOR: u32 = 110_443;
 
 /// Since the relationship betwen motor RPM and PWM units is mostly linear, we can just use a conversion factor.
 /// This value was obtained from the `linear_regression` program.
-pub const RPM_TO_DUTY_DENOMINATOR: u32 = 2_000_000;
+pub const RPM_TO_DUTY_DENOMINATOR: u32 = 6_250_000;
 
 /// The linear relationship between motor RPM and PWM units has an intercept because the duty cycle representing 0 is nonzero.
 /// This value was obtained from the `linear_regression` program.
-pub const RPM_TO_DUTY_INTERCEPT: u32 = 5_018;
-
-/// This duty cycle is guaranteed to make the motor start spinning.
-pub const STATIC_DUTY: u16 = 5_065;
+pub const RPM_TO_DUTY_INTERCEPT: u32 = 5_011;
 
 /// Uses the linear relationship between motor RPM and duty cycle to find the setpoint duty cycle.
 ///

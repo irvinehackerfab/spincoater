@@ -3,7 +3,7 @@
 /// The inverse of the proportional gain.
 ///
 /// The non-inverse of `K_P` is in units of duty cycle per motor RPM error.
-pub const K_P_INVERSE: i16 = 20;
+pub const K_P_INVERSE: i16 = 8;
 
 /// Calculates the difference between the setpoint and current RPM.
 ///

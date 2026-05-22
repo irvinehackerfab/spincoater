@@ -9,16 +9,16 @@ use crate::{
             ENCODER_STATE, EncoderState, calculate_rpm, motor_to_plate_revolutions,
             plate_to_motor_revolutions,
         },
-        pwm::{STATIC_DUTY, linear_conversion},
+        pwm::linear_conversion,
     },
     pid::{error, next_control_output},
     runners::sleep,
 };
 use channel::{RunAt, RunnerReceiver, RunnerRequest};
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{Duration, Instant};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::HistoryBuf;
-use sc_messages::pwm::{MAX_POWER_DUTY, STOP_DUTY};
+use sc_messages::pwm::{HALF_POWER_DUTY, STOP_DUTY};
 use static_cell::ConstStaticCell;
 
 /// The size of the RPM vector.
@@ -62,9 +62,6 @@ impl Runner {
     pub async fn run(mut self) -> ! {
         loop {
             if let RunnerRequest::Run(run_at) = self.from_terminal.receive().await {
-                // Overcome static friction.
-                self.pwm_pin.set_timestamp(STATIC_DUTY);
-                Timer::after_millis(500).await;
                 // Since we are starting again, we must reset the encoder state.
                 ENCODER_STATE.with(EncoderState::reset);
                 self.execute(run_at).await;
@@ -105,7 +102,7 @@ impl Runner {
             let output = next_control_output(rpm_error);
             let duty_cycle = (*setpoint_duty_cycle)
                 .saturating_add_signed(output)
-                .clamp(STOP_DUTY, MAX_POWER_DUTY);
+                .clamp(STOP_DUTY, HALF_POWER_DUTY);
 
             self.pwm_pin.set_timestamp(duty_cycle);
 

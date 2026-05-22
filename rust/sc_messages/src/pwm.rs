@@ -16,6 +16,9 @@ pub const PERIOD: u16 = u16::MAX - 1_535;
 /// The current motor controller reads 10% of [`PERIOD`] as 100% power.
 pub const MAX_POWER_DUTY: u16 = PERIOD / 10;
 
+/// The current motor controller reads 8.75% of [`PERIOD`] as 50% power.
+pub const HALF_POWER_DUTY: u16 = PERIOD / 80 * 7;
+
 /// The current motor controller reads 7.5% of [`PERIOD`] as 0% power.
 ///
 /// 0% power means neutral.

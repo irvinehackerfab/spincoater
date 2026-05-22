@@ -4,7 +4,7 @@ use crate::{
     REQUEST_CHANNEL_LENGTH,
     gpio::{
         encoder::{ENCODER_STATE, EncoderState, calculate_rpm},
-        pwm::{SETPOINT_LIST_LENGTH, STATIC_DUTY, linear_conversion},
+        pwm::{SETPOINT_LIST_LENGTH, linear_conversion},
     },
     pid::{error, next_control_output},
     rpc::{HOST_DISCONNECTED, SEQUENCE_NUMBER, WireTx},
@@ -18,7 +18,7 @@ use postcard_rpc::server::Sender;
 use sc_messages::{
     icd::MotionProfileStateTopic,
     motion_profile::{self, Request, RequestRefused, Setpoint},
-    pwm::{DutyCycle, MAX_POWER_DUTY, STOP_DUTY},
+    pwm::{DutyCycle, HALF_POWER_DUTY, STOP_DUTY},
 };
 
 /// The runner that executes motion profiles.
@@ -92,8 +92,6 @@ impl Runner {
                 }
             }
         }
-        // Overcome static friction.
-        self.pwm_pin.set_timestamp(STATIC_DUTY);
         // Since we are starting again, we must reset the encoder state.
         ENCODER_STATE.with(EncoderState::reset);
     }
@@ -149,7 +147,7 @@ impl Runner {
             let output = next_control_output(rpm_error);
             let duty_cycle = (*setpoint_duty_cycle)
                 .saturating_add_signed(output)
-                .clamp(STOP_DUTY, MAX_POWER_DUTY);
+                .clamp(STOP_DUTY, HALF_POWER_DUTY);
 
             self.pwm_pin.set_timestamp(duty_cycle);
 
