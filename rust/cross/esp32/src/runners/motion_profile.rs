@@ -3,7 +3,7 @@
 use crate::{
     REQUEST_CHANNEL_LENGTH,
     gpio::{
-        encoder::{ENCODER_STATE, EncoderState, calculate_rpm},
+        encoder::{ENCODER, ENCODER_STATE, EncoderState, calculate_average_rpm},
         pwm::{SETPOINT_LIST_LENGTH, linear_conversion},
     },
     pid::{error, next_control_output},
@@ -12,7 +12,7 @@ use crate::{
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver, signal::Signal};
 use embassy_time::Instant;
-use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
+use esp_hal::{gpio::Event, mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::Vec;
 use postcard_rpc::server::Sender;
 use sc_messages::{
@@ -56,7 +56,23 @@ impl Runner {
     async fn run(mut self) -> ! {
         loop {
             self.setup().await;
+            // Since we are starting again, we must reset the encoder state.
+            ENCODER_STATE.with(EncoderState::reset);
+            // Start listening for interrupts
+            ENCODER.with(|encoder| {
+                encoder
+                    .as_mut()
+                    .expect("The runner cannot function without the encoder.")
+                    .listen(Event::RisingEdge);
+            });
             self.execute_motion_profile().await;
+            // Stop listening for interrupts
+            ENCODER.with(|encoder| {
+                encoder
+                    .as_mut()
+                    .expect("The runner cannot function without the encoder.")
+                    .unlisten();
+            });
             self.clear();
         }
     }
@@ -67,7 +83,6 @@ impl Runner {
     async fn setup(&mut self) {
         // We only care if the host disconnects during execution.
         HOST_DISCONNECTED.reset();
-
         loop {
             match self.from_server.receive().await {
                 Request::Add(setpoint) => match self.setpoints.push(setpoint.clone()) {
@@ -92,8 +107,6 @@ impl Runner {
                 }
             }
         }
-        // Since we are starting again, we must reset the encoder state.
-        ENCODER_STATE.with(EncoderState::reset);
     }
 
     /// Executes the motion profile,
@@ -142,7 +155,8 @@ impl Runner {
             };
 
             // Feedback
-            let current_rpm = ENCODER_STATE.with(|state| calculate_rpm(&state.rpm_ring_buffer));
+            let current_rpm =
+                ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
             let rpm_error = error(setpoint_rpm, current_rpm);
             let output = next_control_output(rpm_error);
             let duty_cycle = (*setpoint_duty_cycle)

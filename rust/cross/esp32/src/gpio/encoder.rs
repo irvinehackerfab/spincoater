@@ -8,10 +8,10 @@ use esp_sync::NonReentrantMutex;
 use heapless::HistoryBuf;
 use sc_messages::{MOTOR_REVOLUTIONS, PLATE_REVOLUTIONS};
 
-/// Provides the interrupt handler access to the encoder.
+/// Provides global access to the encoder.
 pub static ENCODER: NonReentrantMutex<Option<Input>> = NonReentrantMutex::new(None);
 
-/// Provides the interrupt handler access to its state.
+/// Provides global access to the encoder state.
 pub static ENCODER_STATE: NonReentrantMutex<EncoderState> =
     NonReentrantMutex::new(EncoderState::new(Instant::EPOCH, HistoryBuf::new()));
 
@@ -92,7 +92,7 @@ impl EncoderState {
 /// This function never fails. If the RPM is greater than [`u16::MAX`], [`u16::MAX`] is returned.
 #[must_use]
 #[allow(clippy::cast_possible_truncation)]
-pub fn calculate_rpm<const N: usize>(rpm_ring_buffer: &HistoryBuf<usize, N>) -> u16 {
+pub fn calculate_average_rpm<const N: usize>(rpm_ring_buffer: &HistoryBuf<usize, N>) -> u16 {
     rpm_ring_buffer
         .as_slice()
         .iter()

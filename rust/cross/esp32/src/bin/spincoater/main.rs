@@ -17,7 +17,7 @@ use esp_hal::{
     delay::Delay,
     dma::{DmaRxBuf, DmaTxBuf},
     dma_buffers,
-    gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
+    gpio::{Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
     interrupt::software::SoftwareInterruptControl,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     spi::master::{Config, Spi, SpiDmaBus},
@@ -79,6 +79,15 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
 
+    // Initialize encoder pin
+    let encoder = Input::new(
+        peripherals.GPIO27,
+        InputConfig::default().with_pull(Pull::Down),
+    );
+    ENCODER.with(|encoder_memory_cell| {
+        encoder_memory_cell.replace(encoder);
+    });
+
     // Run the encoder task/ISR on the second core so it doesn't block the program.
     let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     esp_rtos::start_second_core(
@@ -90,18 +99,6 @@ async fn main(spawner: Spawner) -> ! {
             // Set the interrupt handler for GPIO.
             let mut io = Io::new(peripherals.IO_MUX);
             io.set_interrupt_handler(interrupt_handler);
-
-            // Initialize encoder pin
-            let mut encoder = Input::new(
-                peripherals.GPIO27,
-                InputConfig::default().with_pull(Pull::Down),
-            );
-
-            // Start listening for rising edges
-            ENCODER.with(|encoder_memory_cell| {
-                encoder.listen(Event::RisingEdge);
-                encoder_memory_cell.replace(encoder);
-            });
         },
     );
 

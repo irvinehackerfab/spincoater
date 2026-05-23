@@ -6,8 +6,8 @@ use crate::{
     gpio::{
         display::terminal::channel::{TerminalSender, TuiEvent},
         encoder::{
-            ENCODER_STATE, EncoderState, calculate_rpm, motor_to_plate_revolutions,
-            plate_to_motor_revolutions,
+            ENCODER, ENCODER_STATE, EncoderState, calculate_average_rpm,
+            motor_to_plate_revolutions, plate_to_motor_revolutions,
         },
         pwm::linear_conversion,
     },
@@ -16,7 +16,7 @@ use crate::{
 };
 use channel::{RunAt, RunnerReceiver, RunnerRequest};
 use embassy_time::{Duration, Instant};
-use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
+use esp_hal::{gpio::Event, mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::HistoryBuf;
 use sc_messages::pwm::{HALF_POWER_DUTY, STOP_DUTY};
 use static_cell::ConstStaticCell;
@@ -59,12 +59,29 @@ impl Runner {
     }
 
     /// Runs the main control loop.
+    ///
+    /// # Panics
+    /// Panics if the encoder is not in the mutex.
     pub async fn run(mut self) -> ! {
         loop {
             if let RunnerRequest::Run(run_at) = self.from_terminal.receive().await {
                 // Since we are starting again, we must reset the encoder state.
                 ENCODER_STATE.with(EncoderState::reset);
+                // Start listening for interrupts
+                ENCODER.with(|encoder| {
+                    encoder
+                        .as_mut()
+                        .expect("The runner cannot function without the encoder.")
+                        .listen(Event::RisingEdge);
+                });
                 self.execute(run_at).await;
+                // Stop listening for interrupts
+                ENCODER.with(|encoder| {
+                    encoder
+                        .as_mut()
+                        .expect("The runner cannot function without the encoder.")
+                        .unlisten();
+                });
             }
         }
     }
@@ -97,7 +114,8 @@ impl Runner {
             }
 
             // Feedback
-            let current_rpm = ENCODER_STATE.with(|state| calculate_rpm(&state.rpm_ring_buffer));
+            let current_rpm =
+                ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
             let rpm_error = error(setpoint_rpm, current_rpm);
             let output = next_control_output(rpm_error);
             let duty_cycle = (*setpoint_duty_cycle)
@@ -110,7 +128,7 @@ impl Runner {
             self.rpm_buffer
                 .write(usize::from(motor_to_plate_revolutions(current_rpm)));
             if previous_log.elapsed() > LOG_PERIOD {
-                let average_rpm = calculate_rpm(self.rpm_buffer);
+                let average_rpm = calculate_average_rpm(self.rpm_buffer);
                 let state = RunAt::new(average_rpm, time_since_start_secs);
                 self.to_terminal.send(TuiEvent::Runner(state)).await;
                 previous_log = Instant::now();
