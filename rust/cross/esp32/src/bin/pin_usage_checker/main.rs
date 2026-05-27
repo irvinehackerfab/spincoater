@@ -10,7 +10,7 @@
 use esp_backtrace as _;
 use esp_hal::clock::CpuClock;
 
-fn pins() {
+fn _pins() {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
