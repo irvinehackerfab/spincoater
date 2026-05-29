@@ -77,8 +77,7 @@ async fn main(spawner: Spawner) -> ! {
     // Initialize encoder pin
     let encoder = Input::new(
         peripherals.GPIO27,
-        // Pull up b/c encoder toggles between floating and 0V.
-        InputConfig::default().with_pull(Pull::Up),
+        InputConfig::default().with_pull(Pull::Down),
     );
     ENCODER.with(|encoder_memory_cell| {
         encoder_memory_cell.replace(encoder);

@@ -63,8 +63,7 @@ impl Runner {
                 encoder
                     .as_mut()
                     .expect("The runner cannot function without the encoder.")
-                    // Listen for falling edge b/c input is pulled up
-                    .listen(Event::FallingEdge);
+                    .listen(Event::RisingEdge);
             });
             self.execute_motion_profile().await;
             // Stop listening for interrupts
