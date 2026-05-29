@@ -31,7 +31,7 @@ The ESP-Prog-2 can be used as both a JTAG and UART adapter. The pins on the ESP-
   - ESP_TMS: **14**
   - Every GND: Grounded by power PCB.
   - ESP_TCK: **13**
-  - ESP_TDO: **15**
+  - ESP_TDO: ~~**15**~~ See [ESC Workaround](#ESC-Workaround) at the bottom.
   - ESP_TDI: **12**
   - NC: Not connected to anything
 
@@ -90,3 +90,6 @@ Run with `cargo run --bin spincoater_with_pc`.
 You can perform UART communication using pins other than TX and RX. This would allow you to keep `espflash`'s RTT monitor open while running the program. However, it requires a separate UART-to-USB adapter, such as the [ESP-Prog-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#).
 
 The `spincoater` program has a cargo feature that uses pins **23** and **22** for TX and RX instead. You can run it with `cargo run --bin spincoater_with_pc -F uart_over_adapter`.
+
+### ESC Workaround
+We are currently using pin **15** as a constant output due to a hardware issue.

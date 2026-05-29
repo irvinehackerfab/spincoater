@@ -12,7 +12,7 @@ use embassy_time::Timer;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
-    gpio::{Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
+    gpio::{DriveStrength, Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
     interrupt::software::SoftwareInterruptControl,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     timer::timg::TimerGroup,
@@ -67,10 +67,18 @@ async fn main(spawner: Spawner) -> ! {
     let timg0 = TimerGroup::new(peripherals.TIMG0);
     esp_rtos::start(timg0.timer0);
 
+    // ESC Workaround
+    let _ = Output::new(
+        peripherals.GPIO15,
+        Level::High,
+        OutputConfig::default().with_drive_strength(DriveStrength::_20mA),
+    );
+
     // Initialize encoder pin
     let encoder = Input::new(
         peripherals.GPIO27,
-        InputConfig::default().with_pull(Pull::Down),
+        // Pull up b/c encoder toggles between floating and 0V.
+        InputConfig::default().with_pull(Pull::Up),
     );
     ENCODER.with(|encoder_memory_cell| {
         encoder_memory_cell.replace(encoder);
