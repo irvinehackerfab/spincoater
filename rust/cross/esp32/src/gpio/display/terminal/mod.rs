@@ -85,8 +85,6 @@ impl TerminalState {
                     self.time = Some(run_at.time);
                 }
                 TuiEvent::RunnerFinished => {
-                    self.target_rpm = RPM;
-                    self.target_time = TIME;
                     self.rpm = None;
                     self.time = None;
                     self.is_running = false;
