@@ -17,9 +17,6 @@ pub mod pwm;
 ///
 /// See [`set_interrupt_handler`](esp_hal::gpio::Io::set_interrupt_handler) for ISR requirements,
 /// and see [`listen`](esp_hal::gpio::Input::listen) for an example.
-///
-/// # Panics
-/// Panics if [`MOTOR_REVOLUTIONS_DOUBLED`] overflows.
 #[handler]
 pub fn interrupt_handler() {
     // Check motor encoder.

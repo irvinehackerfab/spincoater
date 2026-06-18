@@ -1,4 +1,5 @@
 //! This module contains PWM output functionality.
+
 use esp_hal::time::Rate;
 use heapless::Vec;
 use sc_messages::{

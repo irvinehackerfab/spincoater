@@ -1,4 +1,5 @@
 //! This module contains functionality for the terminal on the display.
+
 pub mod channel;
 pub mod ui;
 

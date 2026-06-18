@@ -1,4 +1,5 @@
 //! This module contains all display functionality.
+
 pub mod terminal;
 pub mod touchscreen;
 

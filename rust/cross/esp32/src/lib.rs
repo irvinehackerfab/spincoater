@@ -1,5 +1,6 @@
 //! This crate contains all ESP32-specific spincoater functionality.
 //! It is meant to be compiled with Espressif's toolchain, not the regular Rust toolchain. See the README for more information.
+
 #![no_std]
 #![deny(
     clippy::mem_forget,

@@ -88,7 +88,6 @@ impl Runner {
 
     /// Executes the run request,
     /// logging info every iteration and checking for a stop command.
-    #[allow(clippy::cast_possible_truncation)]
     async fn execute(&mut self, run_at: RunAt) {
         let starting_time = Instant::now();
         let mut previous_sleep_end = starting_time;
@@ -108,7 +107,11 @@ impl Runner {
             }
 
             // Check if we finished.
-            let time_since_start_secs = starting_time.elapsed().as_secs() as u16;
+            let time_since_start_secs = starting_time
+                .elapsed()
+                .as_secs()
+                .try_into()
+                .unwrap_or(u16::MAX);
             if time_since_start_secs >= run_at.time {
                 break;
             }

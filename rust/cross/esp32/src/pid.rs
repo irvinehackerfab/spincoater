@@ -7,11 +7,11 @@ pub const K_P_INVERSE: i16 = 8;
 
 /// Calculates the difference between the setpoint and current RPM.
 ///
-/// This function never fails. The parameters and result are all truncated to fit in an [`i16`].
+/// The parameters are capped at [`i16::MAX`].
 #[must_use]
 pub fn error(setpoint_rpm: u16, current_rpm: u16) -> i16 {
-    let setpoint_rpm = i16::try_from(setpoint_rpm).unwrap_or(i16::MAX);
-    let current_rpm = i16::try_from(current_rpm).unwrap_or(i16::MAX);
+    let setpoint_rpm = setpoint_rpm.try_into().unwrap_or(i16::MAX);
+    let current_rpm = current_rpm.try_into().unwrap_or(i16::MAX);
     setpoint_rpm.saturating_sub(current_rpm)
 }
 
