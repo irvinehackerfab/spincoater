@@ -3,17 +3,16 @@
 pub mod channel;
 pub mod ui;
 
+use embedded_graphics::prelude::Point;
 use esp_hal::gpio::Output;
 use mousefood::{EmbeddedBackend, prelude::Rgb565};
 use ratatui::Terminal;
-use sc_messages::touchscreen::TouchPoint;
 use static_cell::StaticCell;
 
 use crate::{
     gpio::display::{
-        DisplayType,
+        DisplayType, HEIGHT, WIDTH,
         terminal::channel::{TerminalReceiver, TuiEvent},
-        touchscreen::xpt_2046::MAX_VALUE,
     },
     runners::rpm::channel::{RunAt, RunnerRequest, RunnerSender},
 };
@@ -40,7 +39,7 @@ pub struct TerminalState {
     /// Whether the spincoater is running.
     is_running: bool,
     /// The most recent touch input.
-    touch_point: Option<TouchPoint>,
+    touch_point: Option<Point>,
     /// The rpm setting in plate RPM.
     target_rpm: u16,
     /// The time setting in seconds.
@@ -80,7 +79,7 @@ impl TerminalState {
         loop {
             let _ = terminal.draw(|frame| self.draw(frame));
             match self.from_all.receive().await {
-                TuiEvent::Touch(point) => self.handle_touch(point).await,
+                TuiEvent::Point(point) => self.handle_touch(point).await,
                 TuiEvent::Runner(run_at) => {
                     self.rpm = Some(run_at.rpm);
                     self.time = Some(run_at.time);
@@ -95,37 +94,37 @@ impl TerminalState {
     }
 
     /// Handles a touch event.
-    async fn handle_touch(&mut self, point: TouchPoint) {
-        const MIDDLE: u16 = MAX_VALUE / 2;
-        const FIRST_THIRD: u16 = MAX_VALUE / 3;
-        const SECOND_THIRD: u16 = MAX_VALUE * 2 / 3;
+    async fn handle_touch(&mut self, point: Point) {
+        const MIDDLE_X: i32 = WIDTH / 2;
+        const FIRST_THIRD_Y: i32 = HEIGHT / 3;
+        const SECOND_THIRD_Y: i32 = HEIGHT * 2 / 3;
 
         if self.is_running {
             match (point.x, point.y) {
-                (0..MIDDLE, SECOND_THIRD..) => {
+                (0..MIDDLE_X, SECOND_THIRD_Y..) => {
                     self.to_runner.send(RunnerRequest::Stop).await;
                     self.is_running = false;
                 }
-                (MIDDLE.., SECOND_THIRD..) => {
+                (MIDDLE_X.., SECOND_THIRD_Y..) => {
                     self.vacuum_pump_pin.toggle();
                 }
                 _ => {}
             }
         } else {
             match (point.x, point.y) {
-                (0..MIDDLE, 0..FIRST_THIRD) => {
+                (0..MIDDLE_X, 0..FIRST_THIRD_Y) => {
                     self.target_rpm = self.target_rpm.saturating_sub(100);
                 }
-                (MIDDLE.., 0..FIRST_THIRD) => {
+                (MIDDLE_X.., 0..FIRST_THIRD_Y) => {
                     self.target_rpm = self.target_rpm.saturating_add(100);
                 }
-                (0..MIDDLE, FIRST_THIRD..SECOND_THIRD) => {
+                (0..MIDDLE_X, FIRST_THIRD_Y..SECOND_THIRD_Y) => {
                     self.target_time = self.target_time.saturating_sub(1);
                 }
-                (MIDDLE.., FIRST_THIRD..SECOND_THIRD) => {
+                (MIDDLE_X.., FIRST_THIRD_Y..SECOND_THIRD_Y) => {
                     self.target_time = self.target_time.saturating_add(1);
                 }
-                (0..MIDDLE, SECOND_THIRD..) => {
+                (0..MIDDLE_X, SECOND_THIRD_Y..) => {
                     self.to_runner
                         .send(RunnerRequest::Run(RunAt::new(
                             self.target_rpm,
@@ -134,9 +133,10 @@ impl TerminalState {
                         .await;
                     self.is_running = true;
                 }
-                (MIDDLE.., SECOND_THIRD..) => {
+                (MIDDLE_X.., SECOND_THIRD_Y..) => {
                     self.vacuum_pump_pin.toggle();
                 }
+                _ => {}
             }
         }
         self.touch_point.replace(point);

@@ -55,8 +55,6 @@ pub struct App {
     /// The motor data file.
     /// This is only [`Some`] when a motion profile is running.
     motor_data_file: Option<Writer<File>>,
-    /// The touchscreen data file.
-    touchscreen_data_file: Writer<File>,
 }
 
 impl App {
@@ -73,7 +71,6 @@ impl App {
             commands_state: ListState::default().with_selected(Some(0)),
             mcu_logs: AllocRingBuffer::new(MCU_LOG_CAPACITY),
             motor_data_file: None,
-            touchscreen_data_file: Self::open_log_file(TOUCHSCREEN_DATA_SUB_DIR)?,
         })
     }
 
@@ -226,10 +223,6 @@ impl App {
             }
             MCUEvent::VacuumPumpRequestResponse => {
                 let _ = self.mcu_logs.enqueue("[Vacuum Pump]: Ok".to_string());
-            }
-            MCUEvent::Touch(touch_point) => {
-                let _ = self.mcu_logs.enqueue(format!("[Touch]: {touch_point:?}"));
-                self.touchscreen_data_file.serialize(touch_point)?;
             }
         }
         Ok(())

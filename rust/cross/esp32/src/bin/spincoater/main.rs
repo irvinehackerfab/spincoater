@@ -30,7 +30,7 @@ use esp32::{
         display::{
             DISPLAY, ORIENTATION, SPI, SPI_BUFFER, SPI_BUFFER_SIZE,
             terminal::{TERMINAL, TerminalState, channel::TERMINAL_CHANNEL, update_terminal},
-            touchscreen::{Touchscreen, XPT_BUFFER, run_touchscreen, xpt_2046::Xpt2046},
+            touchscreen::{Touchscreen, XPT_BUFFER, run_touchscreen},
         },
         encoder::ENCODER,
         interrupt_handler,
@@ -200,14 +200,18 @@ async fn main(spawner: Spawner) -> ! {
     // Initialize the touchscreen
     let t_cs = Output::new(peripherals.GPIO16, Level::High, OutputConfig::default());
     let spi_device = RefCellDevice::new(spi, t_cs, Delay::new()).expect("cs is already high");
-    let xpt_2046 = Xpt2046::new(spi_device, XPT_BUFFER.take());
     let pen_irq = Input::new(
         peripherals.GPIO34,
         // pull up because active low
         InputConfig::default().with_pull(Pull::Up),
     );
-    let touchscreen = Touchscreen::new(xpt_2046, pen_irq, terminal_channel.sender())
-        .expect("Failed to initialize the touchscreen");
+    let touchscreen = Touchscreen::new(
+        spi_device,
+        XPT_BUFFER.take(),
+        pen_irq,
+        terminal_channel.sender(),
+    )
+    .expect("Failed to initialize the touchscreen");
 
     spawner.must_spawn(run_touchscreen(touchscreen));
 

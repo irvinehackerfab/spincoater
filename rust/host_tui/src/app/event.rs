@@ -15,11 +15,10 @@ use postcard_rpc::{
 use ratatui::crossterm::event::Event as CrosstermEvent;
 use sc_messages::{
     icd::{
-        HostDisconnecting, MotionProfileStateTopic, MotionRequestEndpoint, TouchPointTopic,
+        HostDisconnecting, MotionProfileStateTopic, MotionRequestEndpoint,
         VacuumPumpRequestEndpoint,
     },
     motion_profile::{self, RequestRefused},
-    touchscreen::TouchPoint,
     vacuum_pump,
 };
 use serde::de::DeserializeOwned;
@@ -61,8 +60,6 @@ pub enum MCUEvent {
     Log(String),
     /// The MCU sent the motion profile state.
     State(Option<MotionProfileState>),
-    /// The MCU sent a touch input.
-    Touch(TouchPoint),
 }
 
 impl From<String> for MCUEvent {
@@ -74,12 +71,6 @@ impl From<String> for MCUEvent {
 impl From<Option<motion_profile::State>> for MCUEvent {
     fn from(value: Option<motion_profile::State>) -> Self {
         Self::State(value.map(Into::into))
-    }
-}
-
-impl From<TouchPoint> for MCUEvent {
-    fn from(value: TouchPoint) -> Self {
-        Self::Touch(value)
     }
 }
 
@@ -138,16 +129,11 @@ impl EventHandler {
         let state_stream = client
             .subscribe_exclusive::<MotionProfileStateTopic>(MCU_LOG_CAPACITY)
             .await?;
-        // Subscribe to the MCU's touch points.
-        let touch_stream = client
-            .subscribe_exclusive::<TouchPointTopic>(MCU_LOG_CAPACITY)
-            .await?;
 
         // Spawn event handler tasks.
         tokio::spawn(await_crossterm_events(to_handler.clone()));
         tokio::spawn(await_messages(log_stream, to_handler.clone()));
         tokio::spawn(await_messages(state_stream, to_handler.clone()));
-        tokio::spawn(await_messages(touch_stream, to_handler.clone()));
 
         Ok(Self {
             from_tasks,

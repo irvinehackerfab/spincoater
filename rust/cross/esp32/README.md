@@ -6,7 +6,7 @@ The guide for Rust programming on ESP32 can be found [here](https://docs.espress
 The crate was initially generated from [esp-generate](https://docs.espressif.com/projects/rust/book/getting-started/tooling/esp-generate.html).
 
 # Configuring your editor
-The `editor_configurations` folder contains default configurations for various editors. To avoid conflicting with any configurations you may have, they have no effect until you move them out into the [esp32](./) folder and add a `.` to the front of the name.
+The [`editor_configurations`](editor_configurations) folder contains default configurations for various editors. To avoid conflicting with any configurations you may have, they have no effect until you move them out into the [esp32](./) folder and add a `.` to the front of the name.
 
 # Pin Layout
 All of the ESP32 DevKitC's pins can be found [here](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block).
@@ -36,21 +36,21 @@ The ESP-Prog-2 can be used as both a JTAG and UART adapter. The pins on the ESP-
   - NC: Not connected to anything
 
 # Binaries
-## `pin_usage_checker`
+## [`pin_usage_checker`](src/bin/pin_usage_checker)
 This is not a program. Rather, it contains a function that declares variables for every pin we might use.
 
 This should be kept up to date with our pin layout, as Rust's borrow checker will prevent us from accidentally using a pin for two different functions.
 
 If your editor's rust-analyzer is functioning properly, it will notify you if you create pin conflicts.
 
-## `pwm`
+## [`pwm`](src/bin/pwm)
 This is a basic program that initializes PWM on pin **26** and sets it to a constant duty cycle of 7.5% with a frequency of 50hz.
 
 This is useful if you ever need to do a simple check to make sure our current ESC isn't misbehaving.
 
 Run with `cargo run --release --bin pwm`
 
-## `spincoater`
+## [`spincoater`](src/bin/spincoater)
 This program lets you run the spincoater at a single plate RPM value for a single time in seconds using the touchscreen. It does the following:
 - Initializes PWM on pin **26**
   - Starts with a constant duty cycle of 7.5% at a frequency of 50hz.
@@ -72,7 +72,7 @@ This program lets you run the spincoater at a single plate RPM value for a singl
 
 Run with `cargo run --bin spincoater`.
 
-## `spincoater_with_pc`
+## [`spincoater_with_pc`](src/bin/spincoater_with_pc)
 This program lets you run the spincoater by sending commands to it from a PC. It does the following:
 - Enables UART communication over the pins:
   - TX: **1 (TX)**
@@ -86,10 +86,46 @@ This program lets you run the spincoater by sending commands to it from a PC. It
 
 Run with `cargo run --bin spincoater_with_pc`.
 
+## [`touchscreen_test`](src/bin/touchscreen_test)
+This program lets you use the touchscreen to discover the resistance of your touches. It does the following:
+- Initializes the touchscreen with the [necessary pins](https://protosupplies.com/wp-content/uploads/2020/07/TFT-LCD-28-240x320-RGB-ILI9341-with-Touchscreen-Connections-Top-Side.jpg) connected as follows:
+  - Vcc: Powered by power PCB. Not connected to DevKitC.
+  - GND: Grounded by power PCB. Not connected to DevKitC.
+  - CS (Display Chip Select): Not initialized because the display is never used.
+  - RESET: Not initialized because the display is never used.
+  - DC (Data/Command): Not initialized because the display is never used.
+  - MOSI and T_MOSI (Master Out Slave In): **33**
+  - SCK and T_CLK (Clock): **32**
+  - LED: Held at a constant 3.3V by the power PCB because the display should always be on.
+  - MISO and T_MISO (Master In Slave Out): **35**
+  - T_CS (Touch Chip Select): **16**
+  - T_IRQ (Touch Interrupt Request): **34**
+- Prints the resistance of touches in Ohms.
+
+Run with `cargo run --bin touchscreen_test`.
+
+## [`touchscreen_calibration`](src/bin/touchscreen_calibration)
+This program lets you calibrate the touchscreen. It does the following:
+- Initializes the display with the [display's pins](https://protosupplies.com/wp-content/uploads/2020/07/TFT-LCD-28-240x320-RGB-ILI9341-with-Touchscreen-Connections-Top-Side.jpg) connected as follows:
+  - Vcc: Powered by power PCB. Not connected to DevKitC.
+  - GND: Grounded by power PCB. Not connected to DevKitC.
+  - CS (Display Chip Select): **19**
+  - RESET: **18**
+  - DC (Data/Command): **25**
+  - MOSI and T_MOSI (Master Out Slave In): **33**
+  - SCK and T_CLK (Clock): **32**
+  - LED: Held at a constant 3.3V by the power PCB because the display should always be on.
+  - MISO and T_MISO (Master In Slave Out): **35**
+  - T_CS (Touch Chip Select): **16**
+  - T_IRQ (Touch Interrupt Request): **34**
+- Repeatedly runs three point calibration, printing the coefficients at the end of each run.
+
+Run with `cargo run --bin touchscreen_calibration`.
+  
 ### UART Communication over an Adapter
 You can perform UART communication using pins other than TX and RX. This would allow you to keep `espflash`'s RTT monitor open while running the program. However, it requires a separate UART-to-USB adapter, such as the [ESP-Prog-2](https://docs.espressif.com/projects/esp-dev-kits/en/latest/other/esp-prog-2/user_guide.html#).
 
-The `spincoater` program has a cargo feature that uses pins **23** and **22** for TX and RX instead. You can run it with `cargo run --bin spincoater_with_pc -F uart_over_adapter`.
+The `spincoater_with_pc`, `touchscreen_test` and `touchscreen_calibration` programs have support for using pins **23** and **22** for TX and RX instead. You can run them with `cargo run --bin <program name> -F uart_over_adapter`.
 
 ### ESC Workaround
-We are currently using pin **15** as a constant output due to a hardware issue.
+We are currently using pin **15** in every program as a constant high output due to a hardware issue.

@@ -52,6 +52,9 @@ pub type WireTx = EioWireTx<RawMutex, UartTx<'static, Async>>;
 
 pub type WireRx = EioWireRx<UartRx<'static, Async>>;
 
+/// The type of sender used to send messages to the host PC.
+pub type ServerSender = server::Sender<WireTx>;
+
 /// Information shared to all handlers.
 pub struct Context {
     /// Used to pass the commands to the runner.
@@ -101,7 +104,7 @@ fn handle_vacuum_pump_request(context: &mut Context, _: VarHeader, request: vacu
     }
 }
 
-fn handle_host_disconnect(_: &mut Context, _: VarHeader, _: (), _: &server::Sender<WireTx>) {
+fn handle_host_disconnect(_: &mut Context, _: VarHeader, _: (), _: &ServerSender) {
     HOST_DISCONNECTED.signal(());
 }
 

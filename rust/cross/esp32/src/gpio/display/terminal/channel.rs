@@ -5,7 +5,7 @@ use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
     channel::{Channel, Receiver, Sender},
 };
-use sc_messages::touchscreen::TouchPoint;
+use embedded_graphics::prelude::Point;
 use static_cell::ConstStaticCell;
 
 /// The maximum number of messages allowed at a time in each channel to/from the terminal.
@@ -27,7 +27,7 @@ pub type TerminalReceiver = Receiver<'static, NoopRawMutex, TuiEvent, TERMINAL_C
 /// All possible messages sent to the terminal.
 pub enum TuiEvent {
     /// The screen was touched.
-    Touch(TouchPoint),
+    Point(Point),
     /// The runner sent an update.
     Runner(RunAt),
     /// The runner finished.

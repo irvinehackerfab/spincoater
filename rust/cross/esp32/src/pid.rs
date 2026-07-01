@@ -12,12 +12,10 @@ pub const K_P_INVERSE: i16 = 8;
 pub fn error(setpoint_rpm: u16, current_rpm: u16) -> i16 {
     setpoint_rpm
         .checked_signed_diff(current_rpm)
-        .unwrap_or_else(|| {
-            if setpoint_rpm < current_rpm {
-                i16::MIN
-            } else {
-                i16::MAX
-            }
+        .unwrap_or(if setpoint_rpm < current_rpm {
+            i16::MIN
+        } else {
+            i16::MAX
         })
 }
 

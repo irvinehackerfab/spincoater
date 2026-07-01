@@ -127,7 +127,6 @@ async fn main(spawner: Spawner) -> ! {
     // Setup context
     let context = Context::new(request_channel.sender(), server_signal, vacuum_pump_pin);
 
-    // Setup UART and postcard-rpc after we're done with the spawner
     let config = esp_hal::uart::Config::default().with_baudrate(BAUD_RATE);
     // Select pins based on the cargo feature
     cfg_select! {

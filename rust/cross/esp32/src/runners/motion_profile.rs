@@ -7,14 +7,13 @@ use crate::{
         pwm::{SETPOINT_LIST_LENGTH, linear_conversion},
     },
     pid::{error, next_control_output},
-    rpc::{HOST_DISCONNECTED, SEQUENCE_NUMBER, WireTx},
+    rpc::{HOST_DISCONNECTED, SEQUENCE_NUMBER, ServerSender},
     runners::sleep,
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver, signal::Signal};
 use embassy_time::Instant;
 use esp_hal::{gpio::Event, mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::Vec;
-use postcard_rpc::server::Sender;
 use sc_messages::{
     icd::MotionProfileStateTopic,
     motion_profile::{self, Request, RequestRefused, Setpoint},
@@ -26,7 +25,7 @@ pub struct Runner {
     setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
     pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
     from_server: Receiver<'static, NoopRawMutex, Request, REQUEST_CHANNEL_LENGTH>,
-    to_server: Sender<WireTx>,
+    to_server: ServerSender,
     server_request_responder: &'static Signal<NoopRawMutex, Result<(), RequestRefused>>,
 }
 
@@ -35,7 +34,7 @@ impl Runner {
         setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
         from_server: Receiver<'static, NoopRawMutex, Request, REQUEST_CHANNEL_LENGTH>,
-        to_server: Sender<WireTx>,
+        to_server: ServerSender,
         server_request_responder: &'static Signal<NoopRawMutex, Result<(), RequestRefused>>,
     ) -> Self {
         Self {

@@ -4,7 +4,6 @@
 pub mod icd;
 pub mod motion_profile;
 pub mod pwm;
-pub mod touchscreen;
 pub mod vacuum_pump;
 
 /// The number of motor revolutions per [`PLATE_REVOLUTIONS`] plate revolutions.

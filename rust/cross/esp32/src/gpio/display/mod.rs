@@ -16,7 +16,7 @@ use mipidsi::{
 use static_cell::{ConstStaticCell, StaticCell};
 
 /// The size of the buffers used for SPI.
-pub const SPI_BUFFER_SIZE: usize = 32768;
+pub const SPI_BUFFER_SIZE: usize = 32000;
 
 /// The buffer used for display pixels.
 pub static SPI_BUFFER: ConstStaticCell<[u8; SPI_BUFFER_SIZE]> = ConstStaticCell::new([0u8; _]);
@@ -37,6 +37,12 @@ pub static SPI: StaticCell<RefCell<SpiDmaBus<'static, Blocking>>> = StaticCell::
 
 /// The static cell for the display.
 pub static DISPLAY: StaticCell<DisplayType> = StaticCell::new();
+
+/// The display width of the ILI9341 in landscape mode.
+pub const WIDTH: i32 = 320;
+
+/// The display height of the ILI9341 in landscape mode.
+pub const HEIGHT: i32 = 240;
 
 /// The orientation settings for mipidsi.
 pub const ORIENTATION: Orientation = Orientation::new().flip_vertical().rotate(Rotation::Deg270);
