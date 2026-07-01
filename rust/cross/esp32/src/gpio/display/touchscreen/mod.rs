@@ -171,7 +171,7 @@ impl<'a> Touchscreen<Normal<'a>> {
                     continue;
                 }
             };
-            // Simple filter to remove spurious interrupts
+            // Simple filter to ignore points returned due to releasing the screen.
             if point.y < 10 {
                 println!("Invalid touch: {point:?}");
             } else {
