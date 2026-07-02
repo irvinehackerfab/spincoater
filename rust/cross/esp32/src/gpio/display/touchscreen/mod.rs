@@ -29,6 +29,11 @@ pub type Device<'a> = RefCellDevice<'a, SpiDmaBus<'a, Blocking>, Output<'a>, Del
 /// The buffer for the XPT.
 pub static XPT_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new([0; _]);
 
+/// The X plate resistance of our display in Ohms.
+///
+/// Found by measuring the resistance between the XP and XN pins of the XPT2046.
+pub const X_PLATE_RESISTANCE: f32 = 275.;
+
 /// The maximum Z resistance which is considered a valid press.
 ///
 /// This is a low enough value to filter out unwanted inputs,
@@ -36,14 +41,21 @@ pub static XPT_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new
 pub const MAX_RESISTANCE: f32 = 400.;
 
 /// The coefficients used by the [`Xpt2046`] to convert touchscreen coordinates to display coordinates.
+///
+/// Found through calibration.
 pub const COEFFICIENTS: Coefficients = Coefficients {
-    alpha_x: 0.002_085_868_3,
-    beta_x: 0.090_170_346,
-    delta_x: -24.611_855,
-    alpha_y: 0.057_622_11,
-    beta_y: -0.009_044_195,
-    delta_y: 30.097_515,
+    alpha_x: 0.001_635_322_9,
+    beta_x: 0.088_103_026,
+    delta_x: -23.65843,
+    alpha_y: 0.055_560_097,
+    beta_y: -0.006_699_714,
+    delta_y: 27.205_103,
 };
+
+/// The minimum Y value which is considered a valid press.
+///
+/// Used to filter out points returned from spurious interrupts.
+pub const MINIMUM_VALID_Y: i32 = 10;
 
 /// A typestate of the [`Touchscreen`].
 ///
@@ -87,7 +99,9 @@ impl<'a> Touchscreen<Test<'a>> {
         buffer: &'a mut [u8; BUFFER_SIZE],
         pen_irq: Input<'a>,
     ) -> Result<Self, <Device<'a> as ErrorType>::Error> {
-        let xpt = Builder::new().try_init(spi, buffer)?;
+        let xpt = Builder::new()
+            .with_x_plate_resistance(X_PLATE_RESISTANCE)
+            .try_init(spi, buffer)?;
         Ok(Self {
             mode: Test { xpt, pen_irq },
         })
@@ -117,6 +131,7 @@ impl<'a> Touchscreen<Calibration<'a>> {
         pen_irq: Input<'a>,
     ) -> Result<Self, <Device<'a> as ErrorType>::Error> {
         let xpt = Builder::new()
+            .with_x_plate_resistance(X_PLATE_RESISTANCE)
             .into_calibration(display, pen_irq)
             .try_init(spi, buffer)?;
         Ok(Self {
@@ -148,6 +163,7 @@ impl<'a> Touchscreen<Normal<'a>> {
     ) -> Result<Self, <Device<'a> as ErrorType>::Error> {
         let xpt = Builder::new()
             .into_interrupt(pen_irq)
+            .with_x_plate_resistance(X_PLATE_RESISTANCE)
             .with_coefficients(&COEFFICIENTS)
             .try_init(spi, buffer)?;
         Ok(Self {
@@ -172,7 +188,7 @@ impl<'a> Touchscreen<Normal<'a>> {
                 }
             };
             // Simple filter to ignore points returned due to releasing the screen.
-            if point.y < 10 {
+            if point.y < MINIMUM_VALID_Y {
                 println!("Invalid touch: {point:?}");
             } else {
                 println!("Touch: {point:?}");

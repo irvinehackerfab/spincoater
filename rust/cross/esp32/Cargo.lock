@@ -2035,7 +2035,7 @@ dependencies = [
 [[package]]
 name = "xpt2046-rs"
 version = "0.1.0"
-source = "git+https://codeberg.org/KingRocco21/xpt2046-rs.git#6ddea9b8d08b0076226eb5f820fd563842b85ef0"
+source = "git+https://codeberg.org/KingRocco21/xpt2046-rs.git#c54acfddd9a49c1d9ed6ecd19d6f0127b9dafec8"
 dependencies = [
  "embedded-graphics",
  "embedded-hal 1.0.0",

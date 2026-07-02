@@ -51,11 +51,6 @@ impl EncoderState {
     ///
     /// Stores the result in the ring buffer.
     pub fn calculate_rpm(&mut self) {
-        /// If you lower this, you risk being too strict and breaking the rpm calculation.
-        /// If too much time passes between non-spurious interrupts,
-        /// the rpm calculator will stop accepting valid rpms.
-        const MAXIMUM_ALLOWED_RPM_DIFFERENCE: usize = 10_000;
-
         let time_since_last_interrupt = self.previous_time.elapsed().as_micros();
         // 1 interrupt * (1 motor revolution / 2 interrupts) * 1/(`time_since_last_interrupt` μs) * (10^6 μs / 1 s) * (60 s / 1 min)
         // = 30,000,000 / `time_since_last_interrupt`
@@ -67,14 +62,7 @@ impl EncoderState {
             Some(rpm) => rpm.try_into().unwrap_or(usize::MAX),
             None => usize::MAX,
         };
-        // Simple filter to remove outliers
-        if self
-            .rpm_ring_buffer
-            .recent()
-            .is_none_or(|previous_rpm| previous_rpm.abs_diff(rpm) < MAXIMUM_ALLOWED_RPM_DIFFERENCE)
-        {
-            self.rpm_ring_buffer.write(rpm);
-        }
+        self.rpm_ring_buffer.write(rpm);
         self.previous_time = Instant::now();
     }
 

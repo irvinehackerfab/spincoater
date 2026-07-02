@@ -21,14 +21,13 @@ use esp_hal::{
     interrupt::software::SoftwareInterruptControl,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     spi::master::{Config, Spi, SpiDmaBus},
-    time::Rate,
     timer::timg::TimerGroup,
 };
 use esp32::{
     SECOND_CORE_STACK,
     gpio::{
         display::{
-            DISPLAY, ORIENTATION, SPI, SPI_BUFFER, SPI_BUFFER_SIZE,
+            DISPLAY, ORIENTATION, SPI, SPI_BUFFER, SPI_BUFFER_SIZE, SPI_CLOCK_RATE, SPI_MODE,
             terminal::{TERMINAL, TerminalState, channel::TERMINAL_CHANNEL, update_terminal},
             touchscreen::{Touchscreen, XPT_BUFFER, run_touchscreen},
         },
@@ -40,7 +39,7 @@ use esp32::{
 };
 use ibm437::IBM437_9X14_REGULAR;
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
-use mousefood::{ColorTheme, EmbeddedBackend, EmbeddedBackendConfig};
+use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
 use ratatui::Terminal;
 use sc_messages::pwm::STOP_DUTY;
 
@@ -134,8 +133,8 @@ async fn main(spawner: Spawner) -> ! {
         let spi = Spi::new(
             peripherals.SPI2,
             Config::default()
-                .with_frequency(Rate::from_mhz(4))
-                .with_mode(esp_hal::spi::Mode::_0),
+                .with_frequency(SPI_CLOCK_RATE)
+                .with_mode(SPI_MODE),
         )
         .expect("Frequency is within 70kHz..80MHz")
         // Master In Slave Out. SPI read line from the display to the microcontroller.
@@ -179,12 +178,13 @@ async fn main(spawner: Spawner) -> ! {
         let config = EmbeddedBackendConfig {
             // The default font is too small so we use a bigger (and more optimzied) one
             font_regular: IBM437_9X14_REGULAR,
-            color_theme: ColorTheme::tokyo_night(),
             ..EmbeddedBackendConfig::default()
         };
         let backend = EmbeddedBackend::new(display, config);
         Terminal::new(backend).expect("Failed to create terminal")
     });
+
+    terminal.clear().expect("Failed to clear the terminal");
 
     // Setup terminal
     let terminal_channel = TERMINAL_CHANNEL.take();

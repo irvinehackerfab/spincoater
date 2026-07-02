@@ -19,11 +19,10 @@ use esp_hal::{
     dma_buffers,
     gpio::{DriveStrength, Input, InputConfig, Level, Output, OutputConfig, Pull},
     spi::master::{Config, Spi, SpiDmaBus},
-    time::Rate,
     timer::timg::TimerGroup,
 };
 use esp32::gpio::display::{
-    DISPLAY, ORIENTATION, SPI, SPI_BUFFER, SPI_BUFFER_SIZE,
+    DISPLAY, ORIENTATION, SPI, SPI_BUFFER, SPI_BUFFER_SIZE, SPI_CLOCK_RATE, SPI_MODE,
     touchscreen::{Touchscreen, XPT_BUFFER},
 };
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
@@ -76,8 +75,8 @@ async fn main(spawner: Spawner) -> ! {
         let spi = Spi::new(
             peripherals.SPI2,
             Config::default()
-                .with_frequency(Rate::from_mhz(4))
-                .with_mode(esp_hal::spi::Mode::_0),
+                .with_frequency(SPI_CLOCK_RATE)
+                .with_mode(SPI_MODE),
         )
         .expect("Frequency is within 70kHz..80MHz")
         // Master In Slave Out. SPI read line from the display to the microcontroller.

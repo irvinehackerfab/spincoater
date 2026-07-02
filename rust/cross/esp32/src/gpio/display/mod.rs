@@ -6,7 +6,13 @@ pub mod touchscreen;
 use core::cell::RefCell;
 
 use embedded_hal_bus::spi::RefCellDevice;
-use esp_hal::{Blocking, delay::Delay, gpio::Output, spi::master::SpiDmaBus};
+use esp_hal::{
+    Blocking,
+    delay::Delay,
+    gpio::Output,
+    spi::{Mode, master::SpiDmaBus},
+    time::Rate,
+};
 use mipidsi::{
     Display,
     interface::SpiInterface,
@@ -20,6 +26,16 @@ pub const SPI_BUFFER_SIZE: usize = 32000;
 
 /// The buffer used for display pixels.
 pub static SPI_BUFFER: ConstStaticCell<[u8; SPI_BUFFER_SIZE]> = ConstStaticCell::new([0u8; _]);
+
+/// The clock rate used for the SPI bus.
+///
+/// Although the ILI9341 can handle 4 MHz, the XPT2046 can only handle [2MHz](xpt2046_rs::builder::Builder::try_init).
+pub const SPI_CLOCK_RATE: Rate = Rate::from_mhz(2);
+
+/// The mode for SPI communication.
+///
+/// The XPT2046 requires [CPOL and CPHA](https://en.wikipedia.org/wiki/Serial_Peripheral_Interface#Clock_polarity_and_phase) to be 0.
+pub const SPI_MODE: Mode = Mode::_0;
 
 /// The entire type of the display as a type alias, so it can be reused.
 pub type DisplayType = Display<
