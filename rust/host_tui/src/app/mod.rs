@@ -4,26 +4,30 @@ pub mod state;
 pub mod ui;
 
 use std::fs::{DirBuilder, OpenOptions};
-use std::io::{self};
+use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
+use std::sync::mpsc::{self, Receiver};
 use std::{env, fs::File};
 
-use crate::app::event::{EventHandler, MCUEvent, TuiEvent};
+use crate::app::event::{TuiEvent, spawn_crossterm_thread, spawn_mcu_thread};
 use crate::app::state::MotionProfileState;
 use chrono::Local;
+use color_eyre::eyre::Context;
 use color_eyre::{Result, eyre::OptionExt};
 use crossterm::event::Event;
 use csv::{Writer, WriterBuilder};
-use postcard_rpc::host_client::HostClient;
-use postcard_rpc::standard_icd::WireError;
+use postcard::to_slice_cobs;
 use ratatui::{
     DefaultTerminal,
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
     widgets::ListState,
 };
-use ringbuffer::{AllocRingBuffer, RingBuffer};
+use ringbuffer::AllocRingBuffer;
+use sc_messages::icd::{HostMessage, MAX_HOST_MESSAGE_SIZE, MAX_MCU_MESSAGE_SIZE, McuMessage};
 use sc_messages::motion_profile::{self, Setpoint};
-use sc_messages::vacuum_pump;
+use sc_messages::vacuum_pump::{self};
+use serial2::SerialPort;
+use static_cell::{ConstStaticCell, StaticCell};
 
 /// The maximum number of MCU logs kept in the TUI at a time.
 pub const MCU_LOG_CAPACITY: usize = 128;
@@ -37,13 +41,24 @@ pub const MOTOR_DATA_SUB_DIR: &str = "motor_data";
 /// The subdirectory for touchscreen data files.
 pub const TOUCHSCREEN_DATA_SUB_DIR: &str = "touchscreen_data";
 
+/// The static cell for the serial port.
+pub static SERIAL_PORT: StaticCell<SerialPort> = StaticCell::new();
+
+/// The buffer used for sending [`HostMessage`]s.
+///
+/// Use this when calling [`App::new`].
+pub static SEND_BUFFER: ConstStaticCell<[u8; MAX_HOST_MESSAGE_SIZE]> = ConstStaticCell::new([0; _]);
+
 /// All the state for the host terminal.
 #[derive(Debug)]
 pub struct App {
     /// This boolean provides an easy way for methods to end the program.
     running: bool,
-    /// Event handler.
-    events: EventHandler,
+    /// The serial connection to the MCU.
+    to_mcu: BufWriter<&'static SerialPort>,
+    send_buffer: &'static mut [u8; MAX_HOST_MESSAGE_SIZE],
+    /// The receiver of [`TuiEvent`]s from the other threads.
+    from_all: Receiver<Result<TuiEvent>>,
     /// The state of the commands section.
     commands_state: ListState,
     /// The current state, as reported by the MCU.
@@ -62,11 +77,22 @@ impl App {
     ///
     /// # Errors
     /// Returns an error if opening the log file fails.
-    pub async fn new(client: HostClient<WireError>) -> Result<Self> {
-        let events = EventHandler::new(client).await?;
+    pub fn new(
+        serial: &'static SerialPort,
+        send_buffer: &'static mut [u8; MAX_HOST_MESSAGE_SIZE],
+        read_buffer: &'static mut [u8; MAX_MCU_MESSAGE_SIZE],
+    ) -> Result<Self> {
+        // Setup communication
+        let (to_app, from_all) = mpsc::channel::<Result<TuiEvent>>();
+        let to_app_2 = to_app.clone();
+        // Spawn thread for getting crossterm events
+        spawn_crossterm_thread(to_app).wrap_err("Failed to spawn crossterm thread")?;
+        spawn_mcu_thread(serial, read_buffer, to_app_2).wrap_err("Failed to spawn MCU thread")?;
         Ok(Self {
             running: true,
-            events,
+            from_all,
+            send_buffer,
+            to_mcu: BufWriter::new(serial),
             mcu_state: None,
             commands_state: ListState::default().with_selected(Some(0)),
             mcu_logs: AllocRingBuffer::new(MCU_LOG_CAPACITY),
@@ -115,17 +141,24 @@ impl App {
     ///
     /// # Errors
     /// Returns an error if drawing to the terminal, receiving events or handling keystrokes fails.
-    pub async fn run(mut self, terminal: DefaultTerminal) -> Result<()> {
-        let result = self.app_loop(terminal).await;
-        self.events.send_disconnect_notification().await;
+    pub fn run(mut self, terminal: DefaultTerminal) -> Result<()> {
+        let result = self.app_loop(terminal);
+        self.send_message(&HostMessage::Disconnecting, true)
+            .wrap_err_with(|| {
+                format!("Failed to disconnect cleanly after ending with result: {result:#?}")
+            })?;
         result
     }
 
     /// Runs the application's main loop.
-    async fn app_loop(&mut self, mut terminal: DefaultTerminal) -> Result<()> {
+    fn app_loop(&mut self, mut terminal: DefaultTerminal) -> Result<()> {
         while self.running {
             terminal.draw(|frame| self.render(frame))?;
-            match self.events.next().await?? {
+            match self
+                .from_all
+                .recv()
+                .wrap_err("Both event senders were dropped")??
+            {
                 TuiEvent::Crossterm(event) => match event {
                     Event::Key(key_event)
                         if key_event.kind == crossterm::event::KeyEventKind::Press =>
@@ -135,7 +168,7 @@ impl App {
                     // We're only concerned with key presses right now.
                     _ => {}
                 },
-                TuiEvent::MCU(usb_event) => self.handle_mcu_event(usb_event)?,
+                TuiEvent::Mcu(message) => self.handle_mcu_message(message)?,
             }
         }
         Ok(())
@@ -170,27 +203,44 @@ impl App {
                 }
                 // Clear all setpoints.
                 1 => self
-                    .events
-                    .send_motion_profile_request(motion_profile::Request::ClearSetpoints),
+                    .send_message(
+                        &HostMessage::MotionProfile(motion_profile::HostMessage::ClearSetpoints),
+                        true,
+                    )
+                    .wrap_err("Failed to clear setpoints")?,
                 // Start the motion profile.
                 2 => {
-                    self.motor_data_file
-                        .replace(Self::open_log_file(MOTOR_DATA_SUB_DIR)?);
-                    self.events
-                        .send_motion_profile_request(motion_profile::Request::Start);
+                    self.motor_data_file = Some(
+                        Self::open_log_file(MOTOR_DATA_SUB_DIR)
+                            .wrap_err("Failed to open log file")?,
+                    );
+                    self.send_message(
+                        &HostMessage::MotionProfile(motion_profile::HostMessage::Start),
+                        true,
+                    )
+                    .wrap_err("Failed to start motion profile")?;
                 }
                 // Stop the motion profile.
                 3 => self
-                    .events
-                    .send_motion_profile_request(motion_profile::Request::Stop),
+                    .send_message(
+                        &HostMessage::MotionProfile(motion_profile::HostMessage::Stop),
+                        true,
+                    )
+                    .wrap_err("Failed to stop motion profile")?,
                 // Enable the vacuum pump.
                 4 => self
-                    .events
-                    .send_vacuum_pump_request(vacuum_pump::Request::Enable),
+                    .send_message(
+                        &HostMessage::VacuumPump(vacuum_pump::HostMessage::Enable),
+                        true,
+                    )
+                    .wrap_err("Failed to enable vacuum pump")?,
                 // Disable the vacuum pump.
                 5 => self
-                    .events
-                    .send_vacuum_pump_request(vacuum_pump::Request::Disable),
+                    .send_message(
+                        &HostMessage::VacuumPump(vacuum_pump::HostMessage::Disable),
+                        true,
+                    )
+                    .wrap_err("Failed to disable vacuum pump")?,
                 _ => {}
             },
             // Other handlers you could add here.
@@ -199,31 +249,23 @@ impl App {
         Ok(())
     }
 
-    fn handle_mcu_event(&mut self, mcu_event: MCUEvent) -> Result<()> {
-        match mcu_event {
-            MCUEvent::Log(msg) => {
-                let _ = self.mcu_logs.enqueue(format!("[Log]: {msg}"));
-            }
-            MCUEvent::State(state) => {
-                self.mcu_state.clone_from(&state);
-                match state {
-                    Some(state) => self
-                        .motor_data_file
+    fn handle_mcu_message(&mut self, message: McuMessage) -> Result<()> {
+        match message {
+            McuMessage::MotionProfile(mcu_message) => match mcu_message {
+                motion_profile::McuMessage::State(state) => {
+                    self.mcu_state = Some(state.clone().into());
+                    self.motor_data_file
                         .as_mut()
                         .ok_or_eyre("The motor data file should be open.")?
-                        .serialize(state)?,
-                    None => {
-                        // Close the writer.
-                        let _ = self.motor_data_file.take();
-                    }
+                        .serialize(state)
+                        .wrap_err("Failed to serialize to CSV file")?;
                 }
-            }
-            MCUEvent::MotionProfileRequestResponse(response) => {
-                let _ = self.mcu_logs.enqueue(format!("{response}"));
-            }
-            MCUEvent::VacuumPumpRequestResponse => {
-                let _ = self.mcu_logs.enqueue("[Vacuum Pump]: Ok".to_string());
-            }
+                motion_profile::McuMessage::Finished => {
+                    self.mcu_state = None;
+                    // Close the writer.
+                    self.motor_data_file = None;
+                }
+            },
         }
         Ok(())
     }
@@ -233,11 +275,29 @@ impl App {
     /// Note that [`postcard_rpc`] makes no guarantee about the order in which setpoints are sent,
     /// but the MCU sorts them before execution.
     fn send_motion_profile(&mut self, path: PathBuf) -> Result<()> {
-        let file = csv::Reader::from_path(path)?;
+        let file = csv::Reader::from_path(path).wrap_err("Failed to read CSV file")?;
         for result in file.into_deserialize() {
-            let setpoint: Setpoint = result?;
-            let command = motion_profile::Request::Add(setpoint);
-            self.events.send_motion_profile_request(command);
+            let setpoint: Setpoint = result.wrap_err("Failed to deserialize from CSV file")?;
+            let command = HostMessage::MotionProfile(motion_profile::HostMessage::Add(setpoint));
+            self.send_message(&command, false)
+                .wrap_err("Failed to send motion profile setpoint")?;
+        }
+        // Flush at the end
+        self.to_mcu.flush().wrap_err("Failed to flush")?;
+        Ok(())
+    }
+
+    /// Sends a single message to the MCU.
+    ///
+    /// If you plan on sending multiple messages, flush [`App::to_mcu`] at the end.
+    fn send_message(&mut self, message: &HostMessage, flush: bool) -> Result<()> {
+        let used =
+            to_slice_cobs(message, self.send_buffer).wrap_err("Failed to serialize HostMessage")?;
+        self.to_mcu
+            .write_all(used)
+            .wrap_err("Failed to write to serial port")?;
+        if flush {
+            self.to_mcu.flush().wrap_err("Failed to flush")?;
         }
         Ok(())
     }

@@ -11,17 +11,18 @@
 
 pub mod gpio;
 pub mod pid;
-pub mod rpc;
 pub mod runners;
+pub mod servers;
 
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, signal::Signal};
+use embassy_sync::{
+    blocking_mutex::raw::NoopRawMutex,
+    zerocopy_channel::{Channel, Receiver, Sender},
+};
 use embassy_time::Duration;
 use esp_hal::system::Stack;
 use esp_rtos::embassy::InterruptExecutor;
-use sc_messages::motion_profile::{Request, RequestRefused};
+use sc_messages::motion_profile;
 use static_cell::{ConstStaticCell, StaticCell};
-
-use crate::gpio::pwm::SETPOINT_LIST_LENGTH;
 
 /// The stack of the second core.
 pub static SECOND_CORE_STACK: ConstStaticCell<Stack<8192>> = ConstStaticCell::new(Stack::new());
@@ -35,19 +36,32 @@ pub static SECOND_CORE_EXECUTOR: StaticCell<InterruptExecutor<2>> = StaticCell::
 /// The only consequence of this is a less accurate moving average.
 pub const LOOP_PERIOD: Duration = Duration::from_millis(20);
 
-/// The length of the buffer used by [`REQUEST_CHANNEL`].
-pub const REQUEST_CHANNEL_LENGTH: usize = SETPOINT_LIST_LENGTH;
+use crate::gpio::pwm::SETPOINT_LIST_LENGTH;
 
-/// Used for passing motion profile requests from the server to the request handler.
+/// The buffer used by [`RUNNER_REQUEST_CHANNEL`].
+pub static RUNNER_REQUEST_BUFFER: ConstStaticCell<
+    [motion_profile::HostMessage; SETPOINT_LIST_LENGTH],
+> = ConstStaticCell::new([const { motion_profile::HostMessage::Stop }; _]);
+
+/// Used for passing [`HostMessage`]s from the server.
+///
+/// This is zerocopy because the messages are expensive to copy.
+/// This uses [`NoopRawMutex`] because data is only shared in one executor.
+pub static RUNNER_REQUEST_CHANNEL: StaticCell<Channel<NoopRawMutex, motion_profile::HostMessage>> =
+    StaticCell::new();
+
+pub type RunnerRequestReceiver = Receiver<'static, NoopRawMutex, motion_profile::HostMessage>;
+pub type RunnerRequestSender = Sender<'static, NoopRawMutex, motion_profile::HostMessage>;
+
+/// The buffer used by [`RUNNER_RESPONSE_CHANNEL`].
+pub static RUNNER_RESPONSE_BUFFER: ConstStaticCell<[motion_profile::McuMessage; 4]> =
+    ConstStaticCell::new([const { motion_profile::McuMessage::Finished }; _]);
+
+/// Used for passing [`McuMessage`]s to the server.
 ///
 /// This uses [`NoopRawMutex`] because data is only shared in one executor.
-pub static REQUEST_CHANNEL: ConstStaticCell<
-    Channel<NoopRawMutex, Request, REQUEST_CHANNEL_LENGTH>,
-> = ConstStaticCell::new(Channel::new());
+pub static RUNNER_RESPONSE_CHANNEL: StaticCell<Channel<NoopRawMutex, motion_profile::McuMessage>> =
+    StaticCell::new();
 
-/// Used for passing request responses from the request handler to the server.
-///
-/// This is a signal because the server always waits for one response after sending a request.
-pub static REQUEST_RESPONSE_SIGNAL: ConstStaticCell<
-    Signal<NoopRawMutex, Result<(), RequestRefused>>,
-> = ConstStaticCell::new(Signal::new());
+pub type RunnerResponseReceiver = Receiver<'static, NoopRawMutex, motion_profile::McuMessage>;
+pub type RunnerResponseSender = Sender<'static, NoopRawMutex, motion_profile::McuMessage>;

@@ -6,7 +6,6 @@ use core::{
     ops::Deref,
 };
 
-use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
 /// The value corresponding to 100% of the PWM period.
@@ -26,7 +25,7 @@ pub const STOP_DUTY: u16 = PERIOD / 40 * 3;
 
 /// A duty cycle.
 /// 0-100% is encoded as 0..[`PERIOD`].
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Schema)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DutyCycle(u16);
 
 impl Deref for DutyCycle {
@@ -40,7 +39,7 @@ impl Deref for DutyCycle {
 impl From<u16> for DutyCycle {
     /// Wraps a [`u16`] in [`DutyCycle`].
     ///
-    /// Truncates to [`MAX_POWER_DUTY`].
+    /// Clamps `value` to a maximum of [`MAX_POWER_DUTY`].
     fn from(value: u16) -> Self {
         Self(value.min(MAX_POWER_DUTY))
     }
@@ -49,10 +48,9 @@ impl From<u16> for DutyCycle {
 impl From<u32> for DutyCycle {
     /// Wraps a [`u32`] in [`DutyCycle`].
     ///
-    /// Truncates to [`MAX_POWER_DUTY`].
-    #[allow(clippy::cast_possible_truncation)]
+    /// Clamps `value` to a maximum of [`MAX_POWER_DUTY`].
     fn from(value: u32) -> Self {
-        Self((value as u16).min(MAX_POWER_DUTY))
+        Self(value.try_into().unwrap_or(u16::MAX).min(MAX_POWER_DUTY))
     }
 }
 

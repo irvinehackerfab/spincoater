@@ -8,6 +8,7 @@
 #![deny(clippy::large_stack_frames)]
 
 use embassy_executor::Spawner;
+use embassy_sync::zerocopy_channel::Channel;
 use embassy_time::Timer;
 use esp_backtrace as _;
 use esp_hal::{
@@ -16,20 +17,20 @@ use esp_hal::{
     interrupt::software::SoftwareInterruptControl,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     timer::timg::TimerGroup,
-    uart::Uart,
+    uart::{AtCmdConfig, DataBits, Parity, StopBits, Uart, UartInterrupt},
 };
 use esp_println::println;
 use esp32::{
-    REQUEST_CHANNEL, REQUEST_RESPONSE_SIGNAL, SECOND_CORE_STACK,
+    RUNNER_REQUEST_BUFFER, RUNNER_REQUEST_CHANNEL, RUNNER_RESPONSE_BUFFER, RUNNER_RESPONSE_CHANNEL,
+    SECOND_CORE_STACK,
     gpio::{
         encoder::ENCODER,
         interrupt_handler,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
     },
-    rpc::{Context, Dispatcher, FRAME_BUFFER, WIRE_STORAGE},
     runners::motion_profile::{Runner, run},
+    servers::uart::{self, READ_BUFFER, SEND_BUFFER, ServerRx, ServerTx, run_server_rx},
 };
-use postcard_rpc::server::{Dispatch, Server};
 use sc_messages::{icd::BAUD_RATE, pwm::STOP_DUTY};
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
@@ -117,62 +118,50 @@ async fn main(spawner: Spawner) -> ! {
     let vacuum_pump_pin = Output::new(peripherals.GPIO17, Level::Low, OutputConfig::default());
 
     // Setup communication between tasks
-    let request_channel = REQUEST_CHANNEL.take();
+    let request_channel =
+        RUNNER_REQUEST_CHANNEL.init_with(|| Channel::new(RUNNER_REQUEST_BUFFER.take()));
+    let (to_runner, from_server) = request_channel.split();
+    let response_channel =
+        RUNNER_RESPONSE_CHANNEL.init_with(|| Channel::new(RUNNER_RESPONSE_BUFFER.take()));
+    let (to_server, from_runner) = response_channel.split();
 
     // Initialize the setpoint list with a starting setpoint of (0, 0).
     let setpoints = SETPOINTS.take();
 
-    let server_signal = REQUEST_RESPONSE_SIGNAL.take();
-
-    // Setup context
-    let context = Context::new(request_channel.sender(), server_signal, vacuum_pump_pin);
-
-    let config = esp_hal::uart::Config::default().with_baudrate(BAUD_RATE);
+    // Setup UART
+    let config = esp_hal::uart::Config::default()
+        .with_baudrate(BAUD_RATE)
+        .with_parity(Parity::Even)
+        .with_data_bits(DataBits::_8)
+        .with_stop_bits(StopBits::_1);
+    let mut uart = Uart::new(peripherals.UART1, config).expect("Failed to initialize UART");
+    uart.set_at_cmd(AtCmdConfig::default().with_cmd_char(0));
     // Select pins based on the cargo feature
     cfg_select! {
         feature = "uart_over_adapter" => {
-            let uart = Uart::new(peripherals.UART1, config)
-                .expect("Failed to initialize UART")
+            uart = uart
                 .with_tx(peripherals.GPIO23)
-                .with_rx(peripherals.GPIO22)
-                .into_async();
+                .with_rx(peripherals.GPIO22);
         }
         _ => {
             println!("Taking control of the UART port. Please close RTT and open the host PC program.");
             // We have to wait for the print statement to arrive at `espflash`'s RTT monitor before taking control.
             Timer::after_millis(100).await;
-            let uart = Uart::new(peripherals.UART1, config)
-                .expect("Failed to initialize UART")
+            uart = uart
                 .with_tx(peripherals.GPIO1)
-                .with_rx(peripherals.GPIO3)
-                .into_async();
+                .with_rx(peripherals.GPIO3);
         }
     }
+    uart.set_interrupt_handler(uart::interrupt_handler);
+    uart.listen(UartInterrupt::AtCmd);
     let (rx, tx) = uart.split();
-    let dispatcher = Dispatcher::new(context, ());
-    let (wire_rx, wire_tx) = WIRE_STORAGE
-        .init(rx, tx)
-        .expect("Failed to create wire RX and TX");
-    let frame_buffer = FRAME_BUFFER.take();
-    let vkk = dispatcher.min_key_len();
-    let mut server = Server::new(
-        wire_tx,
-        wire_rx,
-        frame_buffer.as_mut_slice(),
-        dispatcher,
-        vkk,
-    );
+    let server_rx = ServerRx::new(rx, READ_BUFFER.take(), to_runner, vacuum_pump_pin);
+    spawner.must_spawn(run_server_rx(server_rx));
+    let mut server_tx = ServerTx::new(tx, SEND_BUFFER.take(), from_runner);
 
-    let runner = Runner::new(
-        setpoints,
-        pwm_pin,
-        request_channel.receiver(),
-        server.sender(),
-        server_signal,
-    );
+    // Setup runner
+    let runner = Runner::new(setpoints, pwm_pin, from_server, to_server);
     spawner.must_spawn(run(runner));
 
-    loop {
-        let _ = server.run().await;
-    }
+    server_tx.send_messages().await;
 }

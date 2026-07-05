@@ -1,22 +1,19 @@
 //! This module contains the functionality for running motion profiles sent by the host PC.
 
 use crate::{
-    REQUEST_CHANNEL_LENGTH,
+    RunnerRequestReceiver, RunnerResponseSender,
     gpio::{
         encoder::{ENCODER, ENCODER_STATE, EncoderState, calculate_average_rpm},
         pwm::{SETPOINT_LIST_LENGTH, linear_conversion},
     },
     pid::{error, next_control_output},
-    rpc::{HOST_DISCONNECTED, SEQUENCE_NUMBER, ServerSender},
     runners::sleep,
 };
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Receiver, signal::Signal};
 use embassy_time::Instant;
 use esp_hal::{gpio::Event, mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::Vec;
 use sc_messages::{
-    icd::MotionProfileStateTopic,
-    motion_profile::{self, Request, RequestRefused, Setpoint},
+    motion_profile::{HostMessage, McuMessage, Setpoint, State},
     pwm::{DutyCycle, HALF_POWER_DUTY, STOP_DUTY},
 };
 
@@ -24,25 +21,22 @@ use sc_messages::{
 pub struct Runner {
     setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
     pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
-    from_server: Receiver<'static, NoopRawMutex, Request, REQUEST_CHANNEL_LENGTH>,
-    to_server: ServerSender,
-    server_request_responder: &'static Signal<NoopRawMutex, Result<(), RequestRefused>>,
+    from_server: RunnerRequestReceiver,
+    to_server: RunnerResponseSender,
 }
 
 impl Runner {
     pub fn new(
         setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
-        from_server: Receiver<'static, NoopRawMutex, Request, REQUEST_CHANNEL_LENGTH>,
-        to_server: ServerSender,
-        server_request_responder: &'static Signal<NoopRawMutex, Result<(), RequestRefused>>,
+        from_server: RunnerRequestReceiver,
+        to_server: RunnerResponseSender,
     ) -> Self {
         Self {
             setpoints,
             pwm_pin,
             from_server,
             to_server,
-            server_request_responder,
         }
     }
 
@@ -80,30 +74,18 @@ impl Runner {
     ///
     /// Repeatedly waits for setpoints until a start message is received.
     async fn setup(&mut self) {
-        // We only care if the host disconnects during execution.
-        HOST_DISCONNECTED.reset();
         loop {
             match self.from_server.receive().await {
-                Request::Add(setpoint) => match self.setpoints.push(setpoint.clone()) {
-                    Ok(()) => self.server_request_responder.signal(Ok(())),
-                    Err(_) => self
-                        .server_request_responder
-                        .signal(Err(RequestRefused::TooManySetpoints)),
-                },
-                Request::ClearSetpoints => {
-                    self.clear();
-                    self.server_request_responder.signal(Ok(()));
+                HostMessage::Add(setpoint) => {
+                    let _ = self.setpoints.push(setpoint.clone());
                 }
-                Request::Start => {
-                    self.server_request_responder.signal(Ok(()));
-                    // `postcard_rpc` sometimes sends setpoints out of order, so we have to sort them.
+                HostMessage::ClearSetpoints => self.clear(),
+                HostMessage::Start => {
+                    // Sort the setpoints just in case the host PC sent them out of order.
                     self.setpoints.sort();
                     break;
                 }
-                Request::Stop => {
-                    self.server_request_responder
-                        .signal(Err(RequestRefused::NotRunning));
-                }
+                HostMessage::Stop => {}
             }
         }
     }
@@ -119,36 +101,19 @@ impl Runner {
             previous_sleep_end = sleep(previous_sleep_end).await;
 
             // Check for stop requests.
-            if let Ok(command) = self.from_server.try_receive() {
-                match command {
-                    Request::Add(_) | Request::ClearSetpoints | Request::Start => {
-                        self.server_request_responder
-                            .signal(Err(RequestRefused::Running));
-                    }
-                    Request::Stop => {
-                        self.server_request_responder.signal(Ok(()));
-                        self.pwm_pin.set_timestamp(STOP_DUTY);
-                        let _ = self
-                            .to_server
-                            .log_str("Motion profile stopped early.")
-                            .await;
-                        break;
-                    }
+            if let Some(message) = self.from_server.try_receive() {
+                let should_stop = matches!(message, HostMessage::Stop);
+                self.from_server.receive_done();
+                if should_stop {
+                    break;
                 }
-            }
-
-            // Check for host disconnects.
-            if HOST_DISCONNECTED.try_take().is_some() {
-                self.pwm_pin.set_timestamp(STOP_DUTY);
-                break;
             }
 
             let elapsed_since_start_micros = starting_time.elapsed().as_micros();
 
             // Feedforward
-            let Some((setpoint_rpm, setpoint_duty_cycle)) = self
-                .feedforward(&mut setpoint_idx, elapsed_since_start_micros)
-                .await
+            let Some((setpoint_rpm, setpoint_duty_cycle)) =
+                self.feedforward(&mut setpoint_idx, elapsed_since_start_micros)
             else {
                 break;
             };
@@ -165,29 +130,23 @@ impl Runner {
             self.pwm_pin.set_timestamp(duty_cycle);
 
             // Logging
-            let state = Some(motion_profile::State {
+            let state = State {
                 setpoint_rpm,
                 current_rpm,
                 rpm_error,
                 duty_cycle: DutyCycle::from(duty_cycle),
                 time: elapsed_since_start_micros,
-            });
-            if self
-                .to_server
-                .publish::<MotionProfileStateTopic>(SEQUENCE_NUMBER, &state)
-                .await
-                .is_err()
-            {
-                // The host PC disconnected, so we need to stop.
-                self.pwm_pin.set_timestamp(STOP_DUTY);
-                break;
-            }
+            };
+            let buf = self.to_server.send().await;
+            *buf = McuMessage::State(state);
+            self.to_server.send_done();
         }
-        // Report that there is no more state.
-        let _ = self
-            .to_server
-            .publish::<MotionProfileStateTopic>(SEQUENCE_NUMBER, &None)
-            .await;
+        // Disable PWM
+        self.pwm_pin.set_timestamp(STOP_DUTY);
+        // Report that the motion profile is finished.
+        let buf = self.to_server.send().await;
+        *buf = McuMessage::Finished;
+        self.to_server.send_done();
     }
 
     /// Calculates the setpoint rpm and duty cycle for this timestep.
@@ -195,39 +154,21 @@ impl Runner {
     /// If there are no more setpoints to use, the method will disable PWM, log that the motion profile finished, and return [`None`].
     ///
     /// If the rpm doesn't fit in a [`u16`], the method will disable PWM, log the error, and then return [`None`].
-    ///
-    /// It must disable PWM itself because it awaits upon failure,
-    /// and we don't want to wait on some other task before disabling PWM.
-    async fn feedforward(
+    fn feedforward(
         &mut self,
         setpoint_idx: &mut usize,
         elapsed_since_start_micros: u64,
     ) -> Option<(u16, DutyCycle)> {
         // Get next pair of setpoints.
-        let Some((previous_setpoint, current_setpoint)) =
-            self.next_setpoint_pair(setpoint_idx, elapsed_since_start_micros)
-        else {
-            self.pwm_pin.set_timestamp(STOP_DUTY);
-            let _ = self.to_server.log_str("Motion profile done.").await;
-            return None;
-        };
+        let (previous_setpoint, current_setpoint) =
+            self.next_setpoint_pair(setpoint_idx, elapsed_since_start_micros)?;
 
         // Get setpoint rpm.
-        let Some(setpoint_rpm) = self
-            .next_setpoint_rpm(
-                previous_setpoint,
-                current_setpoint,
-                elapsed_since_start_micros,
-            )
-            .await
-        else {
-            self.pwm_pin.set_timestamp(STOP_DUTY);
-            let _ = self
-                .to_server
-                .log_str("Failed to calculate setpoint RPM. Stopping!")
-                .await;
-            return None;
-        };
+        let setpoint_rpm = Self::next_setpoint_rpm(
+            previous_setpoint,
+            current_setpoint,
+            elapsed_since_start_micros,
+        )?;
         // Then we need to linearly interpolate to find the required duty cycle.
         Some((setpoint_rpm, linear_conversion(setpoint_rpm)))
     }
@@ -264,9 +205,8 @@ impl Runner {
     /// See [Wikipedia's explanation for linear approximation](https://en.wikipedia.org/wiki/Linear_interpolation#Linear_interpolation_as_an_approximation).
     ///
     /// # Errors
-    /// Returns None if one of multiple possible arithmetic errors occurs.
-    async fn next_setpoint_rpm(
-        &self,
+    /// Returns [`None`] if one of multiple possible arithmetic errors occurs.
+    fn next_setpoint_rpm(
         previous_setpoint: &Setpoint,
         current_setpoint: &Setpoint,
         elapsed_since_start_micros: u64,
@@ -276,25 +216,15 @@ impl Runner {
         let current_setpoint_rpm = u64::from(current_setpoint.rpm);
         let delta_rpm = current_setpoint_rpm.saturating_sub(previous_setpoint_rpm);
         let delta_time = elapsed_since_start_micros.saturating_sub(previous_setpoint.time);
-        let Some(numerator) = delta_rpm.checked_mul(delta_time) else {
-            let _ = self.to_server.log_str("Multiplication overflowed!").await;
-            return None;
-        };
+        let numerator = delta_rpm.checked_mul(delta_time)?;
         let denominator = current_setpoint.time.saturating_sub(previous_setpoint.time);
         let Some(interpolation) = numerator.checked_div(denominator) else {
             return Some(previous_setpoint.rpm);
         };
         let Ok(interpolation) = u16::try_from(interpolation) else {
-            let _ = self
-                .to_server
-                .log_str("Interpolation exceeds u16::MAX!")
-                .await;
             return None;
         };
-        let Some(result) = previous_setpoint.rpm.checked_add(interpolation) else {
-            let _ = self.to_server.log_str("RPM exceeds u16::MAX!").await;
-            return None;
-        };
+        let result = previous_setpoint.rpm.checked_add(interpolation)?;
         Some(result)
     }
 }
