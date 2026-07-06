@@ -38,6 +38,8 @@
             # For Rusty File Dialogs
             wayland
             xdg-desktop-portal-gtk
+            # For serialport
+            udev
           ];
 
           shellHook = ''

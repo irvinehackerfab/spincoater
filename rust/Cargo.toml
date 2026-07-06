@@ -22,6 +22,8 @@ thiserror = "2.0.18"
 csv = "1.4.0"
 # For loading motion profile files
 rfd = "0.17.2"
+# For serial port enumeration
+serialport = "4.9.0"
 # For UART communication
 serial2 = "0.2.37"
 # For linear regression of RPM values and duty cycle values

@@ -17,19 +17,21 @@ use esp_hal::{
     interrupt::software::SoftwareInterruptControl,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     timer::timg::TimerGroup,
-    uart::{AtCmdConfig, DataBits, Parity, StopBits, Uart, UartInterrupt},
+    uart::{DataBits, Parity, StopBits, Uart},
 };
 use esp_println::println;
 use esp32::{
     RUNNER_REQUEST_BUFFER, RUNNER_REQUEST_CHANNEL, RUNNER_RESPONSE_BUFFER, RUNNER_RESPONSE_CHANNEL,
-    SECOND_CORE_STACK,
+    RUNNER_RESPONSE_SENDER_MUTEX, RunnerResponseSenderMutex, SECOND_CORE_STACK,
     gpio::{
         encoder::ENCODER,
         interrupt_handler,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
     },
     runners::motion_profile::{Runner, run},
-    servers::uart::{self, READ_BUFFER, SEND_BUFFER, ServerRx, ServerTx, run_server_rx},
+    servers::uart::{
+        READ_ACCUMULATOR, READ_BUFFER, SEND_BUFFER, ServerRx, ServerTx, run_server_rx,
+    },
 };
 use sc_messages::{icd::BAUD_RATE, pwm::STOP_DUTY};
 
@@ -124,6 +126,8 @@ async fn main(spawner: Spawner) -> ! {
     let response_channel =
         RUNNER_RESPONSE_CHANNEL.init_with(|| Channel::new(RUNNER_RESPONSE_BUFFER.take()));
     let (to_server, from_runner) = response_channel.split();
+    let to_server =
+        RUNNER_RESPONSE_SENDER_MUTEX.init_with(|| RunnerResponseSenderMutex::new(to_server));
 
     // Initialize the setpoint list with a starting setpoint of (0, 0).
     let setpoints = SETPOINTS.take();
@@ -131,11 +135,12 @@ async fn main(spawner: Spawner) -> ! {
     // Setup UART
     let config = esp_hal::uart::Config::default()
         .with_baudrate(BAUD_RATE)
-        .with_parity(Parity::Even)
+        .with_parity(Parity::None)
         .with_data_bits(DataBits::_8)
         .with_stop_bits(StopBits::_1);
-    let mut uart = Uart::new(peripherals.UART1, config).expect("Failed to initialize UART");
-    uart.set_at_cmd(AtCmdConfig::default().with_cmd_char(0));
+    let mut uart = Uart::new(peripherals.UART1, config)
+        .expect("Failed to initialize UART")
+        .into_async();
     // Select pins based on the cargo feature
     cfg_select! {
         feature = "uart_over_adapter" => {
@@ -152,15 +157,20 @@ async fn main(spawner: Spawner) -> ! {
                 .with_rx(peripherals.GPIO3);
         }
     }
-    uart.set_interrupt_handler(uart::interrupt_handler);
-    uart.listen(UartInterrupt::AtCmd);
     let (rx, tx) = uart.split();
-    let server_rx = ServerRx::new(rx, READ_BUFFER.take(), to_runner, vacuum_pump_pin);
+    let server_rx = ServerRx::new(
+        rx,
+        READ_BUFFER.take(),
+        READ_ACCUMULATOR.take(),
+        to_runner,
+        &*to_server,
+        vacuum_pump_pin,
+    );
     spawner.must_spawn(run_server_rx(server_rx));
     let mut server_tx = ServerTx::new(tx, SEND_BUFFER.take(), from_runner);
 
     // Setup runner
-    let runner = Runner::new(setpoints, pwm_pin, from_server, to_server);
+    let runner = Runner::new(setpoints, pwm_pin, from_server, &*to_server);
     spawner.must_spawn(run(runner));
 
     server_tx.send_messages().await;

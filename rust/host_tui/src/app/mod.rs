@@ -4,25 +4,26 @@ pub mod state;
 pub mod ui;
 
 use std::fs::{DirBuilder, OpenOptions};
-use std::io::{self, BufWriter, Write};
+use std::io::{self};
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::{env, fs::File};
 
-use crate::app::event::{TuiEvent, spawn_crossterm_thread, spawn_mcu_thread};
+use crate::app::event::{
+    TuiEvent, spawn_crossterm_thread, spawn_heartbeat_thread, spawn_rx_thread, spawn_tx_thread,
+};
 use crate::app::state::MotionProfileState;
 use chrono::Local;
-use color_eyre::eyre::Context;
+use color_eyre::eyre::{Context, bail};
 use color_eyre::{Result, eyre::OptionExt};
 use crossterm::event::Event;
 use csv::{Writer, WriterBuilder};
-use postcard::to_slice_cobs;
 use ratatui::{
     DefaultTerminal,
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
     widgets::ListState,
 };
-use ringbuffer::AllocRingBuffer;
+use ringbuffer::{AllocRingBuffer, RingBuffer};
 use sc_messages::icd::{HostMessage, MAX_HOST_MESSAGE_SIZE, MAX_MCU_MESSAGE_SIZE, McuMessage};
 use sc_messages::motion_profile::{self, Setpoint};
 use sc_messages::vacuum_pump::{self};
@@ -54,9 +55,8 @@ pub static SEND_BUFFER: ConstStaticCell<[u8; MAX_HOST_MESSAGE_SIZE]> = ConstStat
 pub struct App {
     /// This boolean provides an easy way for methods to end the program.
     running: bool,
-    /// The serial connection to the MCU.
-    to_mcu: BufWriter<&'static SerialPort>,
-    send_buffer: &'static mut [u8; MAX_HOST_MESSAGE_SIZE],
+    /// The channel for sending messages to the MCU.
+    to_mcu: Sender<HostMessage>,
     /// The receiver of [`TuiEvent`]s from the other threads.
     from_all: Receiver<Result<TuiEvent>>,
     /// The state of the commands section.
@@ -85,14 +85,19 @@ impl App {
         // Setup communication
         let (to_app, from_all) = mpsc::channel::<Result<TuiEvent>>();
         let to_app_2 = to_app.clone();
+        let to_app_3 = to_app.clone();
+        let (to_mcu, from_app) = mpsc::channel::<HostMessage>();
+        let to_mcu_2 = to_mcu.clone();
         // Spawn thread for getting crossterm events
         spawn_crossterm_thread(to_app).wrap_err("Failed to spawn crossterm thread")?;
-        spawn_mcu_thread(serial, read_buffer, to_app_2).wrap_err("Failed to spawn MCU thread")?;
+        spawn_rx_thread(serial, read_buffer, to_app_2).wrap_err("Failed to spawn RX thread")?;
+        spawn_tx_thread(serial, send_buffer, to_app_3, from_app)
+            .wrap_err("Failed to spawn TX thread")?;
+        spawn_heartbeat_thread(to_mcu_2).wrap_err("Failed to spawn heartbeat thread")?;
         Ok(Self {
             running: true,
             from_all,
-            send_buffer,
-            to_mcu: BufWriter::new(serial),
+            to_mcu,
             mcu_state: None,
             commands_state: ListState::default().with_selected(Some(0)),
             mcu_logs: AllocRingBuffer::new(MCU_LOG_CAPACITY),
@@ -143,7 +148,8 @@ impl App {
     /// Returns an error if drawing to the terminal, receiving events or handling keystrokes fails.
     pub fn run(mut self, terminal: DefaultTerminal) -> Result<()> {
         let result = self.app_loop(terminal);
-        self.send_message(&HostMessage::Disconnecting, true)
+        self.to_mcu
+            .send(HostMessage::Disconnecting)
             .wrap_err_with(|| {
                 format!("Failed to disconnect cleanly after ending with result: {result:#?}")
             })?;
@@ -169,6 +175,12 @@ impl App {
                     _ => {}
                 },
                 TuiEvent::Mcu(message) => self.handle_mcu_message(message)?,
+                TuiEvent::Heartbeat => {
+                    self.to_mcu
+                        .send(HostMessage::Heartbeat)
+                        .wrap_err("Failed to send heartbeat")?;
+                    self.mcu_logs.enqueue("Sent heartbeat".to_string());
+                }
             }
         }
         Ok(())
@@ -203,10 +215,10 @@ impl App {
                 }
                 // Clear all setpoints.
                 1 => self
-                    .send_message(
-                        &HostMessage::MotionProfile(motion_profile::HostMessage::ClearSetpoints),
-                        true,
-                    )
+                    .to_mcu
+                    .send(HostMessage::MotionProfile(
+                        motion_profile::HostMessage::ClearSetpoints,
+                    ))
                     .wrap_err("Failed to clear setpoints")?,
                 // Start the motion profile.
                 2 => {
@@ -214,32 +226,28 @@ impl App {
                         Self::open_log_file(MOTOR_DATA_SUB_DIR)
                             .wrap_err("Failed to open log file")?,
                     );
-                    self.send_message(
-                        &HostMessage::MotionProfile(motion_profile::HostMessage::Start),
-                        true,
-                    )
-                    .wrap_err("Failed to start motion profile")?;
+                    self.to_mcu
+                        .send(HostMessage::MotionProfile(
+                            motion_profile::HostMessage::Start,
+                        ))
+                        .wrap_err("Failed to start motion profile")?;
                 }
                 // Stop the motion profile.
                 3 => self
-                    .send_message(
-                        &HostMessage::MotionProfile(motion_profile::HostMessage::Stop),
-                        true,
-                    )
+                    .to_mcu
+                    .send(HostMessage::MotionProfile(
+                        motion_profile::HostMessage::Stop,
+                    ))
                     .wrap_err("Failed to stop motion profile")?,
                 // Enable the vacuum pump.
                 4 => self
-                    .send_message(
-                        &HostMessage::VacuumPump(vacuum_pump::HostMessage::Enable),
-                        true,
-                    )
+                    .to_mcu
+                    .send(HostMessage::VacuumPump(vacuum_pump::HostMessage::Enable))
                     .wrap_err("Failed to enable vacuum pump")?,
                 // Disable the vacuum pump.
                 5 => self
-                    .send_message(
-                        &HostMessage::VacuumPump(vacuum_pump::HostMessage::Disable),
-                        true,
-                    )
+                    .to_mcu
+                    .send(HostMessage::VacuumPump(vacuum_pump::HostMessage::Disable))
                     .wrap_err("Failed to disable vacuum pump")?,
                 _ => {}
             },
@@ -266,6 +274,8 @@ impl App {
                     self.motor_data_file = None;
                 }
             },
+            McuMessage::Heartbeat => {}
+            McuMessage::Error(error) => bail!("MCU failed: {:#?}", error),
         }
         Ok(())
     }
@@ -278,26 +288,10 @@ impl App {
         let file = csv::Reader::from_path(path).wrap_err("Failed to read CSV file")?;
         for result in file.into_deserialize() {
             let setpoint: Setpoint = result.wrap_err("Failed to deserialize from CSV file")?;
-            let command = HostMessage::MotionProfile(motion_profile::HostMessage::Add(setpoint));
-            self.send_message(&command, false)
-                .wrap_err("Failed to send motion profile setpoint")?;
-        }
-        // Flush at the end
-        self.to_mcu.flush().wrap_err("Failed to flush")?;
-        Ok(())
-    }
-
-    /// Sends a single message to the MCU.
-    ///
-    /// If you plan on sending multiple messages, flush [`App::to_mcu`] at the end.
-    fn send_message(&mut self, message: &HostMessage, flush: bool) -> Result<()> {
-        let used =
-            to_slice_cobs(message, self.send_buffer).wrap_err("Failed to serialize HostMessage")?;
-        self.to_mcu
-            .write_all(used)
-            .wrap_err("Failed to write to serial port")?;
-        if flush {
-            self.to_mcu.flush().wrap_err("Failed to flush")?;
+            let message = HostMessage::MotionProfile(motion_profile::HostMessage::Add(setpoint));
+            self.to_mcu
+                .send(message)
+                .wrap_err("Failed to send setpoint")?;
         }
         Ok(())
     }

@@ -1,7 +1,7 @@
 //! This module contains the functionality for running motion profiles sent by the host PC.
 
 use crate::{
-    RunnerRequestReceiver, RunnerResponseSender,
+    RunnerRequestReceiver, RunnerResponseSenderMutex,
     gpio::{
         encoder::{ENCODER, ENCODER_STATE, EncoderState, calculate_average_rpm},
         pwm::{SETPOINT_LIST_LENGTH, linear_conversion},
@@ -13,6 +13,7 @@ use embassy_time::Instant;
 use esp_hal::{gpio::Event, mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::Vec;
 use sc_messages::{
+    icd,
     motion_profile::{HostMessage, McuMessage, Setpoint, State},
     pwm::{DutyCycle, HALF_POWER_DUTY, STOP_DUTY},
 };
@@ -22,7 +23,7 @@ pub struct Runner {
     setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
     pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
     from_server: RunnerRequestReceiver,
-    to_server: RunnerResponseSender,
+    to_server: &'static RunnerResponseSenderMutex,
 }
 
 impl Runner {
@@ -30,7 +31,7 @@ impl Runner {
         setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
         from_server: RunnerRequestReceiver,
-        to_server: RunnerResponseSender,
+        to_server: &'static RunnerResponseSenderMutex,
     ) -> Self {
         Self {
             setpoints,
@@ -81,12 +82,14 @@ impl Runner {
                 }
                 HostMessage::ClearSetpoints => self.clear(),
                 HostMessage::Start => {
+                    self.from_server.receive_done();
                     // Sort the setpoints just in case the host PC sent them out of order.
                     self.setpoints.sort();
-                    break;
+                    return;
                 }
                 HostMessage::Stop => {}
             }
+            self.from_server.receive_done();
         }
     }
 
@@ -137,16 +140,12 @@ impl Runner {
                 duty_cycle: DutyCycle::from(duty_cycle),
                 time: elapsed_since_start_micros,
             };
-            let buf = self.to_server.send().await;
-            *buf = McuMessage::State(state);
-            self.to_server.send_done();
+            self.send_message(&McuMessage::State(state)).await;
         }
         // Disable PWM
         self.pwm_pin.set_timestamp(STOP_DUTY);
         // Report that the motion profile is finished.
-        let buf = self.to_server.send().await;
-        *buf = McuMessage::Finished;
-        self.to_server.send_done();
+        self.send_message(&McuMessage::Finished).await;
     }
 
     /// Calculates the setpoint rpm and duty cycle for this timestep.
@@ -226,6 +225,14 @@ impl Runner {
         };
         let result = previous_setpoint.rpm.checked_add(interpolation)?;
         Some(result)
+    }
+
+    /// Sends a message to the server.
+    async fn send_message(&mut self, message: &McuMessage) {
+        let mut lock = self.to_server.lock().await;
+        let buf = lock.send().await;
+        *buf = icd::McuMessage::MotionProfile(message.clone());
+        lock.send_done();
     }
 }
 

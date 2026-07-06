@@ -16,12 +16,13 @@ pub mod servers;
 
 use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
+    mutex::Mutex,
     zerocopy_channel::{Channel, Receiver, Sender},
 };
 use embassy_time::Duration;
 use esp_hal::system::Stack;
 use esp_rtos::embassy::InterruptExecutor;
-use sc_messages::motion_profile;
+use sc_messages::{icd::McuMessage, motion_profile};
 use static_cell::{ConstStaticCell, StaticCell};
 
 /// The stack of the second core.
@@ -54,14 +55,24 @@ pub type RunnerRequestReceiver = Receiver<'static, NoopRawMutex, motion_profile:
 pub type RunnerRequestSender = Sender<'static, NoopRawMutex, motion_profile::HostMessage>;
 
 /// The buffer used by [`RUNNER_RESPONSE_CHANNEL`].
-pub static RUNNER_RESPONSE_BUFFER: ConstStaticCell<[motion_profile::McuMessage; 4]> =
-    ConstStaticCell::new([const { motion_profile::McuMessage::Finished }; _]);
+pub static RUNNER_RESPONSE_BUFFER: ConstStaticCell<[McuMessage; 4]> =
+    ConstStaticCell::new([const { McuMessage::Heartbeat }; _]);
 
 /// Used for passing [`McuMessage`]s to the server.
 ///
+/// This is zerocopy because the messages are expensive to copy.
 /// This uses [`NoopRawMutex`] because data is only shared in one executor.
-pub static RUNNER_RESPONSE_CHANNEL: StaticCell<Channel<NoopRawMutex, motion_profile::McuMessage>> =
+pub static RUNNER_RESPONSE_CHANNEL: StaticCell<Channel<NoopRawMutex, McuMessage>> =
     StaticCell::new();
 
-pub type RunnerResponseReceiver = Receiver<'static, NoopRawMutex, motion_profile::McuMessage>;
-pub type RunnerResponseSender = Sender<'static, NoopRawMutex, motion_profile::McuMessage>;
+pub type RunnerResponseReceiver = Receiver<'static, NoopRawMutex, McuMessage>;
+pub type RunnerResponseSender = Sender<'static, NoopRawMutex, McuMessage>;
+
+/// The mutex for sharing the [`RunnerResponseSender`].
+///
+/// A mutex is necessary because zerocopy channels are single-producer only,
+/// so the sender must be shared.
+pub type RunnerResponseSenderMutex = Mutex<NoopRawMutex, RunnerResponseSender>;
+
+/// The static cell for storing [`RunnerResponseSenderMutex`].
+pub static RUNNER_RESPONSE_SENDER_MUTEX: StaticCell<RunnerResponseSenderMutex> = StaticCell::new();

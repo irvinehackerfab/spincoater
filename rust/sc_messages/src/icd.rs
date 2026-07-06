@@ -1,7 +1,7 @@
 //! The [interface control document](https://en.wikipedia.org/wiki/Interface_control_document) for the microcontrollers and host PC.
 //!
 //! UART requirements:
-//! - Even parity
+//! - No parity (parity doesn't work on Linux)
 //! - 8 data bits
 //! - 1 stop bit
 //! - No flow control
@@ -34,6 +34,17 @@ pub const MAX_HOST_MESSAGE_SIZE: usize = MAX_MCU_MESSAGE_SIZE;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum McuMessage {
     MotionProfile(motion_profile::McuMessage),
+    /// The MCU is responding to [`HostMessage::Heartbeat`].
+    Heartbeat,
+    /// An error has occurred.
+    Error(Error),
+}
+
+/// All possible MCU errors.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Error {
+    UartReadFailed,
+    DeserializationFailed,
 }
 
 /// All message types sent from the host PC to the MCU.
@@ -43,6 +54,8 @@ pub enum HostMessage {
     VacuumPump(vacuum_pump::HostMessage),
     /// The host is disconnecting.
     Disconnecting,
+    /// The host wants to make sure the connection is still open.
+    Heartbeat,
 }
 
 #[cfg(test)]

@@ -20,6 +20,9 @@ csv.workspace = true
 rfd.workspace = true
 # For UART communication
 serde = { workspace = true, features = ["derive"] }
+# For serial port enumeration
+serialport.workspace = true
+# For serial communication
 serial2.workspace = true
 static_cell.workspace = true
 
