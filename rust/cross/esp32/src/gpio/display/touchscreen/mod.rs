@@ -1,5 +1,6 @@
 //! This module contains the functionality for the touchscreen.
 
+use defmt::{error, info};
 use embassy_executor::task;
 
 use embedded_hal::spi::ErrorType;
@@ -10,7 +11,6 @@ use esp_hal::{
     gpio::{Input, Output},
     spi::master::SpiDmaBus,
 };
-use esp_println::println;
 use static_cell::ConstStaticCell;
 use xpt2046_rs::{
     Xpt2046,
@@ -114,7 +114,7 @@ impl<'a> Touchscreen<Test<'a>> {
             self.mode.pen_irq.wait_for_low().await;
             // Get the touch resistance
             let result = self.mode.xpt.resistance();
-            println!("Touch: {:?}", result);
+            info!("Touch: {:?}", result);
         }
     }
 }
@@ -146,7 +146,7 @@ impl<'a> Touchscreen<Calibration<'a>> {
     pub async fn send_coefficients(&mut self) {
         // Get coefficients
         let result = self.mode.xpt.three_point_calibration(MAX_RESISTANCE).await;
-        println!("Coefficients: {:#?}", result);
+        info!("Coefficients: {:#?}", result);
     }
 }
 
@@ -174,6 +174,7 @@ impl<'a> Touchscreen<Normal<'a>> {
     /// Runs the touchscreen loop, getting points and sending them to the terminal.
     async fn handle_presses(&mut self) {
         loop {
+            info!("Waiting for press");
             // Wait for hard press
             let point = match self
                 .mode
@@ -183,15 +184,15 @@ impl<'a> Touchscreen<Normal<'a>> {
             {
                 Ok(point) => point,
                 Err(err) => {
-                    println!("Failed to get press: {err:?}.");
+                    error!("Failed to get press: {:?}.", err);
                     continue;
                 }
             };
             // Simple filter to ignore points returned due to releasing the screen.
             if point.y < MINIMUM_VALID_Y {
-                println!("Invalid touch: {point:?}");
+                info!("Invalid touch: {:?}", point);
             } else {
-                println!("Touch: {point:?}");
+                info!("Touch: {:?}", point);
                 // Send point
                 self.mode.to_terminal.send(TuiEvent::Point(point)).await;
             }

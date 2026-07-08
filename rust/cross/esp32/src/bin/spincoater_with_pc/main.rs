@@ -7,6 +7,7 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use defmt::info;
 use embassy_executor::Spawner;
 use embassy_sync::zerocopy_channel::Channel;
 use embassy_time::Timer;
@@ -14,12 +15,11 @@ use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
     gpio::{DriveStrength, Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
-    interrupt::software::SoftwareInterruptControl,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     timer::timg::TimerGroup,
     uart::{DataBits, Parity, StopBits, Uart},
 };
-use esp_println::println;
+use esp_println as _;
 use esp32::{
     RUNNER_REQUEST_BUFFER, RUNNER_REQUEST_CHANNEL, RUNNER_RESPONSE_BUFFER, RUNNER_RESPONSE_CHANNEL,
     RUNNER_RESPONSE_SENDER_MUTEX, RunnerResponseSenderMutex, SECOND_CORE_STACK,
@@ -45,8 +45,6 @@ esp_bootloader_esp_idf::esp_app_desc!();
 )]
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
-    esp_println::logger::init_logger_from_env();
-
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
@@ -58,17 +56,23 @@ async fn main(spawner: Spawner) -> ! {
     // - GPIO12
     // - GPIO15
     // These GPIO pins are in use by some feature of the module and should not be used.
-    // let _ = peripherals.GPIO6;
-    // let _ = peripherals.GPIO7;
-    // let _ = peripherals.GPIO8;
-    // let _ = peripherals.GPIO9;
-    // let _ = peripherals.GPIO10;
-    // let _ = peripherals.GPIO11;
+    let _ = peripherals.GPIO6;
+    let _ = peripherals.GPIO7;
+    let _ = peripherals.GPIO8;
+    let _ = peripherals.GPIO9;
+    let _ = peripherals.GPIO10;
+    let _ = peripherals.GPIO11;
+    let _ = peripherals.GPIO16;
+    let _ = peripherals.GPIO20;
 
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-    esp_rtos::start(timg0.timer0);
+    let sw_interrupt =
+        esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
+
+    info!("Embassy initialized!");
 
     // ESC Workaround
     let _ = Output::new(
@@ -87,15 +91,13 @@ async fn main(spawner: Spawner) -> ! {
     });
 
     // Run the encoder task/ISR on the second core so it doesn't block the program.
-    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    let mut io = Io::new(peripherals.IO_MUX);
     esp_rtos::start_second_core(
         peripherals.CPU_CTRL,
-        software_interrupts.software_interrupt0,
-        software_interrupts.software_interrupt1,
+        sw_interrupt.software_interrupt1,
         SECOND_CORE_STACK.take(),
-        || {
+        move || {
             // Set the interrupt handler for GPIO.
-            let mut io = Io::new(peripherals.IO_MUX);
             io.set_interrupt_handler(interrupt_handler);
         },
     );
@@ -149,7 +151,7 @@ async fn main(spawner: Spawner) -> ! {
                 .with_rx(peripherals.GPIO22);
         }
         _ => {
-            println!("Taking control of the UART port. Please close RTT and open the host PC program.");
+            info!("Taking control of the UART port. Please close RTT and open the host PC program.");
             // We have to wait for the print statement to arrive at `espflash`'s RTT monitor before taking control.
             Timer::after_millis(100).await;
             uart = uart
@@ -166,12 +168,12 @@ async fn main(spawner: Spawner) -> ! {
         &*to_server,
         vacuum_pump_pin,
     );
-    spawner.must_spawn(run_server_rx(server_rx));
+    spawner.spawn(run_server_rx(server_rx).expect("Failed to spawn server rx"));
     let mut server_tx = ServerTx::new(tx, SEND_BUFFER.take(), from_runner);
 
     // Setup runner
     let runner = Runner::new(setpoints, pwm_pin, from_server, &*to_server);
-    spawner.must_spawn(run(runner));
+    spawner.spawn(run(runner).expect("Failed to spawn runner"));
 
     server_tx.send_messages().await;
 }

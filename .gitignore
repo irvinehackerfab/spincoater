@@ -30,6 +30,3 @@ target/
 
 # Host TUI logs
 logs/
-
-# Savepoint
-.checkpoint.error

@@ -7,6 +7,7 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use defmt::info;
 use embassy_executor::Spawner;
 use embassy_time::Timer;
 use esp_backtrace as _;
@@ -15,7 +16,7 @@ use esp_hal::{
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     timer::timg::TimerGroup,
 };
-use esp_println::println;
+use esp_println as _;
 use esp32::gpio::pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER};
 use sc_messages::pwm::STOP_DUTY;
 
@@ -31,8 +32,6 @@ esp_bootloader_esp_idf::esp_app_desc!();
 )]
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
-    esp_println::logger::init_logger_from_env();
-
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
@@ -44,14 +43,14 @@ async fn main(spawner: Spawner) -> ! {
     // - GPIO12
     // - GPIO15
     // These GPIO pins are in use by some feature of the module and should not be used.
-    // let _ = peripherals.GPIO6;
-    // let _ = peripherals.GPIO7;
-    // let _ = peripherals.GPIO8;
-    // let _ = peripherals.GPIO9;
-    // let _ = peripherals.GPIO10;
-    // let _ = peripherals.GPIO11;
+    let _ = peripherals.GPIO6;
+    let _ = peripherals.GPIO7;
+    let _ = peripherals.GPIO8;
+    let _ = peripherals.GPIO9;
+    let _ = peripherals.GPIO10;
+    let _ = peripherals.GPIO11;
     let _ = peripherals.GPIO16;
-    // let _ = peripherals.GPIO20;
+    let _ = peripherals.GPIO20;
 
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
     // If you ever decide to use COEX (wifi and bluetooth at the same time)
@@ -59,9 +58,11 @@ async fn main(spawner: Spawner) -> ! {
     // esp_alloc::heap_allocator!(size: 64 * 1024);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-    esp_rtos::start(timg0.timer0);
+    let sw_interrupt =
+        esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
 
-    println!("Embassy initialized!");
+    info!("Embassy initialized!");
 
     // initialize PWM
     let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
@@ -76,7 +77,7 @@ async fn main(spawner: Spawner) -> ! {
     let timer_clock_cfg = clock_cfg
         .timer_clock_with_frequency(PERIOD, PwmWorkingMode::Increase, FREQUENCY)
         .expect("Failed to create TimerClockConfig");
-    println!("Period of the PWM pin: {}", pwm_pin.period());
+    info!("Period of the PWM pin: {}", pwm_pin.period());
     mcpwm.timer0.start(timer_clock_cfg);
     pwm_pin.set_timestamp(STOP_DUTY);
 

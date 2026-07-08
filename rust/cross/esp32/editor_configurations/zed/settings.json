@@ -15,9 +15,6 @@
           },
         },
         "check": {
-          // "extraEnv": {
-          //   "RUSTUP_TOOLCHAIN": "esp",
-          // },
           // Temporary fix for https://github.com/rust-lang/rust-analyzer/issues/22371
           // Remove when ESP toolchain updates
           "overrideCommand": [

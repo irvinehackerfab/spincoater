@@ -9,6 +9,7 @@
 
 use core::cell::RefCell;
 
+use defmt::info;
 use embassy_executor::Spawner;
 use embedded_hal_bus::spi::RefCellDevice;
 use esp_backtrace as _;
@@ -21,6 +22,7 @@ use esp_hal::{
     spi::master::{Config, Spi, SpiDmaBus},
     timer::timg::TimerGroup,
 };
+use esp_println as _;
 use esp32::gpio::display::{
     DISPLAY, ORIENTATION, SPI, SPI_BUFFER, SPI_BUFFER_SIZE, SPI_CLOCK_RATE, SPI_MODE,
     touchscreen::{Touchscreen, XPT_BUFFER},
@@ -37,8 +39,6 @@ esp_bootloader_esp_idf::esp_app_desc!();
 )]
 #[esp_rtos::main]
 async fn main(spawner: Spawner) -> ! {
-    esp_println::logger::init_logger_from_env();
-
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);
 
@@ -50,17 +50,23 @@ async fn main(spawner: Spawner) -> ! {
     // - GPIO12
     // - GPIO15
     // These GPIO pins are in use by some feature of the module and should not be used.
-    // let _ = peripherals.GPIO6;
-    // let _ = peripherals.GPIO7;
-    // let _ = peripherals.GPIO8;
-    // let _ = peripherals.GPIO9;
-    // let _ = peripherals.GPIO10;
-    // let _ = peripherals.GPIO11;
+    let _ = peripherals.GPIO6;
+    let _ = peripherals.GPIO7;
+    let _ = peripherals.GPIO8;
+    let _ = peripherals.GPIO9;
+    let _ = peripherals.GPIO10;
+    let _ = peripherals.GPIO11;
+    let _ = peripherals.GPIO16;
+    let _ = peripherals.GPIO20;
 
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-    esp_rtos::start(timg0.timer0);
+    let sw_interrupt =
+        esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
+
+    info!("Embassy initialized!");
 
     // ESC Workaround
     let _ = Output::new(
