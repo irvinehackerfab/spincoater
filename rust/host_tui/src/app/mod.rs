@@ -17,7 +17,7 @@ use chrono::Local;
 use color_eyre::eyre::{Context, bail};
 use color_eyre::{Result, eyre::OptionExt};
 use crossterm::event::Event;
-use csv::{Writer, WriterBuilder};
+use csv::{StringRecord, Writer, WriterBuilder};
 use ratatui::{
     DefaultTerminal,
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
@@ -56,6 +56,8 @@ pub struct App {
     /// This boolean provides an easy way for methods to end the program.
     running: bool,
     /// The channel for sending messages to the MCU.
+    ///
+    /// If this is [`None`], the MCU is not running.
     to_mcu: Sender<HostMessage>,
     /// The receiver of [`TuiEvent`]s from the other threads.
     from_all: Receiver<Result<TuiEvent>>,
@@ -203,25 +205,26 @@ impl App {
                 .ok_or_eyre("One command is always selected")?
             {
                 // Create a prompt for setting the duty cycle.
-                0 => {
+                0 if self.mcu_state.is_none() => {
                     let path = rfd::FileDialog::new()
                         .add_filter("CSV", &["csv"])
-                        .set_directory(env::current_dir()?)
+                        .set_directory(env::current_dir().wrap_err("Failed to get current dir")?)
                         .set_title("Please choose a motion profile CSV file.")
                         .pick_file();
                     if let Some(path) = path {
-                        self.send_motion_profile(path)?;
+                        self.send_motion_profile(path)
+                            .wrap_err("Failed to send motion profile")?;
                     }
                 }
                 // Clear all setpoints.
-                1 => self
+                1 if self.mcu_state.is_none() => self
                     .to_mcu
                     .send(HostMessage::MotionProfile(
                         motion_profile::HostMessage::ClearSetpoints,
                     ))
                     .wrap_err("Failed to clear setpoints")?,
                 // Start the motion profile.
-                2 => {
+                2 if self.mcu_state.is_none() => {
                     self.motor_data_file = Some(
                         Self::open_log_file(MOTOR_DATA_SUB_DIR)
                             .wrap_err("Failed to open log file")?,
@@ -232,20 +235,32 @@ impl App {
                         ))
                         .wrap_err("Failed to start motion profile")?;
                 }
+                // Get a single setpoint to run the spincoater at.
+                3 if self.mcu_state.is_none() => {
+                    let path = rfd::FileDialog::new()
+                        .add_filter("CSV", &["csv"])
+                        .set_directory(env::current_dir().wrap_err("Failed to get current dir")?)
+                        .set_title("Please choose a CSV file with a single setpoint.")
+                        .pick_file();
+                    if let Some(path) = path {
+                        self.send_single_setpoint(path)
+                            .wrap_err("Failed to send single setpoint")?;
+                    }
+                }
                 // Stop the motion profile.
-                3 => self
+                4 => self
                     .to_mcu
                     .send(HostMessage::MotionProfile(
                         motion_profile::HostMessage::Stop,
                     ))
                     .wrap_err("Failed to stop motion profile")?,
                 // Enable the vacuum pump.
-                4 => self
+                5 if self.mcu_state.is_none() => self
                     .to_mcu
                     .send(HostMessage::VacuumPump(vacuum_pump::HostMessage::Enable))
                     .wrap_err("Failed to enable vacuum pump")?,
                 // Disable the vacuum pump.
-                5 => self
+                6 if self.mcu_state.is_none() => self
                     .to_mcu
                     .send(HostMessage::VacuumPump(vacuum_pump::HostMessage::Disable))
                     .wrap_err("Failed to disable vacuum pump")?,
@@ -282,10 +297,9 @@ impl App {
 
     /// Loads a motion profile from a CSV [`PathBuf`] and sends it.
     ///
-    /// Note that [`postcard_rpc`] makes no guarantee about the order in which setpoints are sent,
-    /// but the MCU sorts them before execution.
+    /// Note that the MCU performs stable sort on the setpoints before execution.
     fn send_motion_profile(&mut self, path: PathBuf) -> Result<()> {
-        let file = csv::Reader::from_path(path).wrap_err("Failed to read CSV file")?;
+        let file = csv::Reader::from_path(path).wrap_err("Failed to open CSV file")?;
         for result in file.into_deserialize() {
             let setpoint: Setpoint = result.wrap_err("Failed to deserialize from CSV file")?;
             let message = HostMessage::MotionProfile(motion_profile::HostMessage::Add(setpoint));
@@ -294,5 +308,18 @@ impl App {
                 .wrap_err("Failed to send setpoint")?;
         }
         Ok(())
+    }
+
+    /// Loads a [`Setpoint`] from a CSV [`PathBuf`] and sends it.
+    fn send_single_setpoint(&mut self, path: PathBuf) -> Result<()> {
+        let mut file = csv::Reader::from_path(path).wrap_err("Failed to open CSV file")?;
+        let mut record = StringRecord::new();
+        file.read_record(&mut record)
+            .wrap_err("Failed to read CSV")?;
+        let setpoint: Setpoint = record.deserialize(None).wrap_err("Failed to deserialize")?;
+        let message = HostMessage::MotionProfile(motion_profile::HostMessage::Run(setpoint));
+        self.to_mcu
+            .send(message)
+            .wrap_err("Failed to send setpoint")
     }
 }

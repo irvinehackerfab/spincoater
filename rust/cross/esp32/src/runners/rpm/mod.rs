@@ -137,6 +137,7 @@ impl Runner {
                 previous_log = Instant::now();
             }
         }
+        // Disable PWM
         self.pwm_pin.set_timestamp(STOP_DUTY);
         // Report that there is no more state.
         self.to_terminal.send(TuiEvent::RunnerFinished).await;

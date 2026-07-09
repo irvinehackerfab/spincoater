@@ -3,6 +3,4 @@ This is a Rust binary that you run on your PC while connected to the microcontro
 
 When writing motion profile CSV files, you must have the headers `rpm,time (micros)`. Do not set an rpm at time 0.
 
-Note that sending two rpm values with the same time will result in one of them being chosen at random.
-
 You can run it with `cargo run --bin host_tui`.

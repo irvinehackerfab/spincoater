@@ -35,6 +35,10 @@ pub enum HostMessage {
     ///
     /// The MCU will only accept this while disabled.
     Start,
+    /// Immediately start running at the given motor RPM for the given time.
+    ///
+    /// The MCU will only accept this while disabled.
+    Run(Setpoint),
     /// Stop the motion profile and discard it.
     ///
     /// The MCU will only accept this while enabled.

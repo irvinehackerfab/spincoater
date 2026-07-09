@@ -37,10 +37,6 @@ impl App {
     }
 
     fn render_commands(&mut self, area: Rect, frame: &mut Frame) {
-        Self::render_command_list(&mut self.commands_state, area, frame);
-    }
-
-    fn render_command_list(list_state: &mut ListState, area: Rect, frame: &mut Frame) {
         let instructions = Line::from_iter([
             " Up: ".into(),
             "<Up>".blue().bold(),
@@ -58,20 +54,33 @@ impl App {
             .border_type(BorderType::Rounded)
             .title_bottom(instructions);
 
-        let items = [
-            "Load motion profile CSV file",
-            "Clear all setpoints",
-            "Start",
-            "Stop",
-            "Enable vacuum pump",
-            "Disable vacuum pump",
-        ];
+        let items = if self.mcu_state.is_some() {
+            [
+                "Load motion profile CSV file (disabled)",
+                "Clear all setpoints (disabled)",
+                "Start (disabled)",
+                "Load single RPM from CSV file and Start (disabled)",
+                "Stop",
+                "Enable vacuum pump (disabled)",
+                "Disable vacuum pump (disabled)",
+            ]
+        } else {
+            [
+                "Load motion profile CSV file",
+                "Clear all setpoints",
+                "Start",
+                "Load single RPM from CSV file and Start",
+                "Stop",
+                "Enable vacuum pump",
+                "Disable vacuum pump",
+            ]
+        };
         let list = List::new(items)
             .block(cmd_block)
             .highlight_symbol("-> ")
             .highlight_style(Style::new().blue());
 
-        frame.render_stateful_widget(list, area, list_state);
+        frame.render_stateful_widget(list, area, &mut self.commands_state);
     }
 
     fn render_state(&self, area: Rect, frame: &mut Frame) {

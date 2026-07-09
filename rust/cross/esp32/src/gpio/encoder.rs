@@ -3,10 +3,11 @@
 //! If you're looking for the interrupt service routine that handles hall effect sensor readings,
 //! it's located in the [gpio](`crate::gpio`) module.
 
-use core::{ops::Div, sync::atomic::AtomicU32};
+use core::sync::atomic::AtomicU32;
 use esp_hal::{gpio::Input, time::Instant};
 use esp_sync::NonReentrantMutex;
 use heapless::HistoryBuf;
+use muldiv::MulDiv;
 use sc_messages::{MOTOR_REVOLUTIONS, PLATE_REVOLUTIONS};
 
 /// Provides global access to the encoder.
@@ -93,11 +94,7 @@ pub fn calculate_average_rpm<const N: usize>(rpm_ring_buffer: &HistoryBuf<usize,
 /// The return value is capped at [`u16::MAX`].
 #[must_use]
 pub fn plate_to_motor_revolutions(rpm: u16) -> u16 {
-    // Operate in u32 to prevent overflow
-    let rpm = u32::from(rpm);
-    rpm.saturating_mul(MOTOR_REVOLUTIONS)
-        .div(PLATE_REVOLUTIONS)
-        .try_into()
+    rpm.mul_div_round(MOTOR_REVOLUTIONS, PLATE_REVOLUTIONS)
         .unwrap_or(u16::MAX)
 }
 
@@ -106,10 +103,6 @@ pub fn plate_to_motor_revolutions(rpm: u16) -> u16 {
 /// The return value is capped at [`u16::MAX`].
 #[must_use]
 pub fn motor_to_plate_revolutions(rpm: u16) -> u16 {
-    // Operate in u32 to prevent overflow
-    let rpm = u32::from(rpm);
-    rpm.saturating_mul(PLATE_REVOLUTIONS)
-        .div(MOTOR_REVOLUTIONS)
-        .try_into()
+    rpm.mul_div_round(PLATE_REVOLUTIONS, MOTOR_REVOLUTIONS)
         .unwrap_or(u16::MAX)
 }

@@ -7,7 +7,7 @@ pub mod pwm;
 pub mod vacuum_pump;
 
 /// The number of motor revolutions per [`PLATE_REVOLUTIONS`] plate revolutions.
-pub const MOTOR_REVOLUTIONS: u32 = 72;
+pub const MOTOR_REVOLUTIONS: u16 = 72;
 
 /// The number of plate revolutions per [`MOTOR_REVOLUTIONS`] motor revolutions.
-pub const PLATE_REVOLUTIONS: u32 = 30;
+pub const PLATE_REVOLUTIONS: u16 = 30;

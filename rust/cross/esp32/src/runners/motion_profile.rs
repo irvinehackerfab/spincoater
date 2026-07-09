@@ -49,17 +49,29 @@ impl Runner {
     /// Runs the main control loop.
     async fn run(mut self) -> ! {
         loop {
-            self.setup().await;
-            // Since we are starting again, we must reset the encoder state.
-            ENCODER_STATE.with(EncoderState::reset);
-            // Start listening for interrupts
-            ENCODER.with(|encoder| {
-                encoder
-                    .as_mut()
-                    .expect("The runner cannot function without the encoder.")
-                    .listen(Event::RisingEdge);
-            });
-            self.execute_motion_profile().await;
+            if let Some(setpoint) = self.setup().await {
+                // Since we are starting again, we must reset the encoder state.
+                ENCODER_STATE.with(EncoderState::reset);
+                // Start listening for interrupts
+                ENCODER.with(|encoder| {
+                    encoder
+                        .as_mut()
+                        .expect("The runner cannot function without the encoder.")
+                        .listen(Event::RisingEdge);
+                });
+                self.execute_single_rpm(&setpoint).await;
+            } else {
+                // Since we are starting again, we must reset the encoder state.
+                ENCODER_STATE.with(EncoderState::reset);
+                // Start listening for interrupts
+                ENCODER.with(|encoder| {
+                    encoder
+                        .as_mut()
+                        .expect("The runner cannot function without the encoder.")
+                        .listen(Event::RisingEdge);
+                });
+                self.execute_motion_profile().await;
+            }
             // Stop listening for interrupts
             ENCODER.with(|encoder| {
                 encoder
@@ -71,10 +83,13 @@ impl Runner {
         }
     }
 
-    /// Sets up the motion profile.
+    /// Sets up the runner using commands from the server.
     ///
     /// Repeatedly waits for setpoints until a start message is received.
-    async fn setup(&mut self) {
+    ///
+    /// Returns a setpoint if the server asked to run at a single RPM value.
+    #[must_use]
+    async fn setup(&mut self) -> Option<Setpoint> {
         loop {
             match self.from_server.receive().await {
                 HostMessage::Add(setpoint) => {
@@ -85,12 +100,72 @@ impl Runner {
                     self.from_server.receive_done();
                     // Sort the setpoints just in case the host PC sent them out of order.
                     self.setpoints.sort();
-                    return;
+                    return None;
+                }
+                HostMessage::Run(setpoint) => {
+                    let setpoint = setpoint.clone();
+                    self.from_server.receive_done();
+                    return Some(setpoint);
                 }
                 HostMessage::Stop => {}
             }
             self.from_server.receive_done();
         }
+    }
+
+    /// Executes a single RPM,
+    /// logging info every iteration and checking for a stop command.
+    async fn execute_single_rpm(&mut self, setpoint: &Setpoint) {
+        let starting_time = Instant::now();
+        let mut previous_sleep_end = starting_time;
+        // Feedforward
+        // We can get the feedforward for the entire run.
+        let setpoint_duty_cycle = linear_conversion(setpoint.rpm);
+
+        loop {
+            // Sleep must be called at the start so LOOP_PERIOD time can pass before the current rpm is calculated.
+            previous_sleep_end = sleep(previous_sleep_end).await;
+
+            // Check for stop requests.
+            if let Some(message) = self.from_server.try_receive() {
+                let should_stop = matches!(message, HostMessage::Stop);
+                self.from_server.receive_done();
+                if should_stop {
+                    break;
+                }
+            }
+
+            // Check if we finished.
+            let time_since_start_micros = starting_time.elapsed().as_micros();
+            if time_since_start_micros >= setpoint.time {
+                break;
+            }
+
+            // Feedback
+            let current_rpm =
+                ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
+            let rpm_error = error(setpoint.rpm, current_rpm);
+            let output = next_control_output(rpm_error);
+            let duty_cycle = (*setpoint_duty_cycle)
+                .saturating_add_signed(output)
+                .clamp(STOP_DUTY, HALF_POWER_DUTY);
+
+            self.pwm_pin.set_timestamp(duty_cycle);
+
+            // Logging
+            let state = State {
+                setpoint_rpm: setpoint.rpm,
+                current_rpm,
+                rpm_error,
+                duty_cycle: DutyCycle::from(duty_cycle),
+                time: time_since_start_micros,
+            };
+            self.send_message(&McuMessage::State(state)).await;
+        }
+        // Disable PWM
+        self.pwm_pin.set_timestamp(STOP_DUTY);
+        // Report that the motion profile is finished.
+        self.send_message(&McuMessage::Finished).await;
     }
 
     /// Executes the motion profile,
