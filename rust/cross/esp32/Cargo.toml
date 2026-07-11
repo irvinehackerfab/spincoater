@@ -10,7 +10,7 @@ license = "MIT"
 
 [dependencies]
 # Note: Things will break if you remove the tilde.
-esp-hal = { version = "~1.1.0", features = ["defmt", "esp32", "unstable"] }
+esp-hal = { version = "~1.1.1", features = ["defmt", "esp32", "unstable"] }
 esp-rtos = { version = "0.3.0", features = ["defmt", "esp-alloc", "embassy", "esp32"] }
 defmt = "1.1.1"
 esp-bootloader-esp-idf = { version = "0.5.0", features = ["defmt", "esp32"] }
