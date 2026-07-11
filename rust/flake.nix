@@ -23,8 +23,11 @@
           inherit system overlays;
         };
         custom-rust-bin = pkgs.rust-bin.stable."1.95.0".default.override {
-          # Required by RFD
-          extensions = [ "rust-src" ];
+          extensions = [
+            # Required by rfd
+            "rust-src"
+            "rust-analyzer"
+          ];
         };
       in
       {

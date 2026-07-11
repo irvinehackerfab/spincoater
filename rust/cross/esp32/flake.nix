@@ -1,8 +1,9 @@
 {
-  description = "ESP32-S3 Rust dev shell (espup + Nix)";
+  description = "ESP32* Rust dev shell";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    old-nixpkgs.url = "github:NixOS/nixpkgs/e7713b176c927fdab81a18801682bd2606491b0a";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -10,81 +11,120 @@
     {
       self,
       nixpkgs,
+      old-nixpkgs,
       flake-utils,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs { inherit system; };
+        old-pkgs = import old-nixpkgs { inherit system; };
+        rust-version = "1.95.0.0";
+        suffix =
+          {
+            x86_64-linux = "x86_64-unknown-linux-gnu";
+            aarch64-linux = "aarch64-unknown-linux-gnu";
+            aarch64-darwin = "aarch64-apple-darwin";
+          }
+          .${system} or (throw "Unsupported system: ${system}");
+        clean_suffix =
+          {
+            x86_64-linux = "x86_64-linux-gnu";
+            aarch64-linux = "aarch64-linux-gnu";
+            aarch64-darwin = suffix;
+          }
+          .${system};
+        rust-src = pkgs.stdenv.mkDerivation rec {
+          pname = "rust-src";
+          version = rust-version;
+          src = pkgs.fetchzip {
+            url = "https://github.com/esp-rs/rust-build/releases/download/v${version}/${pname}-${version}.tar.xz";
+            hash = "sha256-mUpucCIRJxgFWiW5HlT95ZKvA+u4+T5CvEfgoQZoNOA=";
+          };
+          installPhase = ''
+            bash ./install.sh --prefix=$out
+          '';
+        };
+        rust = pkgs.stdenv.mkDerivation rec {
+          pname = "rust";
+          version = rust-version;
+          src = pkgs.fetchzip {
+            url = "https://github.com/esp-rs/rust-build/releases/download/v${version}/${pname}-${version}-${suffix}.tar.xz";
+            hash =
+              {
+                x86_64-linux = "sha256-3wpKYEA9i9+/6OkzuBjFD7MSufN8ZCgBmUNdB2LeprI=";
+                aarch64-linux = "sha256-DH2I5oBfm3egSPMH/LHfDGWGOjBsJ4Ej3HcanLbShEw=";
+                aarch64-darwin = "sha256-VDrdluRSzFmNOdHf3w8q/2z9xUrlbOLmOtFXxneLXSs=";
+              }
+              .${system};
+          };
+          nativeBuildInputs = with pkgs; [ autoPatchelfHook ];
+          buildInputs = with pkgs; [
+            libgcc.lib
+            libz
+          ];
+          installPhase = ''
+            runHook preInstall
+            bash ./install.sh --prefix=$out
+            ln -s ${rust-src}/lib/rustlib/src $out/lib/rustlib/src
+            runHook postInstall
+          '';
+        };
+        xtensa-esp-elf = pkgs.stdenv.mkDerivation rec {
+          pname = "xtensa-esp-elf";
+          version = "16.1.0_20260609";
+          src = pkgs.fetchzip {
+            url = "https://github.com/espressif/crosstool-NG/releases/download/esp-${version}/${pname}-${version}-${clean_suffix}.tar.xz";
+            hash =
+              {
+                x86_64-linux = "sha256-D02nz89injwvi+CD8tE8j/xkp1YrS28XvAmqCd3Dm+A=";
+                aarch64-linux = "sha256-eF7iQr+9s6xOdk6F0vhxCcfF89pX10LamnxYwNCQYUk=";
+                aarch64-darwin = "sha256-vk64HBLJu/bq15x1i/qBuObsmmlTcvlGrJJMcMMvJz0=";
+              }
+              .${system};
+          };
+          nativeBuildInputs = with pkgs; [ autoPatchelfHook ];
+          buildInputs = with pkgs; [
+            libgcc.lib
+          ];
+          installPhase = ''
+            cp -r $src $out
+          '';
+        };
+        clang-esp = pkgs.stdenv.mkDerivation rec {
+          pname = "clang-esp";
+          version = "21.1.3_20260408";
+          src = pkgs.fetchzip {
+            url = "https://github.com/espressif/llvm-project/releases/download/esp-${version}/${pname}-${version}-${clean_suffix}.tar.xz";
+            hash =
+              {
+                x86_64-linux = "sha256-qtnyxsuZkggcprufxMyk6LzkZPgHTC6xbm8PTql9/WY=";
+                aarch64-linux = "sha256-ol5URro6pLzPr6QyjOwkDFsa52OJeNhowmd3xM7KJBs=";
+                aarch64-darwin = "sha256-sEo0XHtBJUAOTeeHNM7OARR+DMQ7V67vhG7zuP9X730=";
+              }
+              .${system};
+          };
+          nativeBuildInputs = with pkgs; [ autoPatchelfHook ];
+          buildInputs = with pkgs; [ libgcc.lib ];
+          installPhase = ''
+            cp -r $src $out
+          '';
+        };
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
-            # Rust toolchain installer
-            rustup
-
-            # Official esp-rs toolchain installer
-            espup
-
+          packages = [
             # Flashing / runner tools
-            espflash
-            ldproxy
-
-            # Code generator
-            esp-generate
-
+            pkgs.espflash
             # Editor support
-            rust-analyzer
+            old-pkgs.rust-analyzer
+            # ESP packages
+            rust
+            xtensa-esp-elf
+            clang-esp
           ];
 
-          # Ask rust-analyzer to use stable toolchain.
-          # It still uses the esp toolchain,
-          # but if you do this AND symlink the stable rust-analyzer to the esp toolchain folder,
-          # it will agree to use the stable rust-analyzer.
-          RUSTUP_TOOLCHAIN = "stable";
-
-          shellHook = ''
-            echo "[ESP32 dev shell]"
-            # --- Explicit toolchain exports (user-specific paths) ---
-            # These are the exact exports you provided; we check existence first.
-            ESP_RUSTUP_XTENSA_BIN="$HOME/.rustup/toolchains/esp/xtensa-esp-elf/esp-15.2.0_20250920/xtensa-esp-elf/bin"
-            ESP_LIBCLANG="$HOME/.rustup/toolchains/esp/xtensa-esp32-elf-clang/esp-20.1.1_20250829/esp-clang/lib"
-
-            if [ -d "$ESP_RUSTUP_XTENSA_BIN" ]; then
-              export PATH="$ESP_RUSTUP_XTENSA_BIN:$PATH"
-              echo "Prepended ESP xtensa toolchain bin: $ESP_RUSTUP_XTENSA_BIN"
-            else
-              echo "Warning: ESP xtensa toolchain bin not found at: $ESP_RUSTUP_XTENSA_BIN"
-            fi
-
-            if [ -d "$ESP_LIBCLANG" ]; then
-              export LIBCLANG_PATH="$ESP_LIBCLANG"
-              echo "Set LIBCLANG_PATH -> $ESP_LIBCLANG"
-            else
-              echo "Warning: esp-clang lib dir not found at: $ESP_LIBCLANG"
-            fi
-
-            # --- If rustup knows the 'esp' toolchain, prefer its bin dir too ---
-            ESP_TOOLCHAIN_BIN="$(rustup which rustc --toolchain esp 2>/dev/null | xargs dirname || true)"
-            if [ -n "$ESP_TOOLCHAIN_BIN" ] && [ -d "$ESP_TOOLCHAIN_BIN" ]; then
-              export PATH="$ESP_TOOLCHAIN_BIN:$PATH"
-              echo "Using esp toolchain rustc from: $ESP_TOOLCHAIN_BIN"
-            fi
-
-            # --- Informational ---
-            if command -v espup >/dev/null 2>&1; then
-              echo "espup available in the dev shell"
-            else
-              echo "Note: 'espup' not in PATH in this shell. You can still install the esp toolchain with 'espup install' once inside the dev shell."
-            fi
-
-            # Small helper: remind about CARGO_BUILD_TARGET
-            echo "CARGO_BUILD_TARGET=$CARGO_BUILD_TARGET"
-
-            # Fix rust-analyzer
-            # https://github.com/esp-rs/espup/issues/254
-            ln -s rust-analyzer ~/.rustup/toolchains/esp/bin/
-          '';
+          LIBCLANG_PATH = "${xtensa-esp-elf}/lib";
         };
       }
     );

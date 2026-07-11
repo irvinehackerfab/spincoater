@@ -9,23 +9,6 @@
             "RUSTUP_TOOLCHAIN": "esp",
           },
         },
-        "server": {
-          "extraEnv": {
-            "RUSTUP_TOOLCHAIN": "stable",
-          },
-        },
-        "check": {
-          // Temporary fix for https://github.com/rust-lang/rust-analyzer/issues/22371
-          // Remove when ESP toolchain updates
-          "overrideCommand": [
-            "cargo",
-            "check",
-            "--workspace",
-            "--message-format=json",
-            "--target",
-            "xtensa-esp32-none-elf",
-          ],
-        },
       },
     },
   },
