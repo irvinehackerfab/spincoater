@@ -2,10 +2,7 @@
 
 use std::io;
 
-use color_eyre::{
-    Result,
-    eyre::{Context, eyre},
-};
+use color_eyre::{Result, eyre::Context};
 use host_tui::app::{App, SEND_BUFFER, SERIAL_PORT, event::READ_BUFFER};
 use sc_messages::icd::BAUD_RATE;
 use serial2::{CharSize, Parity, SerialPort, Settings, StopBits};
@@ -18,17 +15,14 @@ fn main() -> Result<()> {
     let ports = available_ports()
         .wrap_err("Failed to query available ports")?
         .into_iter()
-        .filter(|port| !matches!(port.port_type, SerialPortType::Unknown))
-        .collect::<Vec<_>>();
-    if ports.is_empty() {
-        return Err(eyre!(
-            "No serial ports available. Please plug one in and run this program again."
-        ));
-    }
+        .filter(|port| !matches!(port.port_type, SerialPortType::Unknown));
     let stdout = io::stdout();
     {
         let mut out = stdout.lock();
-        writeln!(out, "Detected serial port(s) on: {ports:#?}")?;
+        writeln!(out, "Detected serial port(s) on:")?;
+        for port in ports {
+            writeln!(out, "{port:#?}")?;
+        }
         write!(out, "Please choose a `port_name` connect to: ")?;
         out.flush()?;
     }
