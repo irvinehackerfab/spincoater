@@ -10,7 +10,7 @@ rfd.workspace = true
 csv.workspace = true
 linreg.workspace = true
 
-host_tui = { path = "../host_tui"}
+host_tui = { path = "../host_tui" }
 
 
 [lints]
