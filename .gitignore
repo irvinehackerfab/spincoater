@@ -5,6 +5,7 @@ target/
 # Editor configuration
 .vscode/
 .zed/
+.gram/
 .helix/
 .nvim.lua
 

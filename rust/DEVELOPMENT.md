@@ -24,5 +24,5 @@ Try [direnv.vim](https://github.com/direnv/direnv.vim).
 ### emacs
 Try [emacs-direnv](https://github.com/wbolster/emacs-direnv).
 
-### Zed
-Zed has direnv support built-in, and the default setting has been tested to work.
+### Zed/Gram
+Zed/Gram has direnv support built-in, and the default setting has been tested to work.
