@@ -58,9 +58,7 @@ opt-level = "s"
 
 [profile.release]
 codegen-units = 1     # LLVM can perform better optimizations using a single thread
-debug         = 2     # prefer slower builds but better debugging experience
 lto           = 'fat'
-opt-level     = 's'
 
 [lib]
 test = false
