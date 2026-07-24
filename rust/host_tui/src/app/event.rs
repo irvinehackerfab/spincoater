@@ -183,7 +183,7 @@ pub fn spawn_tx_thread(
         .map(|_| {})
 }
 
-/// Spawns the thread sends heartbeats to keep the serial port from timing out.
+/// Spawns the thread that sends heartbeats to keep the serial port from timing out.
 ///
 /// # Errors
 /// Returns an error if the thread fails to spawn.
