@@ -29,6 +29,7 @@
             "rust-analyzer"
           ];
         };
+        mingPkgs = pkgs.pkgsCross.mingwW64;
       in
       {
         devShells.default = pkgs.mkShell {
@@ -52,6 +53,16 @@
             # https://github.com/PolyMeilex/rfd/issues/305#issuecomment-3766284352
             export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${pkgs.dbus.lib.outPath}/lib"
           '';
+        };
+        packages.host_tui_windows = mingPkgs.rustPlatform.buildRustPackage {
+          pname = "host_tui_windows";
+          version = "0.1.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+          cargoBuildFlags = [
+            "--bin"
+            "host_tui"
+          ];
         };
       }
     );

@@ -31,3 +31,6 @@ target/
 
 # Host TUI logs
 logs/
+
+# nix build output
+result/
