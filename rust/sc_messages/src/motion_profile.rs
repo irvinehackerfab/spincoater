@@ -80,7 +80,7 @@ pub struct State {
     pub setpoint_rpm: u16,
     /// The measured motor RPM.
     pub current_rpm: u16,
-    /// Setpoint RPM - current RPM.
+    /// Current RPM - setpoint RPM.
     pub rpm_error: i16,
     /// The current duty cycle being set to try and reach the setpoint.
     pub duty_cycle: DutyCycle,

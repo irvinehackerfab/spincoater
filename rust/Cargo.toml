@@ -28,6 +28,7 @@ serialport = "4.9.0"
 serial2 = "0.2.37"
 # For linear regression of RPM values and duty cycle values
 linreg = "0.2.0"
+num = "0.4.3"
 static_cell = "2.1.1"
 
 [workspace.lints.rust]

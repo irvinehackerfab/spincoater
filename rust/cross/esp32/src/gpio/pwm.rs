@@ -1,5 +1,7 @@
 //! This module contains PWM output functionality.
 
+use core::ops::{Div, Mul};
+
 use esp_hal::time::Rate;
 use heapless::Vec;
 use sc_messages::{
@@ -49,15 +51,15 @@ pub static SETPOINTS: ConstStaticCell<Vec<Setpoint, SETPOINT_LIST_LENGTH>> =
 
 /// Since the relationship betwen motor RPM and PWM units is mostly linear, we can just use a conversion factor.
 /// This value was obtained from the `linear_regression` program.
-pub const RPM_TO_DUTY_NUMERATOR: u32 = 110_443;
+pub const RPM_TO_DUTY_NUMERATOR: u32 = 1579;
 
 /// Since the relationship betwen motor RPM and PWM units is mostly linear, we can just use a conversion factor.
 /// This value was obtained from the `linear_regression` program.
-pub const RPM_TO_DUTY_DENOMINATOR: u32 = 6_250_000;
+pub const RPM_TO_DUTY_DENOMINATOR: u32 = 59_230;
 
 /// The linear relationship between motor RPM and PWM units has an intercept because the duty cycle representing 0 is nonzero.
 /// This value was obtained from the `linear_regression` program.
-pub const RPM_TO_DUTY_INTERCEPT: u32 = 5_011;
+pub const RPM_TO_DUTY_INTERCEPT: u32 = 4928;
 
 /// Uses the linear relationship between motor RPM and duty cycle to find the setpoint duty cycle.
 ///
@@ -67,7 +69,9 @@ pub fn linear_conversion(setpoint_rpm: u16) -> DutyCycle {
     // Everything here is in u32 to prevent overflow.
     let setpoint_rpm = u32::from(setpoint_rpm);
     // Ths arithmetic here is saturating because it will never exceed u32::MAX.
-    let duty = (setpoint_rpm.saturating_mul(RPM_TO_DUTY_NUMERATOR) / RPM_TO_DUTY_DENOMINATOR)
+    let duty = setpoint_rpm
+        .mul(RPM_TO_DUTY_NUMERATOR)
+        .div(RPM_TO_DUTY_DENOMINATOR)
         .saturating_add(RPM_TO_DUTY_INTERCEPT);
     duty.into()
 }

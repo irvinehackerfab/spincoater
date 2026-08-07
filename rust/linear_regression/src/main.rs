@@ -3,6 +3,7 @@ use std::env;
 use color_eyre::eyre::{OptionExt, Result, eyre};
 use host_tui::app::state::MotionProfileState;
 use linreg::linear_regression;
+use num::{FromPrimitive, ToPrimitive, rational::Ratio};
 
 fn main() -> Result<()> {
     let path = rfd::FileDialog::new()
@@ -24,8 +25,13 @@ fn main() -> Result<()> {
     let (slope, intercept): (f64, f64) =
         linear_regression(&rpm_values, &duty_cycle_values).map_err(|error| eyre!(error))?;
 
-    println!("Slope: {slope}");
-    println!("Intercept: {intercept}");
+    let slope = Ratio::<u16>::from_f64(slope).expect("The slope should be a valid ratio");
+    let intercept = intercept
+        .to_u16()
+        .expect("The intercept should fit in a u16");
+    println!("RPM_TO_DUTY_NUMERATOR: {}", slope.numer());
+    println!("RPM_TO_DUTY_DENOMINATOR: {}", slope.denom());
+    println!("RPM_TO_DUTY_INTERCEPT: {intercept}");
 
     Ok(())
 }

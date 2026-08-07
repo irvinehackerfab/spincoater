@@ -11,7 +11,7 @@ use crate::{
         },
         pwm::linear_conversion,
     },
-    pid::{error, next_control_output},
+    pid::{neg_error, next_control_output},
     runners::sleep,
 };
 use channel::{RunAt, RunnerReceiver, RunnerRequest};
@@ -119,8 +119,8 @@ impl Runner {
             // Feedback
             let current_rpm =
                 ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
-            let rpm_error = error(setpoint_rpm, current_rpm);
-            let output = next_control_output(rpm_error);
+            let negative_rpm_error = neg_error(setpoint_rpm, current_rpm);
+            let output = next_control_output(negative_rpm_error);
             let duty_cycle = (*setpoint_duty_cycle)
                 .saturating_add_signed(output)
                 .clamp(STOP_DUTY, HALF_POWER_DUTY);

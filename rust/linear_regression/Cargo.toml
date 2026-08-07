@@ -9,6 +9,7 @@ color-eyre.workspace = true
 rfd.workspace = true
 csv.workspace = true
 linreg.workspace = true
+num.workspace = true
 
 host_tui = { path = "../host_tui" }
 

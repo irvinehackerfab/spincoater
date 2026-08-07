@@ -6,7 +6,7 @@ use crate::{
         encoder::{ENCODER, ENCODER_STATE, EncoderState, calculate_average_rpm},
         pwm::{SETPOINT_LIST_LENGTH, linear_conversion},
     },
-    pid::{error, next_control_output},
+    pid::{neg_error, next_control_output},
     runners::sleep,
 };
 use embassy_time::Instant;
@@ -144,8 +144,8 @@ impl Runner {
             // Feedback
             let current_rpm =
                 ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
-            let rpm_error = error(setpoint.rpm, current_rpm);
-            let output = next_control_output(rpm_error);
+            let negative_rpm_error = neg_error(setpoint.rpm, current_rpm);
+            let output = next_control_output(negative_rpm_error);
             let duty_cycle = (*setpoint_duty_cycle)
                 .saturating_add_signed(output)
                 .clamp(STOP_DUTY, HALF_POWER_DUTY);
@@ -156,7 +156,7 @@ impl Runner {
             let state = State {
                 setpoint_rpm: setpoint.rpm,
                 current_rpm,
-                rpm_error,
+                rpm_error: negative_rpm_error.saturating_neg(),
                 duty_cycle: DutyCycle::from(duty_cycle),
                 time: time_since_start_micros,
             };
@@ -199,7 +199,7 @@ impl Runner {
             // Feedback
             let current_rpm =
                 ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
-            let rpm_error = error(setpoint_rpm, current_rpm);
+            let rpm_error = neg_error(setpoint_rpm, current_rpm);
             let output = next_control_output(rpm_error);
             let duty_cycle = (*setpoint_duty_cycle)
                 .saturating_add_signed(output)

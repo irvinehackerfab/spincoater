@@ -276,11 +276,12 @@ impl App {
         match message {
             McuMessage::MotionProfile(mcu_message) => match mcu_message {
                 motion_profile::McuMessage::State(state) => {
-                    self.mcu_state = Some(state.clone().into());
+                    let full_state: MotionProfileState = state.clone().into();
+                    self.mcu_state = Some(full_state.clone());
                     self.motor_data_file
                         .as_mut()
                         .ok_or_eyre("The motor data file should be open.")?
-                        .serialize(state)
+                        .serialize(full_state)
                         .wrap_err("Failed to serialize to CSV file")?;
                 }
                 motion_profile::McuMessage::Finished => {

@@ -24,7 +24,7 @@ pub struct MotionProfileState {
     pub current_rpm: u16,
     /// The measured plate RPM.
     pub current_plate_rpm: f64,
-    /// Setpoint motor RPM - current motor RPM.
+    /// Current motor RPM - setpoint motor RPM.
     pub rpm_error: i16,
     /// Setpoint plate RPM - current plate RPM.
     pub plate_rpm_error: f64,
