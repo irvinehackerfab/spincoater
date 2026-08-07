@@ -14,18 +14,20 @@ use embassy_time::Timer;
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
-    gpio::{DriveStrength, Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
+    gpio::{DriveStrength, Input, InputConfig, Level, Output, OutputConfig, Pull},
+    interrupt::Priority,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     timer::timg::TimerGroup,
     uart::{DataBits, Parity, StopBits, Uart},
 };
 use esp_println as _;
+use esp_rtos::embassy::InterruptExecutor;
 use esp32::{
     RUNNER_REQUEST_BUFFER, RUNNER_REQUEST_CHANNEL, RUNNER_RESPONSE_BUFFER, RUNNER_RESPONSE_CHANNEL,
-    RUNNER_RESPONSE_SENDER_MUTEX, RunnerResponseSenderMutex, SECOND_CORE_STACK,
+    RUNNER_RESPONSE_SENDER_MUTEX, RunnerResponseSenderMutex, SECOND_CORE_EXECUTOR,
+    SECOND_CORE_STACK,
     gpio::{
-        encoder::ENCODER,
-        interrupt_handler,
+        encoder::detect_motor_revolutions,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
     },
     runners::motion_profile::{Runner, run},
@@ -86,19 +88,26 @@ async fn main(spawner: Spawner) -> ! {
         peripherals.GPIO27,
         InputConfig::default().with_pull(Pull::Down),
     );
-    ENCODER.with(|encoder_memory_cell| {
-        encoder_memory_cell.replace(encoder);
-    });
+    // ENCODER.with(|encoder_memory_cell| {
+    //     encoder_memory_cell.replace(encoder);
+    // });
 
     // Run the encoder task/ISR on the second core so it doesn't block the program.
-    let mut io = Io::new(peripherals.IO_MUX);
+    // let mut io = Io::new(peripherals.IO_MUX);
     esp_rtos::start_second_core(
         peripherals.CPU_CTRL,
         sw_interrupt.software_interrupt1,
         SECOND_CORE_STACK.take(),
         move || {
-            // Set the interrupt handler for GPIO.
-            io.set_interrupt_handler(interrupt_handler);
+            // // Set the interrupt handler for GPIO.
+            // io.set_interrupt_handler(interrupt_handler);
+            let executor = SECOND_CORE_EXECUTOR
+                .init_with(|| InterruptExecutor::new(sw_interrupt.software_interrupt2));
+            let spawner = executor.start(Priority::Priority3);
+            spawner.spawn(
+                detect_motor_revolutions(encoder)
+                    .unwrap_or_else(|_| unreachable!("The encoder task is not running")),
+            );
         },
     );
 
@@ -168,12 +177,15 @@ async fn main(spawner: Spawner) -> ! {
         &*to_server,
         vacuum_pump_pin,
     );
-    spawner.spawn(run_server_rx(server_rx).expect("Failed to spawn server rx"));
+    spawner.spawn(
+        run_server_rx(server_rx)
+            .unwrap_or_else(|_| unreachable!("The server RX task is not running")),
+    );
     let mut server_tx = ServerTx::new(tx, SEND_BUFFER.take(), from_runner);
 
     // Setup runner
     let runner = Runner::new(setpoints, pwm_pin, from_server, &*to_server);
-    spawner.spawn(run(runner).expect("Failed to spawn runner"));
+    spawner.spawn(run(runner).unwrap_or_else(|_| unreachable!("The runner task is not running")));
 
     server_tx.send_messages().await;
 }

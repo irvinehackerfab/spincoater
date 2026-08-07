@@ -3,14 +3,14 @@
 use crate::{
     RunnerRequestReceiver, RunnerResponseSenderMutex,
     gpio::{
-        encoder::{ENCODER, ENCODER_STATE, EncoderState, calculate_average_rpm},
+        encoder::{ENCODER_STATE, EncoderState, calculate_average_rpm},
         pwm::{SETPOINT_LIST_LENGTH, linear_conversion},
     },
     pid::{neg_error, next_control_output},
     runners::sleep,
 };
 use embassy_time::Instant;
-use esp_hal::{gpio::Event, mcpwm::operator::PwmPin, peripherals::MCPWM0};
+use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::Vec;
 use sc_messages::{
     icd,
@@ -52,33 +52,33 @@ impl Runner {
             if let Some(setpoint) = self.setup().await {
                 // Since we are starting again, we must reset the encoder state.
                 ENCODER_STATE.with(EncoderState::reset);
-                // Start listening for interrupts
-                ENCODER.with(|encoder| {
-                    encoder
-                        .as_mut()
-                        .expect("The runner cannot function without the encoder.")
-                        .listen(Event::RisingEdge);
-                });
+                // // Start listening for interrupts
+                // ENCODER.with(|encoder| {
+                //     encoder
+                //         .as_mut()
+                //         .expect("The runner cannot function without the encoder.")
+                //         .listen(Event::RisingEdge);
+                // });
                 self.execute_single_rpm(&setpoint).await;
             } else {
                 // Since we are starting again, we must reset the encoder state.
                 ENCODER_STATE.with(EncoderState::reset);
-                // Start listening for interrupts
-                ENCODER.with(|encoder| {
-                    encoder
-                        .as_mut()
-                        .expect("The runner cannot function without the encoder.")
-                        .listen(Event::RisingEdge);
-                });
+                // // Start listening for interrupts
+                // ENCODER.with(|encoder| {
+                //     encoder
+                //         .as_mut()
+                //         .expect("The runner cannot function without the encoder.")
+                //         .listen(Event::RisingEdge);
+                // });
                 self.execute_motion_profile().await;
             }
-            // Stop listening for interrupts
-            ENCODER.with(|encoder| {
-                encoder
-                    .as_mut()
-                    .expect("The runner cannot function without the encoder.")
-                    .unlisten();
-            });
+            // // Stop listening for interrupts
+            // ENCODER.with(|encoder| {
+            //     encoder
+            //         .as_mut()
+            //         .expect("The runner cannot function without the encoder.")
+            //         .unlisten();
+            // });
             self.clear();
         }
     }

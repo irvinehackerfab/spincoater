@@ -4,6 +4,7 @@
 //! it's located in the [gpio](`crate::gpio`) module.
 
 use core::sync::atomic::AtomicU32;
+use embassy_executor::task;
 use esp_hal::{gpio::Input, time::Instant};
 use esp_sync::NonReentrantMutex;
 use heapless::HistoryBuf;
@@ -105,4 +106,17 @@ pub fn plate_to_motor_revolutions(rpm: u16) -> u16 {
 pub fn motor_to_plate_revolutions(rpm: u16) -> u16 {
     rpm.mul_div_round(PLATE_REVOLUTIONS, MOTOR_REVOLUTIONS)
         .unwrap_or(u16::MAX)
+}
+
+/// The task for detecting motor revolutions.
+///
+/// Todo: Replace with [`interrupt_handler`](crate::gpio::interrupt_handler)
+/// when the [Io driver bug](https://github.com/esp-rs/esp-hal/issues/5881) is fixed.
+#[task]
+pub async fn detect_motor_revolutions(mut encoder: Input<'static>) -> ! {
+    loop {
+        encoder.wait_for_rising_edge().await;
+        // An interrupt occurred, so it's time to calculate the rpm.
+        ENCODER_STATE.with(EncoderState::calculate_rpm);
+    }
 }

@@ -18,22 +18,23 @@ use esp_hal::{
     delay::Delay,
     dma::{DmaRxBuf, DmaTxBuf},
     dma_buffers,
-    gpio::{DriveStrength, Input, InputConfig, Io, Level, Output, OutputConfig, Pull},
+    gpio::{DriveStrength, Input, InputConfig, Level, Output, OutputConfig, Pull},
+    interrupt::Priority,
     mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
     spi::master::{Config, Spi, SpiDmaBus},
     timer::timg::TimerGroup,
 };
 use esp_println as _;
+use esp_rtos::embassy::InterruptExecutor;
 use esp32::{
-    SECOND_CORE_STACK,
+    SECOND_CORE_EXECUTOR, SECOND_CORE_STACK,
     gpio::{
         display::{
             DISPLAY, ORIENTATION, SPI, SPI_BUFFER, SPI_BUFFER_SIZE, SPI_CLOCK_RATE, SPI_MODE,
             terminal::{TERMINAL, TerminalState, channel::TERMINAL_CHANNEL, update_terminal},
             touchscreen::{Touchscreen, XPT_BUFFER, run_touchscreen},
         },
-        encoder::ENCODER,
-        interrupt_handler,
+        encoder::detect_motor_revolutions,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER},
     },
     runners::rpm::{RPM_BUFFER, Runner, channel::RUNNER_CHANNEL},
@@ -95,19 +96,26 @@ async fn main(spawner: Spawner) -> ! {
         peripherals.GPIO27,
         InputConfig::default().with_pull(Pull::Down),
     );
-    ENCODER.with(|encoder_memory_cell| {
-        encoder_memory_cell.replace(encoder);
-    });
+    // ENCODER.with(|encoder_memory_cell| {
+    //     encoder_memory_cell.replace(encoder);
+    // });
 
     // Run the encoder task/ISR on the second core so it doesn't block the program.
-    let mut io = Io::new(peripherals.IO_MUX);
+    // let mut io = Io::new(peripherals.IO_MUX);
     esp_rtos::start_second_core(
         peripherals.CPU_CTRL,
         sw_interrupt.software_interrupt1,
         SECOND_CORE_STACK.take(),
         move || {
-            // Set the interrupt handler for GPIO.
-            io.set_interrupt_handler(interrupt_handler);
+            // // Set the interrupt handler for GPIO.
+            // io.set_interrupt_handler(interrupt_handler);
+            let executor = SECOND_CORE_EXECUTOR
+                .init_with(|| InterruptExecutor::new(sw_interrupt.software_interrupt2));
+            let spawner = executor.start(Priority::Priority3);
+            spawner.spawn(
+                detect_motor_revolutions(encoder)
+                    .unwrap_or_else(|_| unreachable!("The encoder task is not running")),
+            );
         },
     );
 
@@ -216,9 +224,15 @@ async fn main(spawner: Spawner) -> ! {
     )
     .expect("Failed to initialize the touchscreen");
 
-    spawner.spawn(run_touchscreen(touchscreen).expect("Failed to spawn touchscreen"));
+    spawner.spawn(
+        run_touchscreen(touchscreen)
+            .unwrap_or_else(|_| unreachable!("The touchscreen task is not running")),
+    );
 
-    spawner.spawn(update_terminal(terminal_state, terminal).expect("Failed to spawn terminal"));
+    spawner.spawn(
+        update_terminal(terminal_state, terminal)
+            .unwrap_or_else(|_| unreachable!("The terminal task is not running")),
+    );
 
     let rpm_buffer = RPM_BUFFER.take();
 
