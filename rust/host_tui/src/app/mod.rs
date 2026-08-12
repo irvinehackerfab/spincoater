@@ -243,6 +243,10 @@ impl App {
                         .set_title("Please choose a CSV file with a single setpoint.")
                         .pick_file();
                     if let Some(path) = path {
+                        self.motor_data_file = Some(
+                            Self::open_log_file(MOTOR_DATA_SUB_DIR)
+                                .wrap_err("Failed to open log file")?,
+                        );
                         self.send_single_setpoint(path)
                             .wrap_err("Failed to send single setpoint")?;
                     }
