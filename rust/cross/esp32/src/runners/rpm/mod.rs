@@ -9,7 +9,7 @@ use crate::{
             ENCODER_STATE, EncoderState, calculate_average_rpm, motor_to_plate_revolutions,
             plate_to_motor_revolutions,
         },
-        pwm::linear_conversion,
+        pwm::cubic_conversion,
     },
     pid::{neg_error, next_control_output},
     runners::sleep,
@@ -95,7 +95,7 @@ impl Runner {
         // Feedforward
         // First we need to convert from plate rpm to motor rpm.
         let setpoint_rpm = plate_to_motor_revolutions(run_at.rpm);
-        let setpoint_duty_cycle = linear_conversion(setpoint_rpm);
+        let setpoint_duty_cycle = cubic_conversion(setpoint_rpm);
 
         loop {
             // Sleep must be called at the start so LOOP_PERIOD time can pass before the current rpm is calculated.

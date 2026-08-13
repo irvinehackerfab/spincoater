@@ -4,7 +4,7 @@ use crate::{
     RunnerRequestReceiver, RunnerResponseSenderMutex,
     gpio::{
         encoder::{ENCODER_STATE, EncoderState, calculate_average_rpm},
-        pwm::{SETPOINT_LIST_LENGTH, linear_conversion},
+        pwm::{SETPOINT_LIST_LENGTH, cubic_conversion},
     },
     pid::{neg_error, next_control_output},
     runners::sleep,
@@ -120,7 +120,7 @@ impl Runner {
         let mut previous_sleep_end = starting_time;
         // Feedforward
         // We can get the feedforward for the entire run.
-        let setpoint_duty_cycle = linear_conversion(setpoint.rpm);
+        let setpoint_duty_cycle = cubic_conversion(setpoint.rpm);
 
         loop {
             // Sleep must be called at the start so LOOP_PERIOD time can pass before the current rpm is calculated.
@@ -243,8 +243,8 @@ impl Runner {
             current_setpoint,
             elapsed_since_start_micros,
         )?;
-        // Then we need to linearly interpolate to find the required duty cycle.
-        Some((setpoint_rpm, linear_conversion(setpoint_rpm)))
+        // Then we need to interpolate to find the required duty cycle.
+        Some((setpoint_rpm, cubic_conversion(setpoint_rpm)))
     }
 
     /// Gets the next pair of setpoints.
