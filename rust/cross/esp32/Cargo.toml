@@ -10,7 +10,7 @@ license = "MIT"
 
 [dependencies]
 # Note: Things will break if you remove the tilde.
-esp-hal = { version = "~1.1.1", features = ["defmt", "esp32", "unstable"] }
+esp-hal = { version = "~1.1.2", features = ["defmt", "esp32", "unstable"] }
 esp-rtos = { version = "0.3.0", features = [
     "defmt",
     "esp-alloc",
@@ -38,7 +38,7 @@ embassy-futures = { version = "0.1.2", features = ["defmt"] }
 
 heapless = { version = "0.9.3", features = ["defmt"] }
 static_cell = "2.1.1"
-serde = { version = "1.0.228", default-features = false, features = ["derive"] }
+serde = { version = "1.0.229", default-features = false, features = ["derive"] }
 postcard = { version = "1.1.3", features = ["defmt"] }
 muldiv = "1.0.1"
 
