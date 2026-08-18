@@ -42,16 +42,20 @@
             # For Rusty File Dialogs
             wayland
             xdg-desktop-portal-gtk
+            zenity
             # For serialport
             udev
+          ];
+
+          # For Rusty File Dialogs
+          # https://docs.rs/rfd/latest/rfd/#xdg-desktop-portal-backend
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+            pkgs.dbus
           ];
 
           shellHook = ''
             alias ls=eza
             alias find=fd
-            # Required for DBus to work in COSMIC
-            # https://github.com/PolyMeilex/rfd/issues/305#issuecomment-3766284352
-            export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${pkgs.dbus.lib.outPath}/lib"
           '';
         };
         packages.host_tui_windows = mingPkgs.rustPlatform.buildRustPackage {
