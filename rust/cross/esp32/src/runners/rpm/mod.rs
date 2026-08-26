@@ -3,6 +3,7 @@
 pub mod channel;
 
 use crate::{
+    LOOP_PERIOD,
     gpio::{
         display::terminal::channel::{TerminalSender, TuiEvent},
         encoder::{
@@ -12,10 +13,9 @@ use crate::{
         pwm::cubic_conversion,
     },
     pid::{neg_error, next_control_output},
-    runners::sleep,
 };
 use channel::{RunAt, RunnerReceiver, RunnerRequest};
-use embassy_time::{Duration, Instant};
+use embassy_time::{Duration, Instant, Ticker};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::HistoryBuf;
 use sc_messages::pwm::{HALF_POWER_DUTY, STOP_DUTY};
@@ -90,7 +90,7 @@ impl Runner {
     /// logging info every iteration and checking for a stop command.
     async fn execute(&mut self, run_at: RunAt) {
         let starting_time = Instant::now();
-        let mut previous_sleep_end = starting_time;
+        let mut ticker = Ticker::every(LOOP_PERIOD);
         let mut previous_log = starting_time;
         // Feedforward
         // First we need to convert from plate rpm to motor rpm.
@@ -98,9 +98,6 @@ impl Runner {
         let setpoint_duty_cycle = cubic_conversion(setpoint_rpm);
 
         loop {
-            // Sleep must be called at the start so LOOP_PERIOD time can pass before the current rpm is calculated.
-            previous_sleep_end = sleep(previous_sleep_end).await;
-
             // Check for stop requests.
             if let Ok(RunnerRequest::Stop) = self.from_terminal.try_receive() {
                 break;
@@ -136,6 +133,9 @@ impl Runner {
                 self.to_terminal.send(TuiEvent::Runner(state)).await;
                 previous_log = Instant::now();
             }
+
+            // Sleep
+            ticker.next().await;
         }
         // Disable PWM
         self.pwm_pin.set_timestamp(STOP_DUTY);

@@ -3,9 +3,10 @@
 //! If you're looking for the interrupt service routine that handles hall effect sensor readings,
 //! it's located in the [gpio](`crate::gpio`) module.
 
-use core::sync::atomic::AtomicU32;
+use core::{ops::Div, sync::atomic::AtomicU32};
 use embassy_executor::task;
-use esp_hal::{gpio::Input, time::Instant};
+use embassy_time::Instant;
+use esp_hal::gpio::Input;
 use esp_sync::NonReentrantMutex;
 use heapless::HistoryBuf;
 use muldiv::MulDiv;
@@ -16,7 +17,7 @@ pub static ENCODER: NonReentrantMutex<Option<Input>> = NonReentrantMutex::new(No
 
 /// Provides global access to the encoder state.
 pub static ENCODER_STATE: NonReentrantMutex<EncoderState> =
-    NonReentrantMutex::new(EncoderState::new(Instant::EPOCH, HistoryBuf::new()));
+    NonReentrantMutex::new(EncoderState::new(Instant::MIN, HistoryBuf::new()));
 
 /// The length of the RPM ring buffer for the interrupt handler.
 ///
@@ -53,19 +54,22 @@ impl EncoderState {
     ///
     /// Stores the result in the ring buffer.
     pub fn calculate_rpm(&mut self) {
-        let time_since_last_interrupt = self.previous_time.elapsed().as_micros();
+        let now = Instant::now();
         // 1 interrupt * (1 motor revolution / 2 interrupts) * 1/(`time_since_last_interrupt` μs) * (10^6 μs / 1 s) * (60 s / 1 min)
         // = 30,000,000 / `time_since_last_interrupt`
         // Final units: motor revolutions per minute
         // The motor RPM will never actually reach 30,000,000, so if two interrupts somehow occur at the same microsecond,
         // we just consider the rpm to be extremely high.
         // We cap the rpm to usize::MAX here because the motor RPM will never exceed usize::MAX.
-        let rpm = match 30_000_000u64.checked_div(time_since_last_interrupt) {
-            Some(rpm) => rpm.try_into().unwrap_or(usize::MAX),
+        let rpm = match now.checked_duration_since(self.previous_time) {
+            Some(time_since_last_interrupt) => 30_000_000u64
+                .div(time_since_last_interrupt.as_micros())
+                .try_into()
+                .unwrap_or(usize::MAX),
             None => usize::MAX,
         };
         self.rpm_ring_buffer.write(rpm);
-        self.previous_time = Instant::now();
+        self.previous_time = now;
     }
 
     /// Resets the encoder state.

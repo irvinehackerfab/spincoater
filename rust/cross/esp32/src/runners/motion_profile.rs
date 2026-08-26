@@ -1,15 +1,14 @@
 //! This module contains the functionality for running motion profiles sent by the host PC.
 
 use crate::{
-    RunnerRequestReceiver, RunnerResponseSenderMutex,
+    LOOP_PERIOD, RunnerRequestReceiver, RunnerResponseSenderMutex,
     gpio::{
         encoder::{ENCODER_STATE, EncoderState, calculate_average_rpm},
         pwm::{SETPOINT_LIST_LENGTH, cubic_conversion},
     },
     pid::{neg_error, next_control_output},
-    runners::sleep,
 };
-use embassy_time::Instant;
+use embassy_time::{Instant, Ticker};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::Vec;
 use sc_messages::{
@@ -117,15 +116,12 @@ impl Runner {
     /// logging info every iteration and checking for a stop command.
     async fn execute_single_rpm(&mut self, setpoint: &Setpoint) {
         let starting_time = Instant::now();
-        let mut previous_sleep_end = starting_time;
+        let mut ticker = Ticker::every(LOOP_PERIOD);
         // Feedforward
         // We can get the feedforward for the entire run.
         let setpoint_duty_cycle = cubic_conversion(setpoint.rpm);
 
         loop {
-            // Sleep must be called at the start so LOOP_PERIOD time can pass before the current rpm is calculated.
-            previous_sleep_end = sleep(previous_sleep_end).await;
-
             // Check for stop requests.
             if let Some(message) = self.from_server.try_receive() {
                 let should_stop = matches!(message, HostMessage::Stop);
@@ -161,6 +157,9 @@ impl Runner {
                 time: time_since_start_micros,
             };
             self.send_message(&McuMessage::State(state)).await;
+
+            // Sleep
+            ticker.next().await;
         }
         // Disable PWM
         self.pwm_pin.set_timestamp(STOP_DUTY);
@@ -172,12 +171,9 @@ impl Runner {
     /// logging info every iteration and checking for a stop command.
     async fn execute_motion_profile(&mut self) {
         let starting_time = Instant::now();
-        let mut previous_sleep_end = starting_time;
+        let mut ticker = Ticker::every(LOOP_PERIOD);
         let mut setpoint_idx = 0;
         loop {
-            // Sleep must be called at the start so LOOP_PERIOD time can pass before the current rpm is calculated.
-            previous_sleep_end = sleep(previous_sleep_end).await;
-
             // Check for stop requests.
             if let Some(message) = self.from_server.try_receive() {
                 let should_stop = matches!(message, HostMessage::Stop);
@@ -216,6 +212,9 @@ impl Runner {
                 time: elapsed_since_start_micros,
             };
             self.send_message(&McuMessage::State(state)).await;
+
+            // Sleep
+            ticker.next().await;
         }
         // Disable PWM
         self.pwm_pin.set_timestamp(STOP_DUTY);
