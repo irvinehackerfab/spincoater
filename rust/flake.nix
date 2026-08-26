@@ -36,9 +36,6 @@
           packages = with pkgs; [
             custom-rust-bin
             pkg-config
-            eza
-            fd
-            openssl
             # For Rusty File Dialogs
             wayland
             xdg-desktop-portal-gtk
@@ -52,11 +49,6 @@
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
             pkgs.dbus
           ];
-
-          shellHook = ''
-            alias ls=eza
-            alias find=fd
-          '';
         };
         packages.host_tui_windows = mingPkgs.rustPlatform.buildRustPackage {
           pname = "host_tui_windows";
