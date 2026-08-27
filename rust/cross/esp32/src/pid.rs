@@ -22,6 +22,6 @@ pub fn neg_error(setpoint_rpm: u16, current_rpm: u16) -> i16 {
 
 /// Returns the output of a basic P controller.
 #[must_use]
-pub fn next_control_output(negative_error: i16) -> i16 {
+pub const fn next_control_output(negative_error: i16) -> i16 {
     negative_error / K_P_INVERSE
 }

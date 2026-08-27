@@ -3,6 +3,7 @@
 pub mod channel;
 pub mod ui;
 
+use embassy_executor::task;
 use embedded_graphics::prelude::Point;
 use esp_hal::gpio::Output;
 use mousefood::{EmbeddedBackend, prelude::Rgb565};
@@ -53,7 +54,7 @@ pub struct TerminalState {
 impl TerminalState {
     /// Creates the terminal.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         vacuum_pump_pin: Output<'static>,
         from_all: TerminalReceiver,
         to_runner: RunnerSender,
@@ -144,7 +145,7 @@ impl TerminalState {
 }
 
 /// This task updates the terminal whenever another task requests it to.
-#[embassy_executor::task]
+#[task]
 pub async fn update_terminal(
     mut terminal_state: TerminalState,
     terminal: &'static mut Terminal<EmbeddedBackend<'static, DisplayType, Rgb565>>,

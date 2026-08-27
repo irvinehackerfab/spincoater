@@ -8,6 +8,7 @@ use crate::{
     },
     pid::{neg_error, next_control_output},
 };
+use embassy_executor::task;
 use embassy_time::{Instant, Ticker};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::Vec;
@@ -26,7 +27,7 @@ pub struct Runner {
 }
 
 impl Runner {
-    pub fn new(
+    pub const fn new(
         setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
         from_server: RunnerRequestReceiver,
@@ -48,27 +49,19 @@ impl Runner {
     /// Runs the main control loop.
     async fn run(mut self) -> ! {
         loop {
-            if let Some(setpoint) = self.setup().await {
-                // Since we are starting again, we must reset the encoder state.
-                ENCODER_STATE.with(EncoderState::reset);
-                // // Start listening for interrupts
-                // ENCODER.with(|encoder| {
-                //     encoder
-                //         .as_mut()
-                //         .expect("The runner cannot function without the encoder.")
-                //         .listen(Event::RisingEdge);
-                // });
+            let option = self.setup().await;
+            // Since we are starting again, we must reset the encoder state.
+            ENCODER_STATE.with(EncoderState::reset);
+            // // Start listening for interrupts
+            // ENCODER.with(|encoder| {
+            //     encoder
+            //         .as_mut()
+            //         .expect("The runner cannot function without the encoder.")
+            //         .listen(Event::RisingEdge);
+            // });
+            if let Some(setpoint) = option {
                 self.execute_single_rpm(&setpoint).await;
             } else {
-                // Since we are starting again, we must reset the encoder state.
-                ENCODER_STATE.with(EncoderState::reset);
-                // // Start listening for interrupts
-                // ENCODER.with(|encoder| {
-                //     encoder
-                //         .as_mut()
-                //         .expect("The runner cannot function without the encoder.")
-                //         .listen(Event::RisingEdge);
-                // });
                 self.execute_motion_profile().await;
             }
             // // Stop listening for interrupts
@@ -228,7 +221,7 @@ impl Runner {
     ///
     /// If the rpm doesn't fit in a [`u16`], the method will disable PWM, log the error, and then return [`None`].
     fn feedforward(
-        &mut self,
+        &self,
         setpoint_idx: &mut usize,
         elapsed_since_start_micros: u64,
     ) -> Option<(u16, DutyCycle)> {
@@ -302,7 +295,7 @@ impl Runner {
     }
 
     /// Sends a message to the server.
-    async fn send_message(&mut self, message: &McuMessage) {
+    async fn send_message(&self, message: &McuMessage) {
         let mut lock = self.to_server.lock().await;
         let buf = lock.send().await;
         *buf = icd::McuMessage::MotionProfile(message.clone());
@@ -311,7 +304,7 @@ impl Runner {
 }
 
 /// Runs the [`Runner`] forever.
-#[embassy_executor::task]
+#[task]
 pub async fn run(runner: Runner) {
     runner.run().await;
 }

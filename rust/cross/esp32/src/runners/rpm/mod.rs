@@ -15,6 +15,7 @@ use crate::{
     pid::{neg_error, next_control_output},
 };
 use channel::{RunAt, RunnerReceiver, RunnerRequest};
+use embassy_executor::task;
 use embassy_time::{Duration, Instant, Ticker};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::HistoryBuf;
@@ -44,7 +45,7 @@ pub struct Runner {
 impl Runner {
     /// Creates the runner.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
         from_terminal: RunnerReceiver,
         to_terminal: TerminalSender,
@@ -99,7 +100,7 @@ impl Runner {
 
         loop {
             // Check for stop requests.
-            if let Ok(RunnerRequest::Stop) = self.from_terminal.try_receive() {
+            if matches!(self.from_terminal.try_receive(), Ok(RunnerRequest::Stop)) {
                 break;
             }
 
@@ -145,7 +146,7 @@ impl Runner {
 }
 
 /// Runs the [`Runner`] forever.
-#[embassy_executor::task]
+#[task]
 pub async fn run(runner: Runner) {
     runner.run().await;
 }

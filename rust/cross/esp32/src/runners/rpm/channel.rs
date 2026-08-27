@@ -42,7 +42,7 @@ impl RunAt {
     ///
     /// RPM should be plate RPM and time should be seconds.
     #[must_use]
-    pub fn new(rpm: u16, time: u16) -> Self {
+    pub const fn new(rpm: u16, time: u16) -> Self {
         Self { rpm, time }
     }
 }

@@ -41,7 +41,7 @@ pub struct ServerRx {
 
 impl ServerRx {
     /// Creates a new server receiver.
-    pub fn new(
+    pub const fn new(
         rx: UartRx<'static, Async>,
         read_buffer: &'static mut [u8; MAX_HOST_MESSAGE_SIZE],
         accumulator: &'static mut CobsAccumulator<MAX_HOST_MESSAGE_SIZE>,
@@ -158,7 +158,7 @@ pub struct ServerTx {
 
 impl ServerTx {
     /// Creates a new server sender.
-    pub fn new(
+    pub const fn new(
         tx: UartTx<'static, Async>,
         send_buffer: &'static mut [u8; MAX_MCU_MESSAGE_SIZE],
         from_all: RunnerResponseReceiver,

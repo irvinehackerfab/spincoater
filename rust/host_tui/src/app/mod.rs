@@ -280,7 +280,7 @@ impl App {
         match message {
             McuMessage::MotionProfile(mcu_message) => match mcu_message {
                 motion_profile::McuMessage::State(state) => {
-                    let full_state: MotionProfileState = state.clone().into();
+                    let full_state: MotionProfileState = state.into();
                     self.mcu_state = Some(full_state.clone());
                     self.motor_data_file
                         .as_mut()
@@ -303,7 +303,7 @@ impl App {
     /// Loads a motion profile from a CSV [`PathBuf`] and sends it.
     ///
     /// Note that the MCU performs stable sort on the setpoints before execution.
-    fn send_motion_profile(&mut self, path: PathBuf) -> Result<()> {
+    fn send_motion_profile(&self, path: PathBuf) -> Result<()> {
         let file = csv::Reader::from_path(path).wrap_err("Failed to open CSV file")?;
         for result in file.into_deserialize() {
             let setpoint: Setpoint = result.wrap_err("Failed to deserialize from CSV file")?;
@@ -316,7 +316,7 @@ impl App {
     }
 
     /// Loads a [`Setpoint`] from a CSV [`PathBuf`] and sends it.
-    fn send_single_setpoint(&mut self, path: PathBuf) -> Result<()> {
+    fn send_single_setpoint(&self, path: PathBuf) -> Result<()> {
         let mut file = csv::Reader::from_path(path).wrap_err("Failed to open CSV file")?;
         let mut record = StringRecord::new();
         file.read_record(&mut record)

@@ -40,10 +40,9 @@ impl TerminalState {
                 "Plate RPM: ".to_span(),
                 self.target_rpm.to_span(),
                 " | Actual: ".to_span(),
-                match &self.rpm {
-                    Some(rpm) => rpm.to_span(),
-                    None => "?".to_span(),
-                },
+                self.rpm
+                    .as_ref()
+                    .map_or_else(|| "?".to_span(), |rpm| rpm.to_span()),
             ]))
             .title_alignment(HorizontalAlignment::Center);
 
@@ -52,10 +51,9 @@ impl TerminalState {
                 "Time (s): ".to_span(),
                 self.target_time.to_span(),
                 " | Actual: ".to_span(),
-                match &self.time {
-                    Some(time) => time.to_span(),
-                    None => "?".to_span(),
-                },
+                self.time
+                    .as_ref()
+                    .map_or_else(|| "?".to_span(), |time| time.to_span()),
             ]))
             .title_alignment(HorizontalAlignment::Center);
 

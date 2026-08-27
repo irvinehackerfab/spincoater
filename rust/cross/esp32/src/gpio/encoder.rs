@@ -61,13 +61,15 @@ impl EncoderState {
         // The motor RPM will never actually reach 30,000,000, so if two interrupts somehow occur at the same microsecond,
         // we just consider the rpm to be extremely high.
         // We cap the rpm to usize::MAX here because the motor RPM will never exceed usize::MAX.
-        let rpm = match now.checked_duration_since(self.previous_time) {
-            Some(time_since_last_interrupt) => 30_000_000u64
-                .div(time_since_last_interrupt.as_micros())
-                .try_into()
-                .unwrap_or(usize::MAX),
-            None => usize::MAX,
-        };
+        let rpm = now.checked_duration_since(self.previous_time).map_or(
+            usize::MAX,
+            |time_since_last_interrupt| {
+                30_000_000u64
+                    .div(time_since_last_interrupt.as_micros())
+                    .try_into()
+                    .unwrap_or(usize::MAX)
+            },
+        );
         self.rpm_ring_buffer.write(rpm);
         self.previous_time = now;
     }
