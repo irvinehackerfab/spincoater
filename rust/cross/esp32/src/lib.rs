@@ -33,7 +33,7 @@ pub static SECOND_CORE_EXECUTOR: StaticCell<InterruptExecutor<2>> = StaticCell::
 
 /// The period that the main control loop runs at.
 ///
-/// The further you raise this past `20`, the greater your risk of filling up [`gpio::encoder::RPM_RING_BUFFER`] is.
+/// The further you raise this past `20`, the greater your risk of filling up the RPM ring buffer is.
 /// The only consequence of this is a less accurate moving average.
 pub const LOOP_PERIOD: Duration = Duration::from_millis(20);
 
@@ -44,7 +44,7 @@ pub static RUNNER_REQUEST_BUFFER: ConstStaticCell<
     [motion_profile::HostMessage; SETPOINT_LIST_LENGTH],
 > = ConstStaticCell::new([const { motion_profile::HostMessage::Stop }; _]);
 
-/// Used for passing [`HostMessage`]s from the server.
+/// Used for passing [`motion_profile::HostMessage`]s from the server.
 ///
 /// This is zerocopy because the messages are expensive to copy.
 /// This uses [`NoopRawMutex`] because data is only shared in one executor.
