@@ -80,7 +80,7 @@ pub fn cubic_conversion(setpoint_rpm: u16) -> DutyCycle {
     /// The coefficient of the x term in the duty cycle vs motor RPM cubic equation.
     const CUBIC_B: f32 = 0.0179;
     /// The intercept in the duty cycle vs motor RPM cubic equation.
-    const CUBIC_A: f32 = 5_005.072;
+    const CUBIC_A: f32 = 4983.75;
 
     let setpoint_rpm = f32::from(setpoint_rpm);
     let setpoint_rpm_squared = setpoint_rpm * setpoint_rpm;
