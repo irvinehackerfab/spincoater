@@ -52,25 +52,11 @@ impl Runner {
             let option = self.setup().await;
             // Since we are starting again, we must reset the encoder state.
             ENCODER_STATE.with(EncoderState::reset);
-            // // Start listening for interrupts
-            // ENCODER.with(|encoder| {
-            //     encoder
-            //         .as_mut()
-            //         .expect("The runner cannot function without the encoder.")
-            //         .listen(Event::RisingEdge);
-            // });
             if let Some(setpoint) = option {
                 self.execute_single_rpm(&setpoint).await;
             } else {
                 self.execute_motion_profile().await;
             }
-            // // Stop listening for interrupts
-            // ENCODER.with(|encoder| {
-            //     encoder
-            //         .as_mut()
-            //         .expect("The runner cannot function without the encoder.")
-            //         .unlisten();
-            // });
             self.clear();
         }
     }

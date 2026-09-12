@@ -23,7 +23,7 @@ csv = "1.4.0"
 # For loading motion profile files
 rfd = "0.17.2"
 # For serial port enumeration
-serialport = "4.9.0"
+serialport = "4.10.1"
 # For UART communication
 serial2 = "0.2.38"
 # For linear regression of RPM values and duty cycle values

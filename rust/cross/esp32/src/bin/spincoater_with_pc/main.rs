@@ -70,9 +70,7 @@ async fn main(spawner: Spawner) -> ! {
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-    let sw_interrupt =
-        esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
-    esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
+    esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
 
     info!("Embassy initialized!");
 
@@ -88,21 +86,15 @@ async fn main(spawner: Spawner) -> ! {
         peripherals.GPIO27,
         InputConfig::default().with_pull(Pull::Down),
     );
-    // ENCODER.with(|encoder_memory_cell| {
-    //     encoder_memory_cell.replace(encoder);
-    // });
 
     // Run the encoder task/ISR on the second core so it doesn't block the program.
-    // let mut io = Io::new(peripherals.IO_MUX);
     esp_rtos::start_second_core(
         peripherals.CPU_CTRL,
-        sw_interrupt.software_interrupt1,
+        peripherals.FROM_CPU_INTR1,
         SECOND_CORE_STACK.take(),
         move || {
-            // // Set the interrupt handler for GPIO.
-            // io.set_interrupt_handler(interrupt_handler);
             let executor = SECOND_CORE_EXECUTOR
-                .init_with(|| InterruptExecutor::new(sw_interrupt.software_interrupt2));
+                .init_with(|| InterruptExecutor::new(peripherals.FROM_CPU_INTR2));
             let spawner = executor.start(Priority::Priority3);
             spawner.spawn(
                 detect_motor_revolutions(encoder)

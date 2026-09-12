@@ -10,7 +10,7 @@ use esp_hal::{
     Blocking,
     delay::Delay,
     gpio::Output,
-    spi::{Mode, master::SpiDmaBus},
+    spi::{Mode, master::SpiDma},
     time::Rate,
 };
 use mipidsi::{
@@ -22,7 +22,7 @@ use mipidsi::{
 use static_cell::{ConstStaticCell, StaticCell};
 
 /// The size of the buffers used for SPI.
-pub const SPI_BUFFER_SIZE: usize = 32000;
+pub const SPI_BUFFER_SIZE: usize = 32736;
 
 /// The buffer used for display pixels.
 pub static SPI_BUFFER: ConstStaticCell<[u8; SPI_BUFFER_SIZE]> = ConstStaticCell::new([0u8; _]);
@@ -41,7 +41,7 @@ pub const SPI_MODE: Mode = Mode::_0;
 pub type DisplayType = Display<
     SpiInterface<
         'static,
-        RefCellDevice<'static, SpiDmaBus<'static, Blocking>, Output<'static>, Delay>,
+        RefCellDevice<'static, SpiDma<'static, Blocking>, Output<'static>, Delay>,
         Output<'static>,
     >,
     ILI9341Rgb565,
@@ -49,7 +49,7 @@ pub type DisplayType = Display<
 >;
 
 /// The static cell for the SPI bus.
-pub static SPI: StaticCell<RefCell<SpiDmaBus<'static, Blocking>>> = StaticCell::new();
+pub static SPI: StaticCell<RefCell<SpiDma<'static, Blocking>>> = StaticCell::new();
 
 /// The static cell for the display.
 pub static DISPLAY: StaticCell<DisplayType> = StaticCell::new();

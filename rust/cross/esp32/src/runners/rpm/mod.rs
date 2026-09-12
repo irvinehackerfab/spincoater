@@ -68,21 +68,7 @@ impl Runner {
             if let RunnerRequest::Run(run_at) = self.from_terminal.receive().await {
                 // Since we are starting again, we must reset the encoder state.
                 ENCODER_STATE.with(EncoderState::reset);
-                // // Start listening for interrupts
-                // ENCODER.with(|encoder| {
-                //     encoder
-                //         .as_mut()
-                //         .expect("The runner cannot function without the encoder.")
-                //         .listen(Event::RisingEdge);
-                // });
                 self.execute(run_at).await;
-                // // Stop listening for interrupts
-                // ENCODER.with(|encoder| {
-                //     encoder
-                //         .as_mut()
-                //         .expect("The runner cannot function without the encoder.")
-                //         .unlisten();
-                // });
             }
         }
     }

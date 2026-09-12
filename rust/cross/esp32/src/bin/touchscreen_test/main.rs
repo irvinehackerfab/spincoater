@@ -16,10 +16,9 @@ use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
     delay::Delay,
-    dma::{DmaRxBuf, DmaTxBuf},
-    dma_buffers,
+    dma_rx_buffer, dma_tx_buffer,
     gpio::{DriveStrength, Input, InputConfig, Level, Output, OutputConfig, Pull},
-    spi::master::{Config, Spi, SpiDmaBus},
+    spi::master::{Config, Spi, SpiDma},
     timer::timg::TimerGroup,
 };
 use esp_println as _;
@@ -61,9 +60,7 @@ async fn main(spawner: Spawner) -> ! {
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
 
     let timg0 = TimerGroup::new(peripherals.TIMG0);
-    let sw_interrupt =
-        esp_hal::interrupt::software::SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
-    esp_rtos::start(timg0.timer0, sw_interrupt.software_interrupt0);
+    esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
 
     info!("Embassy initialized!");
 
@@ -91,12 +88,9 @@ async fn main(spawner: Spawner) -> ! {
         // Serial Clock. SPI clock signal from the microcontroller. It synchronizes the data being sent.
         .with_sck(peripherals.GPIO32)
         .with_dma(peripherals.DMA_SPI2);
-        let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(SPI_BUFFER_SIZE);
-        let dma_rx_buf =
-            DmaRxBuf::new(rx_descriptors, rx_buffer).expect("Failed to create DMA RX buf");
-        let dma_tx_buf =
-            DmaTxBuf::new(tx_descriptors, tx_buffer).expect("Failed to create DMA TX buf");
-        let spi = SpiDmaBus::new(spi, dma_rx_buf, dma_tx_buf);
+        let dma_rx_buf = dma_rx_buffer!(SPI_BUFFER_SIZE).expect("Failed to create DMA RX buf");
+        let dma_tx_buf = dma_tx_buffer!(SPI_BUFFER_SIZE).expect("Failed to create DMA TX buf");
+        let spi = SpiDma::with_buffers(spi, dma_rx_buf, dma_tx_buf);
         RefCell::new(spi)
     });
 

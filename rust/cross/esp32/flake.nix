@@ -3,7 +3,6 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    old-nixpkgs.url = "github:NixOS/nixpkgs/9b481b0ed62325ec0921e059a676e3ef9096d3c7";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -11,15 +10,13 @@
     {
       self,
       nixpkgs,
-      old-nixpkgs,
       flake-utils,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs { inherit system; };
-        old-pkgs = import old-nixpkgs { inherit system; };
-        rust-version = "1.95.0.0";
+        rust-version = "1.98.1.0";
         suffix =
           {
             x86_64-linux = "x86_64-unknown-linux-gnu";
@@ -39,7 +36,7 @@
           version = rust-version;
           src = pkgs.fetchzip {
             url = "https://github.com/esp-rs/rust-build/releases/download/v${version}/${pname}-${version}.tar.xz";
-            hash = "sha256-mUpucCIRJxgFWiW5HlT95ZKvA+u4+T5CvEfgoQZoNOA=";
+            hash = "sha256-OSTa6kP4topLKZ13Tni6nQl6lNfeCj3kf4NFAzbrMzY=";
           };
           installPhase = ''
             bash ./install.sh --prefix=$out
@@ -52,9 +49,9 @@
             url = "https://github.com/esp-rs/rust-build/releases/download/v${version}/${pname}-${version}-${suffix}.tar.xz";
             hash =
               {
-                x86_64-linux = "sha256-3wpKYEA9i9+/6OkzuBjFD7MSufN8ZCgBmUNdB2LeprI=";
-                aarch64-linux = "sha256-DH2I5oBfm3egSPMH/LHfDGWGOjBsJ4Ej3HcanLbShEw=";
-                aarch64-darwin = "sha256-VDrdluRSzFmNOdHf3w8q/2z9xUrlbOLmOtFXxneLXSs=";
+                x86_64-linux = "sha256-aBrU/6W0vnw49WvkAe+tfeDtn0xMPpwkKQ4ZPptLVbg=";
+                aarch64-linux = pkgs.lib.fakeHash;
+                aarch64-darwin = pkgs.lib.fakeHash;
               }
               .${system};
           };
@@ -117,7 +114,7 @@
             # Flashing / runner tools
             pkgs.espflash
             # Editor support
-            old-pkgs.rust-analyzer
+            pkgs.rust-analyzer
             # ESP packages
             rust
             xtensa-esp-elf

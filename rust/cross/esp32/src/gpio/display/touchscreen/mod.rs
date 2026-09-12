@@ -9,7 +9,7 @@ use esp_hal::{
     Blocking,
     delay::Delay,
     gpio::{Input, Output},
-    spi::master::SpiDmaBus,
+    spi::master::SpiDma,
 };
 use static_cell::ConstStaticCell;
 use xpt2046_rs::{
@@ -24,7 +24,7 @@ use crate::gpio::display::{
 };
 
 /// The type of SPI device the touchscreen uses.
-pub type Device<'a> = RefCellDevice<'a, SpiDmaBus<'a, Blocking>, Output<'a>, Delay>;
+pub type Device<'a> = RefCellDevice<'a, SpiDma<'a, Blocking>, Output<'a>, Delay>;
 
 /// The buffer for the XPT.
 pub static XPT_BUFFER: ConstStaticCell<[u8; BUFFER_SIZE]> = ConstStaticCell::new([0; _]);
