@@ -95,7 +95,7 @@ async fn main(spawner: Spawner) -> ! {
     });
 
     let t_cs = Output::new(peripherals.GPIO16, Level::High, OutputConfig::default());
-    let spi = RefCellDevice::new(spi, t_cs, Delay::new()).expect("cs is already high");
+    let Ok(spi) = RefCellDevice::new(spi, t_cs, Delay::new());
     let pen_irq = Input::new(
         peripherals.GPIO34,
         // pull up because active low

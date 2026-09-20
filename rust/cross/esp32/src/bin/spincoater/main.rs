@@ -166,7 +166,7 @@ async fn main(spawner: Spawner) -> ! {
             // However, according to page 225 of https://www.lcdwiki.com/res/MSP2807/ILI9341%20Datasheet.pdf
             // the starting state doesn't matter.
             let reset = Output::new(peripherals.GPIO18, Level::High, OutputConfig::default());
-            let spi_device = RefCellDevice::new(spi, cs, Delay::new()).expect("cs is already high");
+            let Ok(spi_device) = RefCellDevice::new(spi, cs, Delay::new());
             let interface = SpiInterface::new(spi_device, dc, SPI_BUFFER.take());
             mipidsi::Builder::new(ILI9341Rgb565, interface)
                 .reset_pin(reset)
@@ -198,7 +198,7 @@ async fn main(spawner: Spawner) -> ! {
 
     // Initialize the touchscreen
     let t_cs = Output::new(peripherals.GPIO16, Level::High, OutputConfig::default());
-    let spi_device = RefCellDevice::new(spi, t_cs, Delay::new()).expect("cs is already high");
+    let Ok(spi_device) = RefCellDevice::new(spi, t_cs, Delay::new());
     let pen_irq = Input::new(
         peripherals.GPIO34,
         // pull up because active low

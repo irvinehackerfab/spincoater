@@ -115,9 +115,6 @@ pub fn motor_to_plate_revolutions(rpm: u16) -> u16 {
 }
 
 /// The task for detecting motor revolutions.
-///
-/// Todo: Replace with [`interrupt_handler`](crate::gpio::interrupt_handler)
-/// when the [Io driver bug](https://github.com/esp-rs/esp-hal/issues/5881) is fixed.
 #[task]
 pub async fn detect_motor_revolutions(mut encoder: Input<'static>) -> ! {
     loop {
