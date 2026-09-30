@@ -1,12 +1,14 @@
 //! This module contains the functionality for running motion profiles sent by the host PC.
 
+use core::ops::Add;
+
 use crate::{
     LOOP_PERIOD, RunnerRequestReceiver, RunnerResponseSenderMutex,
     gpio::{
         encoder::{ENCODER_STATE, EncoderState, calculate_average_rpm},
         pwm::{SETPOINT_LIST_LENGTH, cubic_conversion},
     },
-    pid::{neg_error, next_control_output},
+    pid::{Pi, neg_error},
 };
 use embassy_executor::task;
 use embassy_time::{Instant, Ticker};
@@ -100,6 +102,10 @@ impl Runner {
         // We can get the feedforward for the entire run.
         let setpoint_duty_cycle = cubic_conversion(setpoint.rpm);
 
+        // Feedback
+        // Initialize the controller
+        let mut pi_controller = Pi::new();
+
         loop {
             // Check for stop requests.
             if let Some(message) = self.from_server.try_receive() {
@@ -120,19 +126,18 @@ impl Runner {
             let current_rpm =
                 ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
             let negative_rpm_error = neg_error(setpoint.rpm, current_rpm);
-            let output = next_control_output(negative_rpm_error);
-            let duty_cycle = (*setpoint_duty_cycle)
-                .saturating_add_signed(output)
-                .clamp(STOP_DUTY, HALF_POWER_DUTY);
+            let output = pi_controller.next_control_output(negative_rpm_error);
+            let duty_cycle = DutyCycle::from(setpoint_duty_cycle.add(output));
 
-            self.pwm_pin.set_timestamp(duty_cycle);
+            // Limit to half of the max power to avoid tripping overcurrent protection
+            self.pwm_pin.set_timestamp(duty_cycle.min(HALF_POWER_DUTY));
 
             // Logging
             let state = State {
                 setpoint_rpm: setpoint.rpm,
                 current_rpm,
                 rpm_error: negative_rpm_error.saturating_neg(),
-                duty_cycle: DutyCycle::from(duty_cycle),
+                duty_cycle,
                 time: time_since_start_micros,
             };
             self.send_message(&McuMessage::State(state)).await;
@@ -152,6 +157,11 @@ impl Runner {
         let starting_time = Instant::now();
         let mut ticker = Ticker::every(LOOP_PERIOD);
         let mut setpoint_idx = 0;
+
+        // Feedback
+        // Initialize the controller
+        let mut pi_controller = Pi::new();
+
         loop {
             // Check for stop requests.
             if let Some(message) = self.from_server.try_receive() {
@@ -165,29 +175,40 @@ impl Runner {
             let elapsed_since_start_micros = starting_time.elapsed().as_micros();
 
             // Feedforward
-            let Some((setpoint_rpm, setpoint_duty_cycle)) =
-                self.feedforward(&mut setpoint_idx, elapsed_since_start_micros)
+            // Get next pair of setpoints.
+            let Some((previous_setpoint, current_setpoint)) =
+                self.next_setpoint_pair(&mut setpoint_idx, elapsed_since_start_micros)
             else {
                 break;
             };
+
+            // Get setpoint rpm.
+            let Some(setpoint_rpm) = Self::next_setpoint_rpm(
+                previous_setpoint,
+                current_setpoint,
+                elapsed_since_start_micros,
+            ) else {
+                break;
+            };
+            // Then we need to interpolate to find the required duty cycle.
+            let setpoint_duty_cycle = cubic_conversion(setpoint_rpm);
 
             // Feedback
             let current_rpm =
                 ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
             let rpm_error = neg_error(setpoint_rpm, current_rpm);
-            let output = next_control_output(rpm_error);
-            let duty_cycle = (*setpoint_duty_cycle)
-                .saturating_add_signed(output)
-                .clamp(STOP_DUTY, HALF_POWER_DUTY);
+            let output = pi_controller.next_control_output(rpm_error);
+            let duty_cycle = DutyCycle::from(setpoint_duty_cycle.add(output));
 
-            self.pwm_pin.set_timestamp(duty_cycle);
+            // Limit to half of the max power to avoid tripping overcurrent protection
+            self.pwm_pin.set_timestamp(duty_cycle.min(HALF_POWER_DUTY));
 
             // Logging
             let state = State {
                 setpoint_rpm,
                 current_rpm,
                 rpm_error,
-                duty_cycle: DutyCycle::from(duty_cycle),
+                duty_cycle,
                 time: elapsed_since_start_micros,
             };
             self.send_message(&McuMessage::State(state)).await;
@@ -199,30 +220,6 @@ impl Runner {
         self.pwm_pin.set_timestamp(STOP_DUTY);
         // Report that the motion profile is finished.
         self.send_message(&McuMessage::Finished).await;
-    }
-
-    /// Calculates the setpoint rpm and duty cycle for this timestep.
-    ///
-    /// If there are no more setpoints to use, the method will disable PWM, log that the motion profile finished, and return [`None`].
-    ///
-    /// If the rpm doesn't fit in a [`u16`], the method will disable PWM, log the error, and then return [`None`].
-    fn feedforward(
-        &self,
-        setpoint_idx: &mut usize,
-        elapsed_since_start_micros: u64,
-    ) -> Option<(u16, DutyCycle)> {
-        // Get next pair of setpoints.
-        let (previous_setpoint, current_setpoint) =
-            self.next_setpoint_pair(setpoint_idx, elapsed_since_start_micros)?;
-
-        // Get setpoint rpm.
-        let setpoint_rpm = Self::next_setpoint_rpm(
-            previous_setpoint,
-            current_setpoint,
-            elapsed_since_start_micros,
-        )?;
-        // Then we need to interpolate to find the required duty cycle.
-        Some((setpoint_rpm, cubic_conversion(setpoint_rpm)))
     }
 
     /// Gets the next pair of setpoints.

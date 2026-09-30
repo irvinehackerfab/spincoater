@@ -37,6 +37,9 @@ pub static SECOND_CORE_EXECUTOR: StaticCell<InterruptExecutor<2>> = StaticCell::
 /// The only consequence of this is a less accurate moving average.
 pub const LOOP_PERIOD: Duration = Duration::from_millis(20);
 
+/// The period as a float.
+pub const LOOP_PERIOD_MILLIS_F32: f32 = 20.;
+
 use crate::gpio::pwm::SETPOINT_LIST_LENGTH;
 
 /// The buffer used by [`RUNNER_REQUEST_CHANNEL`].

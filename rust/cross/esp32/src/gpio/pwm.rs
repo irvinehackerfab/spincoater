@@ -70,7 +70,7 @@ pub fn linear_conversion(setpoint_rpm: u16) -> DutyCycle {
 
 /// Uses a cubic equation between motor RPM and duty cycle to find the setpoint duty cycle.
 #[must_use]
-pub fn cubic_conversion(setpoint_rpm: u16) -> DutyCycle {
+pub fn cubic_conversion(setpoint_rpm: u16) -> f32 {
     // We have to use floating point arithmetic because `CUBIC_D` and `CUBIC_C` are too small to turn into numerators and denominators.
     // These values were obtained from inputting a long motor log into a [model fitting website](https://livephysics.com/labs/scientific-data-graphing-lab/).
     /// The coefficient of the x^3 term in the duty cycle vs motor RPM cubic equation.
@@ -84,16 +84,7 @@ pub fn cubic_conversion(setpoint_rpm: u16) -> DutyCycle {
 
     let setpoint_rpm = f32::from(setpoint_rpm);
     let setpoint_rpm_squared = setpoint_rpm * setpoint_rpm;
-    let setpoint_rpm_cubed = setpoint_rpm * setpoint_rpm * setpoint_rpm;
-    let duty = setpoint_rpm_cubed * CUBIC_D
-        + setpoint_rpm_squared * CUBIC_C
-        + setpoint_rpm * CUBIC_B
-        + CUBIC_A;
-    // Rounding code inspired by [micromath](https://docs.rs/micromath/latest/src/micromath/float/round.rs.html#7-9)
-    #[allow(
-        clippy::cast_possible_truncation,
-        reason = "We are truncating on purpose. Even if `setpoint_rpm` was `u16::MAX`, `duty` would still be less than `u16::MAX`."
-    )]
-    #[allow(clippy::cast_sign_loss, reason = "`duty` is guaranteed to be positive")]
-    DutyCycle::from((duty + 0.5) as u16)
+    let setpoint_rpm_cubed = setpoint_rpm_squared * setpoint_rpm;
+
+    setpoint_rpm_cubed * CUBIC_D + setpoint_rpm_squared * CUBIC_C + setpoint_rpm * CUBIC_B + CUBIC_A
 }

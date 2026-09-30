@@ -2,6 +2,8 @@
 
 pub mod channel;
 
+use core::ops::Add;
+
 use crate::{
     LOOP_PERIOD,
     gpio::{
@@ -12,14 +14,14 @@ use crate::{
         },
         pwm::cubic_conversion,
     },
-    pid::{neg_error, next_control_output},
+    pid::{Pi, neg_error},
 };
 use channel::{RunAt, RunnerReceiver, RunnerRequest};
 use embassy_executor::task;
 use embassy_time::{Duration, Instant, Ticker};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::HistoryBuf;
-use sc_messages::pwm::{HALF_POWER_DUTY, STOP_DUTY};
+use sc_messages::pwm::{DutyCycle, HALF_POWER_DUTY, STOP_DUTY};
 use static_cell::ConstStaticCell;
 
 /// The size of the RPM vector.
@@ -84,6 +86,10 @@ impl Runner {
         let setpoint_rpm = plate_to_motor_revolutions(run_at.rpm);
         let setpoint_duty_cycle = cubic_conversion(setpoint_rpm);
 
+        // Feedback
+        // Initialize the controller
+        let mut pi_controller = Pi::new();
+
         loop {
             // Check for stop requests.
             if matches!(self.from_terminal.try_receive(), Ok(RunnerRequest::Stop)) {
@@ -104,12 +110,11 @@ impl Runner {
             let current_rpm =
                 ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
             let negative_rpm_error = neg_error(setpoint_rpm, current_rpm);
-            let output = next_control_output(negative_rpm_error);
-            let duty_cycle = (*setpoint_duty_cycle)
-                .saturating_add_signed(output)
-                .clamp(STOP_DUTY, HALF_POWER_DUTY);
+            let output = pi_controller.next_control_output(negative_rpm_error);
+            let duty_cycle = DutyCycle::from(setpoint_duty_cycle.add(output));
 
-            self.pwm_pin.set_timestamp(duty_cycle);
+            // Limit to half of the max power to avoid tripping overcurrent protection
+            self.pwm_pin.set_timestamp(duty_cycle.min(HALF_POWER_DUTY));
 
             // Logging
             self.rpm_buffer

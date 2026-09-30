@@ -1,6 +1,6 @@
 use core::{
     fmt::{self, Display, Formatter},
-    ops::Deref,
+    ops::{Add, Deref},
 };
 
 use serde::{Deserialize, Serialize};
@@ -48,6 +48,25 @@ impl From<u32> for DutyCycle {
     fn from(value: u32) -> Self {
         #[allow(clippy::cast_possible_truncation, reason = "We just clamped the value")]
         Self(value.clamp(u32::from(STOP_DUTY), u32::from(MAX_POWER_DUTY)) as u16)
+    }
+}
+
+impl From<f32> for DutyCycle {
+    /// Wraps an [`f32`] in [`DutyCycle`].
+    ///
+    /// Clamps `value` to a minimum of [`STOP_DUTY`] and a maximum of [`MAX_POWER_DUTY`].
+    fn from(value: f32) -> Self {
+        // Rounding code inspired by [micromath](https://docs.rs/micromath/latest/src/micromath/float/round.rs.html#7-9)
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "We just clamped the value."
+        )]
+        #[allow(clippy::cast_sign_loss, reason = "`value` is positive after clamping.")]
+        Self(
+            value
+                .add(0.5)
+                .clamp(f32::from(STOP_DUTY), f32::from(MAX_POWER_DUTY)) as u16,
+        )
     }
 }
 
