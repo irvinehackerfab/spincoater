@@ -77,7 +77,7 @@ This program lets you run the spincoater by sending commands to it from a PC. It
 - Enables UART communication over the pins:
   - TX: **1 (TX)**
   - RX: **3 (RX)**
-  - Programs must use [postcard-rpc](https://github.com/jamesmunns/postcard-rpc) and the protocol defined in `sc_messages` (in the workspace above this one) to successfully communicate with the MCU.
+  - Programs must open a serial port and use the protocol defined in `sc_messages` (in the workspace above this one) to successfully communicate with the MCU.
 - Initializes PWM on pin **26**
   - Starts with a constant duty cycle of 7.5% at a frequency of 50hz.
 - Records hall effect sensor input on pin **27**

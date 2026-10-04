@@ -1,9 +1,6 @@
 //! This module contains all encoder functionality.
-//!
-//! If you're looking for the interrupt service routine that handles hall effect sensor readings,
-//! it's located in the [gpio](`crate::gpio`) module.
 
-use core::{ops::Div, sync::atomic::AtomicU32};
+use core::ops::Div;
 use embassy_executor::task;
 use embassy_time::Instant;
 use esp_hal::gpio::Input;
@@ -11,9 +8,6 @@ use esp_sync::NonReentrantMutex;
 use heapless::HistoryBuf;
 use muldiv::MulDiv;
 use sc_messages::{MOTOR_REVOLUTIONS, PLATE_REVOLUTIONS};
-
-/// Provides global access to the encoder.
-pub static ENCODER: NonReentrantMutex<Option<Input>> = NonReentrantMutex::new(None);
 
 /// Provides global access to the encoder state.
 pub static ENCODER_STATE: NonReentrantMutex<EncoderState> =
@@ -24,9 +18,6 @@ pub static ENCODER_STATE: NonReentrantMutex<EncoderState> =
 /// This is currently set to about the size that is necessary to store every RPM data point in
 /// 20 milliseconds.
 pub const RING_BUFFER_LENGTH: usize = 16;
-
-/// A counter for the motor revolutions that increments by one every encoder interrupt. This counter is equal to motor revolutions * 2.
-pub static MOTOR_REVOLUTIONS_DOUBLED: AtomicU32 = AtomicU32::new(0);
 
 /// Data that is used by the encoder interrupt.
 #[derive(Debug)]
@@ -63,10 +54,12 @@ impl EncoderState {
         let rpm = now.checked_duration_since(self.previous_time).map_or(
             usize::MAX,
             |time_since_last_interrupt| {
-                30_000_000u64
-                    .div(time_since_last_interrupt.as_micros())
-                    .try_into()
-                    .unwrap_or(usize::MAX)
+                30_000_000.div(
+                    time_since_last_interrupt
+                        .as_micros()
+                        .try_into()
+                        .unwrap_or(usize::MAX),
+                )
             },
         );
         self.rpm_ring_buffer.write(rpm);
