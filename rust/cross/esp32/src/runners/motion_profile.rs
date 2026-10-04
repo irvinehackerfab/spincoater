@@ -8,7 +8,7 @@ use crate::{
         encoder::{ENCODER_STATE, EncoderState, calculate_average_rpm},
         pwm::{SETPOINT_LIST_LENGTH, cubic_conversion},
     },
-    pid::{Pi, neg_error},
+    pid::{Pid, neg_error},
 };
 use embassy_executor::task;
 use embassy_time::{Instant, Ticker};
@@ -104,7 +104,7 @@ impl Runner {
 
         // Feedback
         // Initialize the controller
-        let mut pi_controller = Pi::new();
+        let mut pi_controller = Pid::new();
 
         loop {
             // Check for stop requests.
@@ -160,7 +160,7 @@ impl Runner {
 
         // Feedback
         // Initialize the controller
-        let mut pi_controller = Pi::new();
+        let mut pi_controller = Pid::new();
 
         loop {
             // Check for stop requests.

@@ -14,7 +14,7 @@ use crate::{
         },
         pwm::cubic_conversion,
     },
-    pid::{Pi, neg_error},
+    pid::{Pid, neg_error},
 };
 use channel::{RunAt, RunnerReceiver, RunnerRequest};
 use embassy_executor::task;
@@ -88,7 +88,7 @@ impl Runner {
 
         // Feedback
         // Initialize the controller
-        let mut pi_controller = Pi::new();
+        let mut pi_controller = Pid::new();
 
         loop {
             // Check for stop requests.

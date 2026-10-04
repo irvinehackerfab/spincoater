@@ -31,14 +31,14 @@ pub static SECOND_CORE_STACK: ConstStaticCell<Stack<8192>> = ConstStaticCell::ne
 /// The executor for the second core.
 pub static SECOND_CORE_EXECUTOR: StaticCell<InterruptExecutor<2>> = StaticCell::new();
 
+/// The period as a u64.
+pub const LOOP_PERIOD_MILLIS_U64: u64 = 20;
+
 /// The period that the main control loop runs at.
 ///
 /// The further you raise this past `20`, the greater your risk of filling up the RPM ring buffer is.
 /// The only consequence of this is a less accurate moving average.
-pub const LOOP_PERIOD: Duration = Duration::from_millis(20);
-
-/// The period as a float.
-pub const LOOP_PERIOD_MILLIS_F32: f32 = 20.;
+pub const LOOP_PERIOD: Duration = Duration::from_millis(LOOP_PERIOD_MILLIS_U64);
 
 use crate::gpio::pwm::SETPOINT_LIST_LENGTH;
 
