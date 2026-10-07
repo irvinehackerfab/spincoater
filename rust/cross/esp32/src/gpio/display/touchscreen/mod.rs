@@ -179,7 +179,7 @@ impl<'a> Touchscreen<Normal<'a>> {
             let point = match self
                 .mode
                 .xpt
-                .wait_for_hard_press(true, MAX_RESISTANCE)
+                .wait_for_hard_press(true, true, MAX_RESISTANCE)
                 .await
             {
                 Ok(point) => point,

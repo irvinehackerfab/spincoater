@@ -17,7 +17,7 @@ color-eyre = "0.6.5"
 crossterm = "0.29.0"
 chrono = "0.4.45"
 ringbuffer = "0.16.0"
-thiserror = "2.0.20"
+thiserror = "2.0.21"
 # For logging
 csv = "1.4.0"
 # For loading motion profile files
