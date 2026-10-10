@@ -11,7 +11,7 @@ use crate::{
     pid::{Pid, neg_error},
 };
 use embassy_executor::task;
-use embassy_time::{Instant, Ticker};
+use embassy_time::{Instant, Ticker, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::Vec;
 use sc_messages::{
@@ -50,16 +50,28 @@ impl Runner {
 
     /// Runs the main control loop.
     async fn run(mut self) -> ! {
-        loop {
+        'outer: loop {
+            self.clear();
             let option = self.setup().await;
-            // Since we are starting again, we must reset the encoder state.
-            ENCODER_STATE.with(EncoderState::reset);
+            // Don't start until the RPM is 0.
+            loop {
+                // Clear the buffer.
+                // If the motor isn't running, the RPM will be 0 the next time it is checked.
+                ENCODER_STATE.with(EncoderState::reset);
+                Timer::after_secs(1).await;
+                // Check for stop requests.
+                if self.should_stop() {
+                    continue 'outer;
+                }
+                if ENCODER_STATE.with(|s| calculate_average_rpm(&s.rpm_ring_buffer)) == 0 {
+                    break;
+                }
+            }
             if let Some(setpoint) = option {
                 self.execute_single_rpm(&setpoint).await;
             } else {
                 self.execute_motion_profile().await;
             }
-            self.clear();
         }
     }
 
@@ -108,12 +120,8 @@ impl Runner {
 
         loop {
             // Check for stop requests.
-            if let Some(message) = self.from_server.try_receive() {
-                let should_stop = matches!(message, HostMessage::Stop);
-                self.from_server.receive_done();
-                if should_stop {
-                    break;
-                }
+            if self.should_stop() {
+                break;
             }
 
             // Check if we finished.
@@ -164,12 +172,8 @@ impl Runner {
 
         loop {
             // Check for stop requests.
-            if let Some(message) = self.from_server.try_receive() {
-                let should_stop = matches!(message, HostMessage::Stop);
-                self.from_server.receive_done();
-                if should_stop {
-                    break;
-                }
+            if self.should_stop() {
+                break;
             }
 
             let elapsed_since_start_micros = starting_time.elapsed().as_micros();
@@ -283,6 +287,18 @@ impl Runner {
         let buf = lock.send().await;
         *buf = icd::McuMessage::MotionProfile(message.clone());
         lock.send_done();
+    }
+
+    /// Returns `true` if the host sent a stop request. Discards all other messages from the host.
+    fn should_stop(&mut self) -> bool {
+        while let Some(message) = self.from_server.try_receive() {
+            let should_stop = matches!(message, HostMessage::Stop);
+            self.from_server.receive_done();
+            if should_stop {
+                return true;
+            }
+        }
+        false
     }
 }
 

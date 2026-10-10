@@ -18,7 +18,7 @@ use crate::{
 };
 use channel::{RunAt, RunnerReceiver, RunnerRequest};
 use embassy_executor::task;
-use embassy_time::{Duration, Instant, Ticker};
+use embassy_time::{Duration, Instant, Ticker, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
 use heapless::HistoryBuf;
 use sc_messages::pwm::{DutyCycle, HALF_POWER_DUTY, STOP_DUTY};
@@ -66,10 +66,22 @@ impl Runner {
     /// # Panics
     /// Panics if the encoder is not in the mutex.
     pub async fn run(mut self) -> ! {
-        loop {
+        'outer: loop {
             if let RunnerRequest::Run(run_at) = self.from_terminal.receive().await {
-                // Since we are starting again, we must reset the encoder state.
-                ENCODER_STATE.with(EncoderState::reset);
+                // Don't start until the RPM is 0.
+                loop {
+                    // Clear the buffer.
+                    // If the motor isn't running, the RPM will be 0 the next time it is checked.
+                    ENCODER_STATE.with(EncoderState::reset);
+                    Timer::after_secs(1).await;
+                    // Check for stop requests.
+                    if self.should_stop() {
+                        continue 'outer;
+                    }
+                    if ENCODER_STATE.with(|s| calculate_average_rpm(&s.rpm_ring_buffer)) == 0 {
+                        break;
+                    }
+                }
                 self.execute(run_at).await;
             }
         }
@@ -92,7 +104,7 @@ impl Runner {
 
         loop {
             // Check for stop requests.
-            if matches!(self.from_terminal.try_receive(), Ok(RunnerRequest::Stop)) {
+            if self.should_stop() {
                 break;
             }
 
@@ -133,6 +145,16 @@ impl Runner {
         self.pwm_pin.set_timestamp(STOP_DUTY);
         // Report that there is no more state.
         self.to_terminal.send(TuiEvent::RunnerFinished).await;
+    }
+
+    /// Returns `true` if the host sent a stop request. Discards all other messages from the host.
+    fn should_stop(&mut self) -> bool {
+        while let Ok(message) = self.from_terminal.try_receive() {
+            if matches!(message, RunnerRequest::Stop) {
+                return true;
+            }
+        }
+        false
     }
 }
 
