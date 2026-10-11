@@ -86,6 +86,8 @@ This program lets you run the spincoater by sending commands to it from a PC. It
 
 Run with `cargo run --bin spincoater_with_pc`.
 
+If the spincoater stops or refuses to run, you likely ran into an arithmetic error in [`motion_profile.rs`](src/runners/motion_profile.rs).
+
 ## [`touchscreen_test`](src/bin/touchscreen_test)
 This program lets you use the touchscreen to discover the resistance of your touches. It does the following:
 - Initializes the touchscreen with the [necessary pins](https://protosupplies.com/wp-content/uploads/2020/07/TFT-LCD-28-240x320-RGB-ILI9341-with-Touchscreen-Connections-Top-Side.jpg) connected as follows:
