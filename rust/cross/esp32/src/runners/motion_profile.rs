@@ -1,6 +1,7 @@
 //! This module contains the functionality for running motion profiles sent by the host PC.
 
-use core::ops::Add;
+#[cfg(feature = "uart_over_adapter")]
+use defmt::{error, info};
 
 use crate::{
     LOOP_PERIOD, RunnerRequestReceiver, RunnerResponseSenderMutex,
@@ -135,7 +136,7 @@ impl Runner {
                 ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
             let negative_rpm_error = neg_error(setpoint.rpm, current_rpm);
             let output = pi_controller.next_control_output(negative_rpm_error);
-            let duty_cycle = DutyCycle::from(setpoint_duty_cycle.add(output));
+            let duty_cycle = DutyCycle::from(setpoint_duty_cycle + output);
 
             // Limit to half of the max power to avoid tripping overcurrent protection
             self.pwm_pin.set_timestamp(duty_cycle.min(HALF_POWER_DUTY));
@@ -202,7 +203,7 @@ impl Runner {
                 ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
             let rpm_error = neg_error(setpoint_rpm, current_rpm);
             let output = pi_controller.next_control_output(rpm_error);
-            let duty_cycle = DutyCycle::from(setpoint_duty_cycle.add(output));
+            let duty_cycle = DutyCycle::from(setpoint_duty_cycle + output);
 
             // Limit to half of the max power to avoid tripping overcurrent protection
             self.pwm_pin.set_timestamp(duty_cycle.min(HALF_POWER_DUTY));
@@ -235,21 +236,25 @@ impl Runner {
         elapsed_since_start_micros: u64,
     ) -> Option<(&Setpoint, &Setpoint)> {
         loop {
-            let next_setpoint_idx = setpoint_idx.checked_add(1)?;
-            match (
-                self.setpoints.get(*setpoint_idx),
-                self.setpoints.get(next_setpoint_idx),
-            ) {
-                (Some(previous_setpoint), Some(current_setpoint)) => {
-                    // Only act on setpoints that haven't passed.
-                    if elapsed_since_start_micros <= current_setpoint.time {
-                        return Some((previous_setpoint, current_setpoint));
-                    }
-                    *setpoint_idx = next_setpoint_idx;
-                }
-                // The motion profile is done.
-                (_, None) | (None, _) => return None,
+            #[allow(
+                clippy::arithmetic_side_effects,
+                reason = "Incrementing the index by 1 will never overflow because `self.setpoints.get(usize::MAX)` will always return [`None`] before that can happen"
+            )]
+            let next_setpoint_idx = *setpoint_idx + 1;
+            let Some(current_setpoint) = self.setpoints.get(next_setpoint_idx) else {
+                #[cfg(feature = "uart_over_adapter")]
+                info!("Finished the motion profile.");
+                return None;
+            };
+            let previous_setpoint = self
+                .setpoints
+                .get(*setpoint_idx)
+                .unwrap_or_else(|| unreachable!("next_setpoint_idx > setpoint_idx"));
+            // Only act on setpoints that haven't passed.
+            if elapsed_since_start_micros <= current_setpoint.time {
+                return Some((previous_setpoint, current_setpoint));
             }
+            *setpoint_idx = next_setpoint_idx;
         }
     }
 
@@ -264,20 +269,53 @@ impl Runner {
         current_setpoint: &Setpoint,
         elapsed_since_start_micros: u64,
     ) -> Option<u16> {
-        // We need to increase the size of some numbers to prevent overflow.
-        let previous_setpoint_rpm = u64::from(previous_setpoint.rpm);
-        let current_setpoint_rpm = u64::from(current_setpoint.rpm);
-        let delta_rpm = current_setpoint_rpm.saturating_sub(previous_setpoint_rpm);
-        let delta_time = elapsed_since_start_micros.saturating_sub(previous_setpoint.time);
-        let numerator = delta_rpm.checked_mul(delta_time)?;
-        let denominator = current_setpoint.time.saturating_sub(previous_setpoint.time);
-        let Some(interpolation) = numerator.checked_div(denominator) else {
-            return Some(previous_setpoint.rpm);
-        };
-        let Ok(interpolation) = u16::try_from(interpolation) else {
+        /// As long as setpoint RPMs are [`u16`]s,
+        /// [`i32`] subtraction between them will not overflow.
+        const _: Setpoint = Setpoint { rpm: 0u16, time: 0 };
+        #[allow(clippy::arithmetic_side_effects, reason = "See proof above")]
+        // The multiplication that occurs later can overflow [`i32`]s, so we need an [`i64`].
+        let delta_rpm =
+            i64::from(i32::from(current_setpoint.rpm) - i32::from(previous_setpoint.rpm));
+        #[allow(
+            clippy::arithmetic_side_effects,
+            reason = "Sorting and [`next_setpoint_pair`] guarantee that `elapsed_since_start_micros` > `previous_setpoint.time`"
+        )]
+        let Ok(delta_time) = i64::try_from(elapsed_since_start_micros - previous_setpoint.time)
+        else {
+            #[cfg(feature = "uart_over_adapter")]
+            error!("delta_time doesn't fit in an i64");
             return None;
         };
-        let result = previous_setpoint.rpm.checked_add(interpolation)?;
+        let Some(numerator) = delta_rpm.checked_mul(delta_time) else {
+            #[cfg(feature = "uart_over_adapter")]
+            error!("Overflow in multiplication");
+            return None;
+        };
+        // Sorting and [`next_setpoint_pair`] guarantee that `current_setpoint.time` > `previous_setpoint.time`.
+        #[allow(
+            clippy::arithmetic_side_effects,
+            reason = "Sorting and [`next_setpoint_pair`] guarantee that `current_setpoint.time` > `previous_setpoint.time`"
+        )]
+        let Ok(denominator) = i64::try_from(current_setpoint.time - previous_setpoint.time) else {
+            #[cfg(feature = "uart_over_adapter")]
+            error!("Setpoint time difference doesn't fit in an i64");
+            return None;
+        };
+        #[allow(
+            clippy::arithmetic_side_effects,
+            reason = "Sorting and [`next_setpoint_pair`] guarantee that `denominator` > 0"
+        )]
+        let interpolation = numerator / denominator;
+        let Ok(interpolation) = i16::try_from(interpolation) else {
+            #[cfg(feature = "uart_over_adapter")]
+            error!("`interpolation` doesn't fit in an i16");
+            return None;
+        };
+        let Some(result) = previous_setpoint.rpm.checked_add_signed(interpolation) else {
+            #[cfg(feature = "uart_over_adapter")]
+            error!("`previous_setpoint.rpm` + `interpolation` overflowed");
+            return None;
+        };
         Some(result)
     }
 
