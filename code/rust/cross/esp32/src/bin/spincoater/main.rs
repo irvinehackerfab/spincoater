@@ -1,0 +1,235 @@
+#![no_std]
+#![no_main]
+#![deny(
+    clippy::mem_forget,
+    reason = "mem::forget is generally not safe to do with esp_hal types, especially those \
+    holding buffers for the duration of a data transfer."
+)]
+#![deny(clippy::large_stack_frames)]
+
+use core::cell::RefCell;
+
+use defmt::info;
+use embassy_executor::Spawner;
+use embedded_hal_bus::spi::RefCellDevice;
+use esp_backtrace as _;
+use esp_hal::{
+    clock::CpuClock,
+    delay::Delay,
+    dma_rx_buffer, dma_tx_buffer,
+    gpio::{DriveStrength, Input, InputConfig, Level, Output, OutputConfig, Pull},
+    interrupt::Priority,
+    mcpwm::{McPwm, PeripheralClockConfig, operator::PwmPinConfig, timer::PwmWorkingMode},
+    spi::master::{Config, Spi, SpiDma},
+    timer::timg::TimerGroup,
+};
+use esp_println as _;
+use esp_rtos::embassy::InterruptExecutor;
+use esp32::{
+    SECOND_CORE_EXECUTOR, SECOND_CORE_STACK,
+    gpio::{
+        display::{
+            DISPLAY, ORIENTATION, SPI, SPI_BUFFER, SPI_BUFFER_SIZE, SPI_CLOCK_RATE, SPI_MODE,
+            terminal::{TERMINAL, TerminalState, channel::TERMINAL_CHANNEL, update_terminal},
+            touchscreen::{Touchscreen, XPT_BUFFER, run_touchscreen},
+        },
+        encoder::detect_motor_revolutions,
+        pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER},
+    },
+    runners::rpm::{RPM_BUFFER, Runner, channel::RUNNER_CHANNEL},
+};
+use ibm437::IBM437_9X14_REGULAR;
+use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
+use mousefood::{EmbeddedBackend, EmbeddedBackendConfig};
+use ratatui::Terminal;
+use sc_messages::pwm::STOP_DUTY;
+
+// This creates a default app-descriptor required by the esp-idf bootloader.
+// For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
+esp_bootloader_esp_idf::esp_app_desc!();
+
+#[allow(
+    clippy::large_stack_frames,
+    reason = "main is the only place you should be allowed to allocate large buffers."
+)]
+#[esp_rtos::main]
+async fn main(spawner: Spawner) -> ! {
+    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
+    let peripherals = esp_hal::init(config);
+
+    // The following pins are used to bootstrap the chip. They are available
+    // for use, but check the datasheet of the module for more information on them.
+    // - GPIO0
+    // - GPIO2
+    // - GPIO5
+    // - GPIO12
+    // - GPIO15
+    // These GPIO pins are in use by some feature of the module and should not be used.
+    let _ = peripherals.GPIO6;
+    let _ = peripherals.GPIO7;
+    let _ = peripherals.GPIO8;
+    let _ = peripherals.GPIO9;
+    let _ = peripherals.GPIO10;
+    let _ = peripherals.GPIO11;
+    let _ = peripherals.GPIO16;
+    let _ = peripherals.GPIO20;
+
+    esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 98768);
+
+    let timg0 = TimerGroup::new(peripherals.TIMG0);
+    esp_rtos::start(timg0.timer0, peripherals.FROM_CPU_INTR0);
+
+    info!("Embassy initialized!");
+
+    // ESC Workaround
+    let _ = Output::new(
+        peripherals.GPIO15,
+        Level::High,
+        OutputConfig::default().with_drive_strength(DriveStrength::_20mA),
+    );
+
+    // Initialize encoder pin
+    let encoder = Input::new(
+        peripherals.GPIO27,
+        InputConfig::default().with_pull(Pull::None),
+    );
+
+    // Run the encoder task/ISR on the second core so it doesn't block the program.
+    esp_rtos::start_second_core(
+        peripherals.CPU_CTRL,
+        peripherals.FROM_CPU_INTR1,
+        SECOND_CORE_STACK.take(),
+        move || {
+            let executor = SECOND_CORE_EXECUTOR
+                .init_with(|| InterruptExecutor::new(peripherals.FROM_CPU_INTR2));
+            let spawner = executor.start(Priority::Priority3);
+            spawner.spawn(
+                detect_motor_revolutions(encoder)
+                    .unwrap_or_else(|_| unreachable!("The encoder task is not running")),
+            );
+        },
+    );
+
+    // Initialize PWM
+    let clock_cfg = PeripheralClockConfig::with_prescaler(PERIPHERAL_CLOCK_PRESCALER);
+    let mut mcpwm = McPwm::new(peripherals.MCPWM0, clock_cfg);
+    mcpwm.operator0.set_timer(&mcpwm.timer0);
+    // connect operator0 to pin IO26:
+    // https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#j3
+    let mut pwm_pin = mcpwm
+        .operator0
+        .with_pin_a(peripherals.GPIO26, PwmPinConfig::UP_ACTIVE_HIGH);
+    // start timer with timestamp values in the range that we choose.
+    let timer_clock_cfg = clock_cfg
+        .timer_clock_with_frequency(PERIOD, PwmWorkingMode::Increase, FREQUENCY)
+        .expect("Failed to create TimerClockConfig");
+    mcpwm.timer0.start(timer_clock_cfg);
+    pwm_pin.set_timestamp(STOP_DUTY);
+
+    // Initialize vacuum pump pin
+    let vacuum_pump_pin = Output::new(peripherals.GPIO17, Level::Low, OutputConfig::default());
+
+    // Initialize SPI
+    let spi = SPI.init_with(|| {
+        // See https://esp32.implrust.com/tft-display/circuit.html for a tutorial.
+        let spi = Spi::new(
+            peripherals.SPI2,
+            Config::default()
+                .with_frequency(SPI_CLOCK_RATE)
+                .with_mode(SPI_MODE),
+        )
+        .expect("Frequency is within 70kHz..80MHz")
+        // Master In Slave Out. SPI read line from the display to the microcontroller.
+        .with_miso(peripherals.GPIO35)
+        // Master Out Slave In. This is the SPI data line from the microcontroller to the display. Used to send pixel data and commands.
+        .with_mosi(peripherals.GPIO33)
+        // Serial Clock. SPI clock signal from the microcontroller. It synchronizes the data being sent.
+        .with_sck(peripherals.GPIO32)
+        .with_dma(peripherals.DMA_SPI2);
+        let dma_rx_buf = dma_rx_buffer!(SPI_BUFFER_SIZE).expect("Failed to create DMA RX buf");
+        let dma_tx_buf = dma_tx_buffer!(SPI_BUFFER_SIZE).expect("Failed to create DMA TX buf");
+        let spi = SpiDma::with_buffers(spi, dma_rx_buf, dma_tx_buf);
+        RefCell::new(spi)
+    });
+
+    // Initialize the display
+    // init_with constructs the value in-place to save stack space.
+    let terminal = TERMINAL.init_with(|| {
+        let display = DISPLAY.init_with(|| {
+            // Chip Select. This tells the display when it should listen to SPI commands. Keep it low (active) when sending data.
+            // [`RefCellDevice::new`] says to have an initial output of high.
+            let cs = Output::new(peripherals.GPIO19, Level::High, OutputConfig::default());
+            // Data/Command control pin. Set high to send data, low to send commands. Used to switch between writing commands and pixel data.
+            let dc = Output::new(peripherals.GPIO25, Level::Low, OutputConfig::default());
+            // Resets the display. Useful during startup to make sure the display starts in a known state.
+            // According to [mipidsi::Builder::reset_pin], this should start high.
+            // However, according to page 225 of https://www.lcdwiki.com/res/MSP2807/ILI9341%20Datasheet.pdf
+            // the starting state doesn't matter.
+            let reset = Output::new(peripherals.GPIO18, Level::High, OutputConfig::default());
+            let Ok(spi_device) = RefCellDevice::new(spi, cs, Delay::new());
+            let interface = SpiInterface::new(spi_device, dc, SPI_BUFFER.take());
+            mipidsi::Builder::new(ILI9341Rgb565, interface)
+                .reset_pin(reset)
+                .orientation(ORIENTATION)
+                .init(&mut Delay::new())
+                .expect("Failed to init display")
+        });
+        let config = EmbeddedBackendConfig {
+            // The default font is too small so we use a bigger (and more optimized) one
+            font_regular: IBM437_9X14_REGULAR,
+            ..EmbeddedBackendConfig::default()
+        };
+        let backend = EmbeddedBackend::new(display, config);
+        Terminal::new(backend).expect("Failed to create terminal")
+    });
+
+    terminal.clear().expect("Failed to clear the terminal");
+
+    // Setup terminal
+    let terminal_channel = TERMINAL_CHANNEL.take();
+
+    let runner_channel = RUNNER_CHANNEL.take();
+
+    let terminal_state = TerminalState::new(
+        vacuum_pump_pin,
+        terminal_channel.receiver(),
+        runner_channel.sender(),
+    );
+
+    // Initialize the touchscreen
+    let t_cs = Output::new(peripherals.GPIO16, Level::High, OutputConfig::default());
+    let Ok(spi_device) = RefCellDevice::new(spi, t_cs, Delay::new());
+    let pen_irq = Input::new(
+        peripherals.GPIO34,
+        // pull up because active low
+        InputConfig::default().with_pull(Pull::Up),
+    );
+    let touchscreen = Touchscreen::new(
+        spi_device,
+        XPT_BUFFER.take(),
+        pen_irq,
+        terminal_channel.sender(),
+    )
+    .expect("Failed to initialize the touchscreen");
+
+    spawner.spawn(
+        run_touchscreen(touchscreen)
+            .unwrap_or_else(|_| unreachable!("The touchscreen task is not running")),
+    );
+
+    spawner.spawn(
+        update_terminal(terminal_state, terminal)
+            .unwrap_or_else(|_| unreachable!("The terminal task is not running")),
+    );
+
+    let rpm_buffer = RPM_BUFFER.take();
+
+    let runner = Runner::new(
+        pwm_pin,
+        runner_channel.receiver(),
+        terminal_channel.sender(),
+        rpm_buffer,
+    );
+
+    runner.run().await
+}
