@@ -91,7 +91,7 @@ async fn main(spawner: Spawner) -> ! {
     // Initialize encoder pin
     let encoder = Input::new(
         peripherals.GPIO27,
-        InputConfig::default().with_pull(Pull::Down),
+        InputConfig::default().with_pull(Pull::None),
     );
 
     // Run the encoder task/ISR on the second core so it doesn't block the program.
