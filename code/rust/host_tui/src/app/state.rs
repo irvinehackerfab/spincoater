@@ -5,13 +5,58 @@ use std::time::Duration;
 use ratatui::prelude::{Frame, Rect};
 use ratatui::text::{Line, Text};
 use ratatui::widgets::{Block, Paragraph};
-use sc_messages::motion_profile;
+use sc_messages::motion_profile::{self, Setpoint};
 use sc_messages::pwm::{DutyCycle, PERIOD};
 use sc_messages::{MOTOR_REVOLUTIONS, PLATE_REVOLUTIONS};
 use serde::{Deserialize, Serialize};
 
 /// The conversion factor from motor revolutions to plate revolutions.
 const MOTOR_TO_PLATE_CONVERSION: f64 = PLATE_REVOLUTIONS as f64 / MOTOR_REVOLUTIONS as f64;
+
+/// A single target plate RPM value with the corresponding time taken to reach that RPM.
+///
+/// These setpoints are combined to create a motion profile.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MotionProfileSetpoint {
+    /// The target plate RPM.
+    pub rpm: f32,
+    /// The time (in micros) since the start of the motion profile.
+    // I would like to use `embassy_time::duration::Duration`,
+    // but it doesn't impl Serialize.
+    #[serde(rename = "time (micros)")]
+    pub time: u64,
+}
+
+impl From<MotionProfileSetpoint> for Setpoint {
+    fn from(value: MotionProfileSetpoint) -> Self {
+        /// Proves that truncation will not occur when casting.
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        const _: () = {
+            assert!(f32::MAX as u16 == u16::MAX);
+            assert!((f32::MAX - 1.) as u16 == u16::MAX);
+        };
+        /// Proves that float to int casts are saturating.
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        const _: () = {
+            assert!(-1. as u16 == 0);
+            assert!(-2. as u16 == 0);
+        };
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "See proofs above"
+        )]
+        // We don't use algebraic operators here.
+        // Non-determinism in the setpoint RPM would show up blatantly in the logs
+        // and cause the user to think the spincoater is broken.
+        let rpm = (value.rpm * const { MOTOR_REVOLUTIONS as f32 / PLATE_REVOLUTIONS as f32 })
+            .round_ties_even() as u16;
+        Self {
+            rpm,
+            time: value.time,
+        }
+    }
+}
 
 /// A wrapper around [`motion_profile::State`] with the plate RPM added.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -12,7 +12,7 @@ use std::{env, fs::File};
 use crate::app::event::{
     TuiEvent, spawn_crossterm_thread, spawn_heartbeat_thread, spawn_rx_thread, spawn_tx_thread,
 };
-use crate::app::state::MotionProfileState;
+use crate::app::state::{MotionProfileSetpoint, MotionProfileState};
 use chrono::Local;
 use color_eyre::eyre::{Context, bail};
 use color_eyre::{Result, eyre::OptionExt};
@@ -304,10 +304,18 @@ impl App {
     ///
     /// Note that the MCU performs stable sort on the setpoints before execution.
     fn send_motion_profile(&self, path: PathBuf) -> Result<()> {
-        let file = csv::Reader::from_path(path).wrap_err("Failed to open CSV file")?;
-        for result in file.into_deserialize() {
-            let setpoint: Setpoint = result.wrap_err("Failed to deserialize from CSV file")?;
-            let message = HostMessage::MotionProfile(motion_profile::HostMessage::Add(setpoint));
+        let mut file = csv::Reader::from_path(path).wrap_err("Failed to open CSV file")?;
+        let mut record = StringRecord::new();
+        while file
+            .read_record(&mut record)
+            .wrap_err("Failed to read CSV")?
+        {
+            let setpoint: MotionProfileSetpoint = record
+                .deserialize(None)
+                .wrap_err("Failed to deserialize from CSV file")?;
+            let message = HostMessage::MotionProfile(motion_profile::HostMessage::Add(
+                Setpoint::from(setpoint),
+            ));
             self.to_mcu
                 .send(message)
                 .wrap_err("Failed to send setpoint")?;
@@ -321,10 +329,36 @@ impl App {
         let mut record = StringRecord::new();
         file.read_record(&mut record)
             .wrap_err("Failed to read CSV")?;
-        let setpoint: Setpoint = record.deserialize(None).wrap_err("Failed to deserialize")?;
-        let message = HostMessage::MotionProfile(motion_profile::HostMessage::Run(setpoint));
+        let setpoint: MotionProfileSetpoint = record
+            .deserialize(None)
+            .wrap_err("Failed to deserialize from CSV file")?;
+        let message =
+            HostMessage::MotionProfile(motion_profile::HostMessage::Run(Setpoint::from(setpoint)));
         self.to_mcu
             .send(message)
             .wrap_err("Failed to send setpoint")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    /// Verifies that CSV deserialization works properly.
+    fn deserialize() {
+        let mut file =
+            csv::Reader::from_reader("rpm,time (micros)\n8000,10000\n8000.1,20000\n".as_bytes());
+        let mut record = StringRecord::new();
+        for (rpm, time) in [(8000., 10000), (8000.1, 20000)] {
+            file.read_record(&mut record)
+                .expect("Reader received a valid file");
+            let setpoint: MotionProfileSetpoint = record
+                .deserialize(None)
+                .expect("Record is a valid CSV line");
+            assert_eq!(setpoint.rpm, rpm);
+            assert_eq!(setpoint.time, time);
+        }
     }
 }

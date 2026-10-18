@@ -15,5 +15,3 @@ When adding a test, note:
 - the firmware version or commit
 - the motion profile used
 - anything that went wrong during the run
-
-TODO: raw host_tui logs for the plots in [docs/calibration.md](../docs/calibration.md).

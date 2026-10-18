@@ -17,19 +17,17 @@ TODO: screenshots of the screen.
 ## From a PC
 1. Flash the [`spincoater_with_pc`](../code/rust/cross/esp32/src/bin/spincoater_with_pc) program.
 2. Connect the PC to the ESP32's USB port and run [`host_tui`](../code/rust/host_tui).
-3. Load a motion profile, which is a CSV of RPM setpoints over time. Examples are in
+3. Load a motion profile, which is a CSV of plate RPM setpoints over time. Examples are in
    [code/rust/motion_profiles](../code/rust/motion_profiles).
 
 A motion profile must have the header `rpm,time (micros)`, and it can't set an RPM at time 0:
 ```csv
 rpm,time (micros)
-20000,1000
-20000,30000000
+8000,10000
+8000.5,30000000
 ```
 
-`host_tui` logs all motor data to `logs/motor_data/<date>.csv` next to the executable.
-
-TODO: whether the RPM in profiles is motor RPM or plate RPM (the pulleys change the ratio).
+`host_tui` logs all motor data to `logs/motor_data/<date>.csv` in the current directory.
 
 ## Troubleshooting
 - If the spin coater stops or won't run in PC mode, the motion profile probably caused an arithmetic error in
