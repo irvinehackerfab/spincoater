@@ -15,9 +15,6 @@ All of the V3 code is written in [Rust](https://rust-lang.org/) and lives in [`r
 ## Setup
 - PC programs: see [rust/README.md](rust/README.md).
 - ESP32 firmware, pin layout and flashing: see [rust/cross/esp32/README.md](rust/cross/esp32/README.md).
-- Both folders also have a Nix dev environment that installs the tools for you ([DEVELOPMENT.md](rust/DEVELOPMENT.md)).
-
-<!-- TODO: add a Windows setup guide without Nix (rustup, espup, espflash) once it's tested. -->
 
 ## Older code
 The Arduino and MicroPython versions of the firmware are kept on the
