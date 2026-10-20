@@ -290,6 +290,15 @@ impl App {
                 }
                 motion_profile::McuMessage::Finished => {
                     self.mcu_state = None;
+                    self.mcu_logs.enqueue("Finished.".to_string());
+                    // Close the writer.
+                    self.motor_data_file = None;
+                }
+                motion_profile::McuMessage::Overflow => {
+                    // Keep the MCU state so the user can read it.
+                    self.mcu_logs.enqueue(
+                        "Arithmetic error, please fix it in the spincoater firmware".to_string(),
+                    );
                     // Close the writer.
                     self.motor_data_file = None;
                 }

@@ -29,21 +29,19 @@ pub struct MotionProfileSetpoint {
 
 impl From<MotionProfileSetpoint> for Setpoint {
     fn from(value: MotionProfileSetpoint) -> Self {
-        /// Proves that truncation will not occur when casting.
         #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-        const _: () = {
+        const {
+            // Proves that truncation will not occur when casting.
             assert!(f32::MAX as u16 == u16::MAX);
             assert!((f32::MAX - 1.) as u16 == u16::MAX);
-        };
-        /// Proves that float to int casts are saturating.
-        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-        const _: () = {
+            // Proves that float to int casts are saturating.
             assert!(-1. as u16 == 0);
             assert!(-2. as u16 == 0);
-        };
+        }
+
         #[allow(
-            clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
+            clippy::cast_possible_truncation,
             reason = "See proofs above"
         )]
         // We don't use algebraic operators here.

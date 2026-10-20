@@ -1,6 +1,6 @@
 use core::{
     fmt::{self, Display, Formatter},
-    ops::{Add, Deref},
+    ops::Deref,
 };
 
 use serde::{Deserialize, Serialize};
@@ -56,17 +56,18 @@ impl From<f32> for DutyCycle {
     ///
     /// Clamps `value` to a minimum of [`STOP_DUTY`] and a maximum of [`MAX_POWER_DUTY`].
     fn from(value: f32) -> Self {
-        // Rounding code inspired by [micromath](https://docs.rs/micromath/latest/src/micromath/float/round.rs.html#7-9)
-        #[allow(
-            clippy::cast_possible_truncation,
-            reason = "We just clamped the value."
-        )]
-        #[allow(clippy::cast_sign_loss, reason = "`value` is positive after clamping.")]
-        Self(
-            value
-                .add(0.5)
-                .clamp(f32::from(STOP_DUTY), f32::from(MAX_POWER_DUTY)) as u16,
-        )
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        const {
+            // Proves that truncation will not occur when casting.
+            assert!(f32::MAX as u16 == u16::MAX);
+            assert!((f32::MAX - 1.) as u16 == u16::MAX);
+            // Proves that float to int casts are saturating.
+            assert!(-1. as u16 == 0);
+            assert!(-2. as u16 == 0);
+        }
+
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        Self((value.round_ties_even() as u16).clamp(STOP_DUTY, MAX_POWER_DUTY))
     }
 }
 

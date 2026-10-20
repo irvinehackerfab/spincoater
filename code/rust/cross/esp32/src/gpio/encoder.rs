@@ -50,16 +50,18 @@ impl EncoderState {
         // = 30,000,000 / `time_since_last_interrupt`
         // Final units: motor revolutions per minute
         // Two interrupts will never occur at the same microsecond because the CPU cannot calculate the RPM and unmask the interrupt that quickly.
-        // We cap the rpm to usize::MAX here because the motor RPM will never exceed usize::MAX.
+        // We cap the rpm to u16::MAX here because the motor RPM will never exceed u16::MAX.
         let rpm = now.checked_duration_since(self.previous_time).map_or(
-            usize::MAX,
+            usize::from(u16::MAX),
             |time_since_last_interrupt| {
-                30_000_000.div(
-                    time_since_last_interrupt
-                        .as_micros()
-                        .try_into()
-                        .unwrap_or(usize::MAX),
-                )
+                30_000_000
+                    .div(
+                        time_since_last_interrupt
+                            .as_micros()
+                            .try_into()
+                            .unwrap_or(usize::MAX),
+                    )
+                    .min(usize::from(u16::MAX))
             },
         );
         self.rpm_ring_buffer.write(rpm);
@@ -78,10 +80,13 @@ impl EncoderState {
 /// The RPM is capped at [`u16::MAX`].
 #[must_use]
 pub fn calculate_average_rpm<const N: usize>(rpm_ring_buffer: &HistoryBuf<usize, N>) -> u16 {
+    const {
+        // Since the highest RPM allowed by calculate_rpm is u16::MAX, this proves that overflow cannot occur.
+        assert!((u16::MAX as usize).checked_mul(N).is_some());
+    }
     rpm_ring_buffer
         .as_slice()
         .iter()
-        // Overflow in the sum is not an issue at this scale. 24,000 is the highest motor RPM we've achieved.
         .sum::<usize>()
         .checked_div(rpm_ring_buffer.len())
         .unwrap_or(0)

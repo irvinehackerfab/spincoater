@@ -18,9 +18,11 @@ pub enum McuMessage {
     State(State),
     /// The spincoater finished the motion profile.
     Finished,
+    /// An arithmetic error occured somewhere in the MCU program.
+    Overflow,
 }
 
-/// All messages types sent from the host PC to the MCU.
+/// All message types sent from the host PC to the MCU.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum HostMessage {
     /// Add a setpoint to the motion profile.
