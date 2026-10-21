@@ -72,6 +72,9 @@ mod test {
     /// Proves that [`MAX_MCU_MESSAGE_SIZE`] is valid for all [`McuMessage`].
     #[test]
     fn max_mcu_message_size() {
+        // Keep in mind that a Postcard varint's max length occurs when it is furthest from 0.
+        // https://postcard.jamesmunns.com/wire-format#maximum-encoded-length
+
         let message = McuMessage::MotionProfile(motion_profile::McuMessage::Finished);
         to_vec_cobs::<_, MAX_MCU_MESSAGE_SIZE>(&message)
             .expect("Failed to fit `Finished` in `MAX_MCU_MESSAGE_SIZE` bytes");
@@ -85,11 +88,24 @@ mod test {
         }));
         to_vec_cobs::<_, MAX_MCU_MESSAGE_SIZE>(&message)
             .expect("Failed to fit `State` in `MAX_MCU_MESSAGE_SIZE` bytes");
+
+        let message = McuMessage::MotionProfile(motion_profile::McuMessage::State(State {
+            setpoint_rpm: u16::MAX,
+            current_rpm: u16::MAX,
+            rpm_error: i16::MAX,
+            duty_cycle: DutyCycle::from(u16::MAX),
+            time: u64::MAX,
+        }));
+        to_vec_cobs::<_, MAX_MCU_MESSAGE_SIZE>(&message)
+            .expect("Failed to fit `State` in `MAX_MCU_MESSAGE_SIZE` bytes");
     }
 
     /// Proves that [`MAX_HOST_MESSAGE_SIZE`] is valid for all [`HostMessage`].
     #[test]
     fn max_host_message_size() {
+        // Keep in mind that a Postcard varint's max length occurs when it is furthest from 0.
+        // https://postcard.jamesmunns.com/wire-format#maximum-encoded-length
+
         let message = HostMessage::Disconnecting;
         to_vec_cobs::<_, MAX_HOST_MESSAGE_SIZE>(&message)
             .expect("Failed to fit `Finished` in `MAX_MCU_MESSAGE_SIZE` bytes");
@@ -97,6 +113,13 @@ mod test {
         let message = HostMessage::MotionProfile(motion_profile::HostMessage::Add(Setpoint {
             rpm: 10000,
             time: 100_000,
+        }));
+        to_vec_cobs::<_, MAX_HOST_MESSAGE_SIZE>(&message)
+            .expect("Failed to fit `State` in `MAX_MCU_MESSAGE_SIZE` bytes");
+
+        let message = HostMessage::MotionProfile(motion_profile::HostMessage::Add(Setpoint {
+            rpm: u16::MAX,
+            time: u64::MAX,
         }));
         to_vec_cobs::<_, MAX_HOST_MESSAGE_SIZE>(&message)
             .expect("Failed to fit `State` in `MAX_MCU_MESSAGE_SIZE` bytes");
