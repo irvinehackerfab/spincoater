@@ -128,7 +128,7 @@ impl ServerRx {
         message: &motion_profile::HostMessage,
     ) {
         let buf = to_runner.send().await;
-        *buf = message.clone();
+        buf.clone_from(message);
         to_runner.send_done();
     }
 
@@ -138,7 +138,7 @@ impl ServerRx {
     async fn send_to_tx(to_tx: &RunnerResponseSenderMutex, message: &McuMessage) {
         let mut lock = to_tx.lock().await;
         let buf = lock.send().await;
-        *buf = message.clone();
+        buf.clone_from(message);
         lock.send_done();
     }
 }
