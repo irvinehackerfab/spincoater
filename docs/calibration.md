@@ -20,7 +20,9 @@ rpm,time (micros)
 6. Select `Best Fit (auto)`
 7. Copy the coefficients from the resulting equation to [`cubic_conversion`](../code/rust/cross/esp32/src/gpio/pwm.rs).
 
+> [!NOTE]
+> If you change the cubic coefficients to less accurate ones, the spincoater may fail to settle at its target RPM. Either revert your changes or increase [`I_LIMIT`](../code/rust/cross/esp32/src/pid.rs).
+
 ## Feedback
-We also use a feedback controller with proportional, integral and derivative terms that corrects error using the RPM measured by
-   the hall effect sensor.
-[`pid.rs`](../code/rust/cross/esp32/src/pid.rs) contains recommendations for calibrating PID gains.
+We also use a feedback controller with proportional, integral and derivative terms that corrects error using the RPM measured by the hall effect sensor.
+The gains are in [`pid.rs`](../code/rust/cross/esp32/src/pid.rs), and you'll need to tune these through trial and error.

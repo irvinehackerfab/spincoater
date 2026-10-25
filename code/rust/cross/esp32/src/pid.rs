@@ -1,10 +1,6 @@
 //! This module contains our PID control code.
 //!
 //! Keep in mind that 1 duty cycle is approximately equal to 34 plate RPM.
-//!
-//! It is recommended to use the [Ziegler-Nichols method](https://en.wikipedia.org/wiki/Ziegler%E2%80%93Nichols_method)
-//! as described in [this video](https://youtu.be/UOuRx9Ujsog?t=543)
-//! to begin tuning your PID gains.
 
 use crate::LOOP_PERIOD_MILLIS_U64;
 
@@ -19,37 +15,25 @@ const LOOP_PERIOD_SECS: f32 = LOOP_PERIOD_MILLIS_U64 as f32 / 1000.;
 )]
 const _: () = assert!(LOOP_PERIOD_MILLIS_U64 as f32 as u64 == LOOP_PERIOD_MILLIS_U64);
 
-/// The critical/ultimate gain, AKA the [`K_P`] at which a stable and consistent oscillation occurs.
-///
-/// Units: duty cycle per motor RPM error.
-// This was found at a low RPM with feedforward enabled.
-const K_C: f32 = 0.3;
-
-/// The period of oscillation when [`K_C`] is used.
-///
-/// Units: seconds.
-const P_C: f32 = 0.82;
-
 /// The proportional gain.
 ///
 /// Units: duty cycle per motor RPM error.
-// We use 0.5 instead of 0.6 to reduce overshoot.
-const K_P: f32 = 0.5 * K_C;
+const K_P: f32 = 0.2;
 
 /// The integral gain.
 ///
 /// Units: duty cycle per motor RPM error seconds.
-const K_I: f32 = 2. * K_P / P_C;
+const K_I: f32 = 0.03;
 
 /// The derivative gain.
 ///
 /// Units: duty cycle per (motor RPM error per second).
-const K_D: f32 = 0.125 * K_P * P_C;
+const K_D: f32 = 0.;
 
 /// The integral output limit.
 ///
 /// Units: duty cycle.
-const I_LIMIT: f32 = 10.;
+const I_LIMIT: f32 = 20.;
 
 /// Calculates the difference between the setpoint and current RPM,
 /// which is the negative of the RPM error.

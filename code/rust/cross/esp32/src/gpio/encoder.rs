@@ -15,9 +15,8 @@ pub static ENCODER_STATE: NonReentrantMutex<EncoderState> =
 
 /// The length of the RPM ring buffer for the interrupt handler.
 ///
-/// This is currently set to about the size that is necessary to store every RPM data point in
-/// 20 milliseconds.
-pub const RING_BUFFER_LENGTH: usize = 16;
+/// Higher values remove jitter in the RPM, but they also make it harder to ignore RPM spikes.
+pub const RING_BUFFER_LENGTH: usize = 2;
 
 /// Data that is used by the encoder interrupt.
 #[derive(Debug)]
@@ -46,25 +45,21 @@ impl EncoderState {
     /// Stores the result in the ring buffer.
     pub fn calculate_rpm(&mut self) {
         let now = Instant::now();
+        // Two interrupts will never occur at the same microsecond because the CPU cannot calculate the RPM and unmask the interrupt that quickly.
+        let time_since_last_interrupt = now.duration_since(self.previous_time);
         // 1 interrupt * (1 motor revolution / 2 interrupts) * 1/(`time_since_last_interrupt` μs) * (10^6 μs / 1 s) * (60 s / 1 min)
         // = 30,000,000 / `time_since_last_interrupt`
         // Final units: motor revolutions per minute
-        // Two interrupts will never occur at the same microsecond because the CPU cannot calculate the RPM and unmask the interrupt that quickly.
-        // We cap the rpm to u16::MAX here because the motor RPM will never exceed u16::MAX.
-        let rpm = now.checked_duration_since(self.previous_time).map_or(
-            usize::from(u16::MAX),
-            |time_since_last_interrupt| {
-                30_000_000
-                    .div(
-                        time_since_last_interrupt
-                            .as_micros()
-                            .try_into()
-                            .unwrap_or(usize::MAX),
-                    )
-                    .min(usize::from(u16::MAX))
-            },
+        let rpm = 30_000_000.div(
+            time_since_last_interrupt
+                .as_micros()
+                .try_into()
+                .unwrap_or(usize::MAX),
         );
-        self.rpm_ring_buffer.write(rpm);
+        // We filter out RPMs greater than u16::MAX because it only exceeds u16::MAX when an encoder glitch occurs.
+        if rpm < usize::from(u16::MAX) {
+            self.rpm_ring_buffer.write(rpm);
+        }
         self.previous_time = now;
     }
 
