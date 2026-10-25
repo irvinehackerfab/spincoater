@@ -1,6 +1,6 @@
 use core::{
     fmt::{self, Display, Formatter},
-    ops::Deref,
+    ops::{Add, Deref},
 };
 
 use serde::{Deserialize, Serialize};
@@ -66,8 +66,12 @@ impl From<f32> for DutyCycle {
             assert!(-2. as u16 == 0);
         }
 
+        // Rounding code inspired by [micromath](https://docs.rs/micromath/2.1.0/src/micromath/float/round.rs.html#7-9)
+        // We aren't using libm or micromath here
+        // because we don't need rounding with ties even or rounding with negative number support.
+        // Todo: Use f32::round_ties_even once stabilized (https://doc.rust-lang.org/stable/core/f32/math/fn.round_ties_even.html)
         #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-        Self((value.round_ties_even() as u16).clamp(STOP_DUTY, MAX_POWER_DUTY))
+        Self((value.add(0.5) as u16).clamp(STOP_DUTY, MAX_POWER_DUTY))
     }
 }
 
