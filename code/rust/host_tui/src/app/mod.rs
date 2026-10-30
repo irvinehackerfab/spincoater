@@ -16,11 +16,10 @@ use crate::app::state::{MotionProfileSetpoint, MotionProfileState};
 use chrono::Local;
 use color_eyre::eyre::{Context, bail};
 use color_eyre::{Result, eyre::OptionExt};
-use crossterm::event::Event;
 use csv::{StringRecord, Writer, WriterBuilder};
 use ratatui::{
     DefaultTerminal,
-    crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
+    crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers},
     widgets::ListState,
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
@@ -169,7 +168,7 @@ impl App {
             {
                 TuiEvent::Crossterm(event) => match event {
                     Event::Key(key_event)
-                        if key_event.kind == crossterm::event::KeyEventKind::Press =>
+                        if key_event.kind == ratatui::crossterm::event::KeyEventKind::Press =>
                     {
                         self.handle_key_event(key_event)?;
                     }

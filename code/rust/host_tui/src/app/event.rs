@@ -53,7 +53,7 @@ pub fn spawn_crossterm_thread(to_app: Sender<Result<TuiEvent>>) -> io::Result<()
         .name("Crossterm Events".to_string())
         .spawn(move || {
             loop {
-                let event = crossterm::event::read();
+                let event = ratatui::crossterm::event::read();
                 if to_app
                     .send(
                         event
