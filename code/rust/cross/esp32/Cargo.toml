@@ -1,66 +1,122 @@
-[workspace]
-
 [package]
 name = "esp32"
-authors = ["Spincoater Members"]
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
-version = "0.1.0"
 license = "MIT"
 
+[workspace]
+
+[lib]
+bench = false
+test = false
+
+[[bin]]
+bench = false
+name = "pin_usage_checker"
+test = false
+
+[[bin]]
+bench = false
+name = "pwm"
+test = false
+
+[[bin]]
+bench = false
+name = "spincoater_with_pc"
+test = false
+
+[[bin]]
+bench = false
+name = "touchscreen_test"
+test = false
+
+[[bin]]
+bench = false
+name = "touchscreen_calibration"
+test = false
+
 [dependencies]
-# Note: Things will break if you remove the tilde.
-esp-hal = { version = "~1.2.2", features = ["defmt", "esp32", "unstable"] }
-esp-rtos = { version = "0.4.0", features = [
-    "defmt",
-    "esp-alloc",
-    "embassy",
-    "esp32",
-] }
 defmt = "1.2.0"
-esp-bootloader-esp-idf = { version = "0.6.0", features = ["defmt", "esp32"] }
 esp-alloc = { version = "0.11.0", features = ["defmt"] }
-esp-backtrace = { version = "0.20.0", features = [
+esp-backtrace = {
+  version = "0.20.0",
+  features = [
     "defmt",
     "esp32",
     "panic-handler",
-] }
+  ]
+}
+esp-bootloader-esp-idf = { version = "0.6.0", features = ["defmt", "esp32"] }
+# Note: Things will break if you remove the tilde.
+esp-hal = { version = "~1.2.2", features = ["defmt", "esp32", "unstable"] }
 esp-println = { version = "0.18.0", features = ["defmt-espflash", "esp32"] }
-esp-sync = { version = "0.3.0", features = ["esp32", "defmt"] }
+esp-rtos = {
+  version = "0.4.0",
+  features = [
+    "defmt",
+    "embassy",
+    "esp-alloc",
+    "esp32",
+  ]
+}
+esp-sync = { version = "0.3.0", features = ["defmt", "esp32"] }
 
 embedded-io = { version = "0.7.1", features = ["defmt"] }
 embedded-io-async = { version = "0.7.0", features = ["defmt"] }
 
 embassy-executor = { version = "0.10.0", features = ["defmt"] }
-embassy-time = { version = "0.5.1", features = ["defmt"] }
-embassy-sync = { version = "0.8.0", features = ["defmt"] }
 embassy-futures = { version = "0.1.2", features = ["defmt"] }
+embassy-sync = { version = "0.8.0", features = ["defmt"] }
+embassy-time = { version = "0.5.1", features = ["defmt"] }
 
 heapless = { version = "0.9.3", features = ["defmt"] }
-static_cell = "2.1.1"
-serde = { version = "1.0.229", default-features = false, features = ["derive"] }
-postcard = { version = "1.1.3", features = ["defmt"] }
 muldiv = "1.0.1"
+postcard = { version = "1.1.3", features = ["defmt"] }
+serde = { version = "1.0.229", default-features = false, features = ["derive"] }
+static_cell = "2.1.1"
 
 sc_messages = { path = "../../sc_messages" }
-xpt2046-rs = { git = "https://codeberg.org/KingRocco21/xpt2046-rs.git", features = [
+xpt2046-rs = {
+  git = "https://codeberg.org/KingRocco21/xpt2046-rs.git",
+  features = [
     "defmt",
-] }
+  ]
+}
 
+embedded-graphics = { version = "0.8.2", features = ["defmt"] }
 # The dependencies below are used for the display.
 embedded-hal = { version = "1.0.0", features = ["defmt-03"] }
 embedded-hal-bus = { version = "0.3.0", features = ["defmt-03"] }
-embedded-graphics = { version = "0.8.2", features = ["defmt"] }
-mipidsi = { version = "0.10.0", features = ["defmt"] }
-mousefood = { version = "0.5.2", default-features = false }
-ratatui = { version = "0.30.2", default-features = false, features = [
-    "all-widgets",
-] }
 # Alternate mousefood font with unnecessary characters removed to save binary space
-ibm437 = { version = "0.5.0", default-features = false, features = [
+ibm437 = {
+  version = "0.5.0",
+  default-features = false,
+  features = [
     "embedded-graphics-backend",
     "regular9x14",
-] }
+  ]
+}
+mipidsi = { version = "0.10.0", features = ["defmt"] }
+mousefood = { version = "0.5.2", default-features = false }
+ratatui = {
+  version = "0.30.2",
+  default-features = false,
+  features = [
+    "all-widgets",
+  ]
+}
+
+[features]
+uart_over_adapter = []
+
+[lints.clippy]
+arithmetic_side_effects = "deny"
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+
+[lints.rust]
+unsafe_code = "forbid"
 
 # For fine tuning these settings, please refer to https://doc.rust-lang.org/cargo/reference/profiles.html
 [profile.dev]
@@ -69,45 +125,5 @@ ibm437 = { version = "0.5.0", default-features = false, features = [
 opt-level = "s"
 
 [profile.release]
-codegen-units = 1 # LLVM can perform better optimizations using a single thread
-lto = 'fat'
-
-[lib]
-test = false
-bench = false
-
-[[bin]]
-name = "pin_usage_checker"
-test = false
-bench = false
-
-[[bin]]
-name = "pwm"
-test = false
-bench = false
-
-[[bin]]
-name = "spincoater_with_pc"
-test = false
-bench = false
-
-[[bin]]
-name = "touchscreen_test"
-test = false
-bench = false
-
-[[bin]]
-name = "touchscreen_calibration"
-test = false
-bench = false
-
-[features]
-uart_over_adapter = []
-
-[lints.rust]
-unsafe_code = "forbid"
-
-[lints.clippy]
-pedantic = { level = "warn", priority = -1 }
-unwrap_used = "deny"
-arithmetic_side_effects = "deny"
+lto = "fat"
+codegen-units = 1  # LLVM can perform better optimizations using a single thread
