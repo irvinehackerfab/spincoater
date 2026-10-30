@@ -303,7 +303,7 @@ impl App {
                 }
             },
             McuMessage::Heartbeat => {}
-            McuMessage::Error(error) => bail!("MCU failed: {:#?}", error),
+            McuMessage::Error(error) => bail!("MCU failed: {}", error),
         }
         Ok(())
     }

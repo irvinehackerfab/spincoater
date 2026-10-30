@@ -17,7 +17,7 @@ ratatui.workspace = true
 rfd.workspace = true
 # For storing the most recent messages and discarding old ones
 ringbuffer.workspace = true
-sc_messages = { path = "../sc_messages" }
+sc_messages = { path = "../sc_messages", features = ["std"] }
 # For UART communication
 serde = { workspace = true, features = ["derive"] }
 # For serial communication

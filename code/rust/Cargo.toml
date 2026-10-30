@@ -34,6 +34,7 @@ serial2 = "0.2.38"
 serialport = "4.10.1"
 # For sharing the serial port across threads
 static_cell = "2.1.1"
+# For spincoater errors
 thiserror = "2.0.21"
 
 [workspace.lints.clippy]

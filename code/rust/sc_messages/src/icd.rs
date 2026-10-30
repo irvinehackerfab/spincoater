@@ -42,8 +42,14 @@ pub enum McuMessage {
 
 /// All possible MCU errors.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum Error {
+    #[cfg_attr(feature = "std", error("spincoater failed to read a HostMessage"))]
     UartReadFailed,
+    #[cfg_attr(
+        feature = "std",
+        error("spincoater failed to deserialize a HostMessage")
+    )]
     DeserializationFailed,
 }
 
