@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["host_tui", "linear_regression", "sc_messages"]
+members = ["host_tui", "sc_messages"]
 exclude = ["cross/*"]
 
 [workspace.package]
@@ -18,12 +18,13 @@ color-eyre = "0.6.5"
 csv = "1.4.0"
 # For linear regression of RPM values and duty cycle values
 linreg = "0.2.0"
-num = "0.4.3"
 # For no_std serialization
 postcard = { version = "1.1.3", default-features = false }
+# For TUI
 ratatui = "0.30.2"
 # For loading motion profile files
 rfd = "0.17.2"
+# For TUI message list
 ringbuffer = "0.16.0"
 # For postcard
 serde = { version = "1.0.229", default-features = false }
@@ -31,6 +32,7 @@ serde = { version = "1.0.229", default-features = false }
 serial2 = "0.2.38"
 # For serial port enumeration
 serialport = "4.10.1"
+# For sharing the serial port across threads
 static_cell = "2.1.1"
 thiserror = "2.0.21"
 
