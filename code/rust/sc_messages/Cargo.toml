@@ -6,13 +6,10 @@ license.workspace = true
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
-thiserror = { workspace = true, optional = true }
+thiserror.workspace = true
 
 [dev-dependencies]
 postcard = { workspace = true, features = ["heapless"] }
-
-[features]
-std = ["dep:thiserror"]
 
 [lints]
 workspace = true

@@ -8,6 +8,7 @@
 //! - COBS encoding
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::{
     motion_profile::{self},
@@ -41,15 +42,11 @@ pub enum McuMessage {
 }
 
 /// All possible MCU errors.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "std", derive(thiserror::Error))]
+#[derive(Debug, Clone, Serialize, Deserialize, Error)]
 pub enum Error {
-    #[cfg_attr(feature = "std", error("spincoater failed to read a HostMessage"))]
+    #[error("spincoater failed to read a HostMessage")]
     UartReadFailed,
-    #[cfg_attr(
-        feature = "std",
-        error("spincoater failed to deserialize a HostMessage")
-    )]
+    #[error("spincoater failed to deserialize a HostMessage")]
     DeserializationFailed,
 }
 

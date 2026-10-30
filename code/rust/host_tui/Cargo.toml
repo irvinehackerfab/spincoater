@@ -14,7 +14,7 @@ postcard.workspace = true
 ratatui.workspace = true
 rfd.workspace = true
 ringbuffer.workspace = true
-sc_messages = { path = "../sc_messages", features = ["std"] }
+sc_messages = { path = "../sc_messages" }
 serde = { workspace = true, features = ["derive"] }
 serial2.workspace = true
 serialport.workspace = true
