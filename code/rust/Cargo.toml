@@ -35,7 +35,7 @@ serialport = "4.10.1"
 # For sharing the serial port across threads
 static_cell = "2.1.1"
 # For spincoater errors
-thiserror = "2.0.21"
+thiserror = { version = "2.0.21", default-features = false }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
