@@ -36,7 +36,7 @@ use esp32::{
         encoder::detect_motor_revolutions,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER},
     },
-    runners::rpm::{RPM_BUFFER, Runner, channel::RUNNER_CHANNEL},
+    runners::rpm::{Runner, channel::RUNNER_CHANNEL},
 };
 use ibm437::IBM437_9X14_REGULAR;
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};
@@ -222,13 +222,10 @@ async fn main(spawner: Spawner) -> ! {
             .unwrap_or_else(|_| unreachable!("The terminal task is not running")),
     );
 
-    let rpm_buffer = RPM_BUFFER.take();
-
     let runner = Runner::new(
         pwm_pin,
         runner_channel.receiver(),
         terminal_channel.sender(),
-        rpm_buffer,
     );
 
     runner.run().await

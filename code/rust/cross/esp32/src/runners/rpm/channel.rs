@@ -29,6 +29,8 @@ pub enum RunnerRequest {
 }
 
 /// The rpm and time.
+///
+/// This is used both for controlling the spincoater and for logging its state.
 #[derive(Debug)]
 pub struct RunAt {
     /// Plate RPM.
@@ -38,7 +40,7 @@ pub struct RunAt {
 }
 
 impl RunAt {
-    /// Creates a run request.
+    /// Creates an RPM and time struct.
     ///
     /// RPM should be plate RPM and time should be seconds.
     #[must_use]

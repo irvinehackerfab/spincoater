@@ -8,10 +8,7 @@ use crate::{
     LOOP_PERIOD,
     gpio::{
         display::terminal::channel::{TerminalSender, TuiEvent},
-        encoder::{
-            ENCODER_STATE, EncoderState, calculate_average_rpm, motor_to_plate_revolutions,
-            plate_to_motor_revolutions,
-        },
+        encoder::{ENCODER_STATE, EncoderState, calculate_average_rpm, plate_to_motor_revolutions},
         pwm::cubic_conversion,
     },
     pid::{Pid, neg_error},
@@ -20,28 +17,16 @@ use channel::{RunAt, RunnerReceiver, RunnerRequest};
 use embassy_executor::task;
 use embassy_time::{Duration, Instant, Ticker, Timer};
 use esp_hal::{mcpwm::operator::PwmPin, peripherals::MCPWM0};
-use heapless::HistoryBuf;
 use sc_messages::pwm::{DutyCycle, HALF_POWER_DUTY, STOP_DUTY};
-use static_cell::ConstStaticCell;
-
-/// The size of the RPM vector.
-///
-/// This is currently set to roughly 0.5 seconds worth of RPM readings at [`LOOP_PERIOD`].
-const RPM_VEC_SIZE: usize = 64;
-
-/// A list of rpm values for sending an average to the terminal.
-pub static RPM_BUFFER: ConstStaticCell<HistoryBuf<usize, RPM_VEC_SIZE>> =
-    ConstStaticCell::new(HistoryBuf::new());
 
 /// The time between motor/time updates on the terminal.
-const LOG_PERIOD: Duration = Duration::from_millis(500);
+const LOG_PERIOD: Duration = Duration::from_millis(250);
 
 /// The runner that executes single RPM values.
 pub struct Runner {
     pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
     from_terminal: RunnerReceiver,
     to_terminal: TerminalSender,
-    rpm_buffer: &'static mut HistoryBuf<usize, RPM_VEC_SIZE>,
 }
 
 impl Runner {
@@ -51,13 +36,11 @@ impl Runner {
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
         from_terminal: RunnerReceiver,
         to_terminal: TerminalSender,
-        rpm_buffer: &'static mut HistoryBuf<usize, RPM_VEC_SIZE>,
     ) -> Self {
         Self {
             pwm_pin,
             from_terminal,
             to_terminal,
-            rpm_buffer,
         }
     }
 
@@ -129,11 +112,8 @@ impl Runner {
             self.pwm_pin.set_timestamp(duty_cycle.min(HALF_POWER_DUTY));
 
             // Logging
-            self.rpm_buffer
-                .write(usize::from(motor_to_plate_revolutions(current_rpm)));
             if previous_log.elapsed() > LOG_PERIOD {
-                let average_rpm = calculate_average_rpm(self.rpm_buffer);
-                let state = RunAt::new(average_rpm, time_since_start_secs);
+                let state = RunAt::new(current_rpm, time_since_start_secs);
                 self.to_terminal.send(TuiEvent::Runner(state)).await;
                 previous_log = Instant::now();
             }
