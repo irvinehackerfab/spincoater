@@ -36,7 +36,7 @@ use esp32::{
         encoder::detect_motor_revolutions,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER},
     },
-    runners::rpm::{Runner, channel::RUNNER_CHANNEL},
+    runners::touchscreen::{Runner, channel::RUNNER_CHANNEL},
 };
 use ibm437::IBM437_9X14_REGULAR;
 use mipidsi::{interface::SpiInterface, models::ILI9341Rgb565};

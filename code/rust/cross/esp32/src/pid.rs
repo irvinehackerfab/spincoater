@@ -2,7 +2,7 @@
 //!
 //! Keep in mind that 1 duty cycle is approximately equal to 34 plate RPM.
 
-use crate::LOOP_PERIOD_MILLIS_U64;
+use crate::runners::LOOP_PERIOD_MILLIS_U64;
 
 /// The loop period in seconds.
 #[allow(clippy::cast_precision_loss, reason = "See proof below")]

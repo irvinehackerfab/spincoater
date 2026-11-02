@@ -1,4 +1,4 @@
-//! This module contains functionality for communicating with the server over UART.
+//! This module contains functionality for communicating with the host PC over UART.
 
 use embassy_executor::task;
 use embedded_io_async::Write;
@@ -17,7 +17,7 @@ use sc_messages::{
 };
 use static_cell::ConstStaticCell;
 
-use crate::{RunnerRequestSender, RunnerResponseReceiver, RunnerResponseSenderMutex};
+use crate::runners::pc::channel::{ResponseReceiver, ResponseSenderMutex, RunnerRequestSender};
 
 /// The buffer for reading from the accumulator.
 pub static READ_BUFFER: ConstStaticCell<[u8; MAX_HOST_MESSAGE_SIZE]> = ConstStaticCell::new([0; _]);
@@ -35,7 +35,7 @@ pub struct ServerRx {
     read_buffer: &'static mut [u8; MAX_HOST_MESSAGE_SIZE],
     accumulator: &'static mut CobsAccumulator<MAX_HOST_MESSAGE_SIZE>,
     to_runner: RunnerRequestSender,
-    to_tx: &'static RunnerResponseSenderMutex,
+    to_tx: &'static ResponseSenderMutex,
     vacuum_pump: Output<'static>,
 }
 
@@ -46,7 +46,7 @@ impl ServerRx {
         read_buffer: &'static mut [u8; MAX_HOST_MESSAGE_SIZE],
         accumulator: &'static mut CobsAccumulator<MAX_HOST_MESSAGE_SIZE>,
         to_runner: RunnerRequestSender,
-        to_tx: &'static RunnerResponseSenderMutex,
+        to_tx: &'static ResponseSenderMutex,
         vacuum_pump: Output<'static>,
     ) -> Self {
         Self {
@@ -135,7 +135,7 @@ impl ServerRx {
     /// Sends a message to the TX side of the server.
     ///
     /// This has to be an associated function so it can be called while other parts of [`ServerRx`] are mutably borrowed.
-    async fn send_to_tx(to_tx: &RunnerResponseSenderMutex, message: &McuMessage) {
+    async fn send_to_tx(to_tx: &ResponseSenderMutex, message: &McuMessage) {
         let mut lock = to_tx.lock().await;
         let buf = lock.send().await;
         buf.clone_from(message);
@@ -153,7 +153,7 @@ pub async fn run_server_rx(mut server_rx: ServerRx) {
 pub struct ServerTx {
     to_host: UartTx<'static, Async>,
     send_buffer: &'static mut [u8; MAX_MCU_MESSAGE_SIZE],
-    from_all: RunnerResponseReceiver,
+    from_all: ResponseReceiver,
 }
 
 impl ServerTx {
@@ -161,7 +161,7 @@ impl ServerTx {
     pub const fn new(
         tx: UartTx<'static, Async>,
         send_buffer: &'static mut [u8; MAX_MCU_MESSAGE_SIZE],
-        from_all: RunnerResponseReceiver,
+        from_all: ResponseReceiver,
     ) -> Self {
         Self {
             to_host: tx,

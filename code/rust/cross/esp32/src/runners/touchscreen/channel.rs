@@ -1,4 +1,4 @@
-//! This module contains the channel functionality for the RPM runner.
+//! This module contains the channel functionality for the touchscreen runner.
 
 use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,

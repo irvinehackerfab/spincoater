@@ -23,16 +23,19 @@ use esp_hal::{
 use esp_println as _;
 use esp_rtos::embassy::InterruptExecutor;
 use esp32::{
-    RUNNER_REQUEST_BUFFER, RUNNER_REQUEST_CHANNEL, RUNNER_RESPONSE_BUFFER, RUNNER_RESPONSE_CHANNEL,
-    RUNNER_RESPONSE_SENDER_MUTEX, RunnerResponseSenderMutex, SECOND_CORE_EXECUTOR,
-    SECOND_CORE_STACK,
+    SECOND_CORE_EXECUTOR, SECOND_CORE_STACK,
     gpio::{
         encoder::detect_motor_revolutions,
         pwm::{FREQUENCY, PERIOD, PERIPHERAL_CLOCK_PRESCALER, SETPOINTS},
     },
-    runners::motion_profile::{Runner, run},
-    servers::uart::{
-        READ_ACCUMULATOR, READ_BUFFER, SEND_BUFFER, ServerRx, ServerTx, run_server_rx,
+    runners::pc::{
+        Runner,
+        channel::{
+            REQUEST_BUFFER, REQUEST_CHANNEL, RESPONSE_BUFFER, RESPONSE_CHANNEL,
+            RESPONSE_SENDER_MUTEX, ResponseSenderMutex,
+        },
+        run,
+        server::{READ_ACCUMULATOR, READ_BUFFER, SEND_BUFFER, ServerRx, ServerTx, run_server_rx},
     },
 };
 use sc_messages::{icd::BAUD_RATE, pwm::STOP_DUTY};
@@ -123,14 +126,11 @@ async fn main(spawner: Spawner) -> ! {
     let vacuum_pump_pin = Output::new(peripherals.GPIO17, Level::Low, OutputConfig::default());
 
     // Setup communication between tasks
-    let request_channel =
-        RUNNER_REQUEST_CHANNEL.init_with(|| Channel::new(RUNNER_REQUEST_BUFFER.take()));
+    let request_channel = REQUEST_CHANNEL.init_with(|| Channel::new(REQUEST_BUFFER.take()));
     let (to_runner, from_server) = request_channel.split();
-    let response_channel =
-        RUNNER_RESPONSE_CHANNEL.init_with(|| Channel::new(RUNNER_RESPONSE_BUFFER.take()));
+    let response_channel = RESPONSE_CHANNEL.init_with(|| Channel::new(RESPONSE_BUFFER.take()));
     let (to_server, from_runner) = response_channel.split();
-    let to_server =
-        RUNNER_RESPONSE_SENDER_MUTEX.init_with(|| RunnerResponseSenderMutex::new(to_server));
+    let to_server = RESPONSE_SENDER_MUTEX.init_with(|| ResponseSenderMutex::new(to_server));
 
     // Initialize the setpoint list with a starting setpoint of (0, 0).
     let setpoints = SETPOINTS.take();

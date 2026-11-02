@@ -1,6 +1,6 @@
 //! This module contains functionality for sending data to the terminal.
 
-use crate::runners::rpm::channel::RunAt;
+use crate::runners::touchscreen::channel::RunAt;
 use embassy_sync::{
     blocking_mutex::raw::NoopRawMutex,
     channel::{Channel, Receiver, Sender},

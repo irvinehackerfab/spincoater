@@ -1,15 +1,21 @@
-//! This module contains the functionality for running motion profiles sent by the host PC.
+//! This module contains the functionality for running commands sent by the host PC.
+
+pub mod channel;
+pub mod server;
 
 #[cfg(feature = "uart_over_adapter")]
 use defmt::{error, info};
 
 use crate::{
-    LOOP_PERIOD, RunnerRequestReceiver, RunnerResponseSenderMutex,
     gpio::{
-        encoder::{ENCODER_STATE, EncoderState, calculate_average_rpm},
+        encoder::{ENCODER_STATE, EncoderState},
         pwm::{SETPOINT_LIST_LENGTH, cubic_conversion},
     },
     pid::{Pid, neg_error},
+    runners::{
+        LOOP_PERIOD,
+        pc::channel::{ResponseSenderMutex, RunnerRequestReceiver},
+    },
 };
 use embassy_executor::task;
 use embassy_time::{Instant, Ticker, Timer};
@@ -26,7 +32,7 @@ pub struct Runner {
     setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
     pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
     from_server: RunnerRequestReceiver,
-    to_server: &'static RunnerResponseSenderMutex,
+    to_server: &'static ResponseSenderMutex,
 }
 
 impl Runner {
@@ -34,7 +40,7 @@ impl Runner {
         setpoints: &'static mut Vec<Setpoint, SETPOINT_LIST_LENGTH>,
         pwm_pin: PwmPin<'static, MCPWM0<'static>, 0, true>,
         from_server: RunnerRequestReceiver,
-        to_server: &'static RunnerResponseSenderMutex,
+        to_server: &'static ResponseSenderMutex,
     ) -> Self {
         Self {
             setpoints,
@@ -64,7 +70,7 @@ impl Runner {
                 if self.should_stop() {
                     continue 'outer;
                 }
-                if ENCODER_STATE.with(|s| calculate_average_rpm(&s.rpm_ring_buffer)) == 0 {
+                if ENCODER_STATE.with(|s| s.rpm) == 0 {
                     break;
                 }
             }
@@ -132,8 +138,7 @@ impl Runner {
             }
 
             // Feedback
-            let current_rpm =
-                ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
+            let current_rpm = ENCODER_STATE.with(|state| state.rpm);
             let negative_rpm_error = neg_error(setpoint.rpm, current_rpm);
             let output = pi_controller.next_control_output(negative_rpm_error);
             let duty_cycle = DutyCycle::from(setpoint_duty_cycle + output);
@@ -199,8 +204,7 @@ impl Runner {
             let setpoint_duty_cycle = cubic_conversion(setpoint_rpm);
 
             // Feedback
-            let current_rpm =
-                ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
+            let current_rpm = ENCODER_STATE.with(|state| state.rpm);
             let rpm_error = neg_error(setpoint_rpm, current_rpm);
             let output = pi_controller.next_control_output(rpm_error);
             let duty_cycle = DutyCycle::from(setpoint_duty_cycle + output);

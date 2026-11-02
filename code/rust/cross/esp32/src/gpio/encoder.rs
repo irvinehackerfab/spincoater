@@ -5,39 +5,27 @@ use embassy_executor::task;
 use embassy_time::Instant;
 use esp_hal::gpio::Input;
 use esp_sync::NonReentrantMutex;
-use heapless::HistoryBuf;
 use muldiv::MulDiv;
 use sc_messages::{MOTOR_REVOLUTIONS, PLATE_REVOLUTIONS};
 
 /// Provides global access to the encoder state.
 pub static ENCODER_STATE: NonReentrantMutex<EncoderState> =
-    NonReentrantMutex::new(EncoderState::new(Instant::MIN, HistoryBuf::new()));
-
-/// The length of the RPM ring buffer for the interrupt handler.
-///
-/// Higher values remove jitter in the RPM, but they also make it harder to ignore RPM spikes.
-pub const RING_BUFFER_LENGTH: usize = 2;
+    NonReentrantMutex::new(EncoderState::new(Instant::MIN, 0));
 
 /// Data that is used by the encoder interrupt.
 #[derive(Debug)]
 pub struct EncoderState {
     /// The previous execution of the encoder interrupt.
     pub previous_time: Instant,
-    /// The last [`RING_BUFFER_LENGTH`] RPM values for calculating the moving average.
-    pub rpm_ring_buffer: HistoryBuf<usize, RING_BUFFER_LENGTH>,
+    /// The last recorded plate RPM.
+    pub rpm: u16,
 }
 
 impl EncoderState {
     /// Creates a new encoder state.
     #[must_use]
-    pub const fn new(
-        previous_time: Instant,
-        rpm_ring_buffer: HistoryBuf<usize, RING_BUFFER_LENGTH>,
-    ) -> Self {
-        Self {
-            previous_time,
-            rpm_ring_buffer,
-        }
+    pub const fn new(previous_time: Instant, rpm: u16) -> Self {
+        Self { previous_time, rpm }
     }
 
     /// Calculates the rpm between the last interrupt and now.
@@ -57,8 +45,8 @@ impl EncoderState {
                 .unwrap_or(usize::MAX),
         );
         // We filter out RPMs greater than u16::MAX because it only exceeds u16::MAX when an encoder glitch occurs.
-        if rpm < usize::from(u16::MAX) {
-            self.rpm_ring_buffer.write(rpm);
+        if let Ok(rpm) = u16::try_from(rpm) {
+            self.rpm = rpm;
         }
         self.previous_time = now;
     }
@@ -66,27 +54,8 @@ impl EncoderState {
     /// Resets the encoder state.
     pub fn reset(&mut self) {
         self.previous_time = Instant::now();
-        self.rpm_ring_buffer.clear();
+        self.rpm = 0;
     }
-}
-
-/// Calculates the current rpm as a rolling average.
-///
-/// The RPM is capped at [`u16::MAX`].
-#[must_use]
-pub fn calculate_average_rpm<const N: usize>(rpm_ring_buffer: &HistoryBuf<usize, N>) -> u16 {
-    const {
-        // Since the highest RPM allowed by calculate_rpm is u16::MAX, this proves that overflow cannot occur.
-        assert!((u16::MAX as usize).checked_mul(N).is_some());
-    }
-    rpm_ring_buffer
-        .as_slice()
-        .iter()
-        .sum::<usize>()
-        .checked_div(rpm_ring_buffer.len())
-        .unwrap_or(0)
-        .try_into()
-        .unwrap_or(u16::MAX)
 }
 
 /// Converts from plate revolutions to motor revolutions.

@@ -1,17 +1,17 @@
-//! This module contains the functionality for running the spincoater at a single rpm for a certain time.
+//! This module contains the functionality for running the spincoater with the touchscreen.
 
 pub mod channel;
 
 use core::ops::Add;
 
 use crate::{
-    LOOP_PERIOD,
     gpio::{
         display::terminal::channel::{TerminalSender, TuiEvent},
-        encoder::{ENCODER_STATE, EncoderState, calculate_average_rpm, plate_to_motor_revolutions},
+        encoder::{ENCODER_STATE, EncoderState, plate_to_motor_revolutions},
         pwm::cubic_conversion,
     },
     pid::{Pid, neg_error},
+    runners::LOOP_PERIOD,
 };
 use channel::{RunAt, RunnerReceiver, RunnerRequest};
 use embassy_executor::task;
@@ -61,7 +61,7 @@ impl Runner {
                     if self.should_stop() {
                         continue 'outer;
                     }
-                    if ENCODER_STATE.with(|s| calculate_average_rpm(&s.rpm_ring_buffer)) == 0 {
+                    if ENCODER_STATE.with(|s| s.rpm) == 0 {
                         break;
                     }
                 }
@@ -102,8 +102,7 @@ impl Runner {
             }
 
             // Feedback
-            let current_rpm =
-                ENCODER_STATE.with(|state| calculate_average_rpm(&state.rpm_ring_buffer));
+            let current_rpm = ENCODER_STATE.with(|state| state.rpm);
             let negative_rpm_error = neg_error(setpoint_rpm, current_rpm);
             let output = pi_controller.next_control_output(negative_rpm_error);
             let duty_cycle = DutyCycle::from(setpoint_duty_cycle.add(output));

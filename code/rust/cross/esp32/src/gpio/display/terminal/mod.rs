@@ -15,7 +15,7 @@ use crate::{
         DisplayType, HEIGHT, WIDTH,
         terminal::channel::{TerminalReceiver, TuiEvent},
     },
-    runners::rpm::channel::{RunAt, RunnerRequest, RunnerSender},
+    runners::touchscreen::channel::{RunAt, RunnerRequest, RunnerSender},
 };
 
 /// The static cell for the terminal.
