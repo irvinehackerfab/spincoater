@@ -2,15 +2,14 @@
 
 use core::ops::Div;
 use embassy_executor::task;
-use embassy_time::Instant;
-use esp_hal::gpio::Input;
+use esp_hal::{gpio::Input, time::Instant};
 use esp_sync::NonReentrantMutex;
 use muldiv::MulDiv;
 use sc_messages::{MOTOR_REVOLUTIONS, PLATE_REVOLUTIONS};
 
 /// Provides global access to the encoder state.
 pub static ENCODER_STATE: NonReentrantMutex<EncoderState> =
-    NonReentrantMutex::new(EncoderState::new(Instant::MIN, 0));
+    NonReentrantMutex::new(EncoderState::new(Instant::EPOCH, 0));
 
 /// Data that is used by the encoder interrupt.
 #[derive(Debug)]
@@ -31,14 +30,21 @@ impl EncoderState {
     /// Calculates the rpm between the last interrupt and now.
     ///
     /// Stores the result in the ring buffer.
+    ///
+    /// # Panics
+    /// Panics if this method is called two times in one microsecond (which will never happen)
     pub fn calculate_rpm(&mut self) {
         let now = Instant::now();
-        // Two interrupts will never occur at the same microsecond because the CPU cannot calculate the RPM and unmask the interrupt that quickly.
-        let time_since_last_interrupt = now.duration_since(self.previous_time);
+        #[allow(
+            clippy::arithmetic_side_effects,
+            reason = "Timer is monotonic and this program will not run for 36,558 years so the time will not overflow."
+        )]
+        let time_since_last_interrupt = now - self.previous_time;
         // 1 interrupt * (1 motor revolution / 2 interrupts) * 1/(`time_since_last_interrupt` μs) * (10^6 μs / 1 s) * (60 s / 1 min)
         // = 30,000,000 / `time_since_last_interrupt`
         // Final units: motor revolutions per minute
         let rpm = 30_000_000.div(
+            // The time will never be 0 because the CPU cannot calculate the RPM and re-run the method in the same microsecond.
             time_since_last_interrupt
                 .as_micros()
                 .try_into()
