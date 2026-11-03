@@ -3,9 +3,6 @@
 pub mod channel;
 pub mod server;
 
-#[cfg(feature = "uart_over_adapter")]
-use defmt::{error, info};
-
 use crate::{
     gpio::{
         encoder::{ENCODER_STATE, EncoderState},

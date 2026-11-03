@@ -1,11 +1,10 @@
 //! This module contains the runners we use to control the spincoater's motor.
 
-use embassy_time::Duration;
-
-use crate::gpio::pwm::FREQUENCY;
-
 pub mod pc;
 pub mod touchscreen;
+
+use crate::gpio::pwm::FREQUENCY;
+use embassy_time::Duration;
 
 /// The period as a u64.
 pub const LOOP_PERIOD_MILLIS_U64: u64 = 20;
