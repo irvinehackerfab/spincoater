@@ -18,7 +18,7 @@ const _: () = assert!(LOOP_PERIOD_MILLIS_U64 as f32 as u64 == LOOP_PERIOD_MILLIS
 /// The proportional gain.
 ///
 /// Units: duty cycle per motor RPM error.
-const K_P: f32 = 0.2;
+const K_P: f32 = 0.1;
 
 /// The integral gain.
 ///
