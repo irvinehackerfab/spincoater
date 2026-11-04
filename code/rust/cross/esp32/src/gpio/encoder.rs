@@ -33,8 +33,7 @@ impl EncoderState {
     ///
     /// # Panics
     /// Panics if this method is called two times in one microsecond (which will never happen)
-    pub fn calculate_rpm(&mut self) {
-        let now = Instant::now();
+    pub fn calculate_rpm(&mut self, now: Instant) {
         #[allow(
             clippy::arithmetic_side_effects,
             reason = "Timer is monotonic and this program will not run for 36,558 years so the time will not overflow."
@@ -87,7 +86,10 @@ pub fn motor_to_plate_revolutions(rpm: u16) -> u16 {
 pub async fn detect_motor_revolutions(mut encoder: Input<'static>) -> ! {
     loop {
         encoder.wait_for_rising_edge().await;
+        // Get the time immediately, before the mutex busy-waits.
+        // This prevents the runner from messing with RPM calculation by accessing the mutex.
+        let now = Instant::now();
         // An interrupt occurred, so it's time to calculate the rpm.
-        ENCODER_STATE.with(EncoderState::calculate_rpm);
+        ENCODER_STATE.with(|state| state.calculate_rpm(now));
     }
 }
