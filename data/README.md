@@ -9,6 +9,7 @@ was run.
 | Folder | Date | What it measured |
 |---|---|---|
 | [2026-10-09-controller-comparison](2026-10-09-controller-comparison) | 2026-08-14 and 2026-10-09 | Speed error, settling and overshoot at 500-6000 RPM, 10 runs per speed |
+| [2026-11-02-remove-rolling-average](2026-11-02-remove-rolling-average) | 2026-11-02 | Removal of rolling average |
 
 When adding a test, note:
 - the model and any hardware changes (chuck, pulleys, motor)
