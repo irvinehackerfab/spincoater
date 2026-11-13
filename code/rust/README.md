@@ -5,4 +5,6 @@ Programs that run on the spin coater's microcontrollers can be found in the [cro
 
 To develop these programs, either [install Rust](https://rust-lang.org/tools/install/) or use the dev environment provided by and documented in [DEVELOPMENT.md](DEVELOPMENT.md).
 
-To build `host_tui` for Windows, [install Nix](https://nixos.org/download/) and run `nix build .#host_tui_windows`. The `.exe` will be in `./result/bin/`.
+## Host TUI
+This program allows you to control the spincoater in the terminal.
+See [host_tui/README.md](host_tui/README.md) for more information.

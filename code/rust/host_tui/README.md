@@ -4,3 +4,5 @@ This is a Rust binary that you run on your PC while connected to the microcontro
 When writing motion profile CSV files, you must have the headers `rpm,time (micros)`. Do not set an rpm at time 0.
 
 You can run it with `cargo run --bin host_tui`.
+
+The parent directory has a Nix flake output for building host_tui for Windows from any OS. To use it, [install Nix](https://nixos.org/download/) and in the [parent](../) directory, run `nix build .#host_tui_windows`. The `.exe` will be in `./result/bin/`.
