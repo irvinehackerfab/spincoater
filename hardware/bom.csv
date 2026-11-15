@@ -1,0 +1,26 @@
+category,part,qty,unit_price_usd,supplier,link,notes
+motor,HobbyStar 3300KV sensored 540 RC crawler motor (4 pole),1,,HobbyStar,,
+motor,HobbyStar TS80A sensored ESC for 380/390 motors,1,,HobbyStar,,
+motor,XT60 connector pigtails,,,,,for the ESC
+drivetrain,2GT-200-10 closed loop belt (200 mm length; 10 mm width),1,,,,
+drivetrain,GT2 30T drive pulley (5 mm bore; 10 mm belt),,,,,2 pack
+drivetrain,GT2 40T drive pulley (5 mm bore; 10 mm belt),,,,,4 pack
+drivetrain,6703-2RS bearing (17x23x4 mm double sealed),,,,,
+vacuum,12V mini vacuum pump (8 L/min),1,,AliExpress,,
+vacuum,Vacuum tubing (6 mm ID; 12 mm OD) with hose clamps,,,,,
+vacuum,Silicone flat O-rings,,,,,
+vacuum,IRLZ44N MOSFET (47 A; 55 V),1,,,,switches the vacuum pump
+electronics,ESP32-DevKitC-32E,1,,Espressif,,
+electronics,2.8 in SPI TFT LCD touchscreen (ILI9341; 240x320),1,,,,
+electronics,12V to 5V buck converter,1,,,,powers the ESP32
+electronics,ESP-PROG-2 debugger,1,,Espressif,,optional; for debugging
+electronics,Bulk smoothing capacitors,,,,,
+electronics,Resettable PTC fuses,,,,,
+electronics,Rocker switches (12V 20A),,,,,
+electronics,Screw terminals (26-14 AWG),,,,,
+electronics,Dupont and solid core jumper wires,,,,,
+power,12V 10A AC-DC adapter (5.5x2.5 mm),1,,,,
+power,5.5x2.5 mm DC barrel plug,,,,,
+power,5.5x2.5 mm male/female barrel jack connector,,,,,
+hardware,M3 countersunk screws (8 mm and 12 mm),,,,,
+hardware,M3 nuts,,,,,

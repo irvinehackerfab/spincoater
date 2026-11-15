@@ -34,3 +34,13 @@ logs/
 
 # nix build output
 result/
+
+# Raw photos and videos (convert photos to .jpg first, link videos instead)
+*.heic
+*.HEIC
+*.mov
+*.MOV
+
+# OS files
+Thumbs.db
+desktop.ini

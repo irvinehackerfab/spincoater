@@ -1,0 +1,24 @@
+[package]
+name = "host_tui"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# See ../Cargo.toml for the reasons we have each dependency.
+chrono.workspace = true
+clap = { workspace = true, features = ["derive"] }
+color-eyre.workspace = true
+csv.workspace = true
+postcard.workspace = true
+ratatui.workspace = true
+rfd.workspace = true
+ringbuffer.workspace = true
+sc_messages = { path = "../sc_messages" }
+serde = { workspace = true, features = ["derive"] }
+serial2.workspace = true
+serialport.workspace = true
+static_cell.workspace = true
+
+[lints]
+workspace = true

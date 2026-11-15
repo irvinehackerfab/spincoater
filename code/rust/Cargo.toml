@@ -1,0 +1,45 @@
+[workspace]
+resolver = "3"
+members = ["host_tui", "sc_messages"]
+exclude = ["cross/*"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+# For naming CSVs based on the date
+chrono = "0.4.45"
+# For accepting a serial port argument
+clap = "4.6.7"
+# For pretty errors
+color-eyre = "0.6.5"
+# For logging
+csv = "1.4.0"
+# For linear regression of RPM values and duty cycle values
+linreg = "0.2.0"
+# For no_std serialization
+postcard = { version = "1.1.3", default-features = false }
+# For TUI
+ratatui = "0.30.2"
+# For loading motion profile files
+rfd = "0.17.2"
+# For TUI message list
+ringbuffer = "0.16.0"
+# For postcard
+serde = { version = "1.0.229", default-features = false }
+# For UART communication
+serial2 = "0.2.38"
+# For serial port enumeration
+serialport = "4.10.1"
+# For sharing the serial port across threads
+static_cell = "2.1.1"
+# For spincoater errors
+thiserror = { version = "2.0.21", default-features = false }
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
